@@ -71,7 +71,7 @@ export function YearEnd(): JSX.Element {
   };
   const openingsValid = preview.rows.every((row) => {
     const paise = openingOf(row);
-    return paise !== null && paise >= 0;
+    return paise !== null;
   });
   const totalOpening = preview.rows.reduce((sum, row) => sum + (openingOf(row) ?? 0), 0);
 
@@ -178,7 +178,7 @@ export function YearEnd(): JSX.Element {
                           style={{
                             width: 130,
                             textAlign: "right",
-                            borderColor: paise === null || paise < 0 ? "var(--error-line)" : undefined,
+                            borderColor: paise === null ? "var(--error-line)" : undefined,
                           }}
                           value={openings[row.grantHeadId] ?? ""}
                           onChange={(event) =>

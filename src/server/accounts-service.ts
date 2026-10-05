@@ -407,11 +407,18 @@ export class AccountsService implements BooksApi {
   async saveOpeningBalance(input: OpeningBalanceInput): Promise<ApiResult<OpeningBalanceDto>> {
     const frozen = await this.refuseIfClosed();
     if (frozen) return frozen;
-    if (input.bankPaise < 0 || input.cashPaise < 0) {
+    if (!Number.isInteger(input.bankPaise) || !Number.isInteger(input.cashPaise)) {
       return fail(
-        "negative_opening_balance",
-        "ઉઘડતી સિલક ઋણ ન હોઈ શકે",
-        "opening balance cannot be negative",
+        "invalid_opening_balance",
+        "ઉઘડતી સિલક પૂર્ણાંક પૈસા હોવી જોઈએ",
+        "opening balance must be a whole number of paise",
+      );
+    }
+    if (input.cashPaise < 0) {
+      return fail(
+        "negative_cash_balance",
+        "રોકડ સિલક ઋણ ન હોઈ શકે",
+        "cash balance cannot be negative",
       );
     }
 
@@ -696,7 +703,9 @@ export class AccountsService implements BooksApi {
         closingPaise: closingOf(row.headCode, row.closingPaise),
       })),
       totalClosingPaise: statement.totals.closingPaise - [...charged.values()].reduce((a, b) => a + b, 0),
-      blocking: validate(book).issues.filter((issue) => issue.severity === "error"),
+      blocking: validate(book).issues.filter(
+        (issue) => issue.severity === "error" && issue.code !== "bank_overdrawn",
+      ),
     };
   }
 
@@ -765,11 +774,11 @@ export class AccountsService implements BooksApi {
 
     const openings = input.openings ?? {};
     for (const [headId, paise] of Object.entries(openings)) {
-      if (!Number.isInteger(paise) || paise < 0) {
+      if (!Number.isInteger(paise)) {
         return fail(
-          "negative_opening_balance",
-          "ઉઘડતી સિલક ઋણ ન હોઈ શકે",
-          `opening balance for grant head ${headId} must be a whole number of paise, not negative`,
+          "invalid_opening_balance",
+          "ઉઘડતી સિલક પૂર્ણાંક પૈસા હોવી જોઈએ",
+          `opening balance for grant head ${headId} must be a whole number of paise`,
         );
       }
     }

@@ -32,8 +32,9 @@ const BUILT = path.join(ROOT, "out", "renderer");
 const PREVIEW = path.join(ROOT, ".preview");
 const PORT = Number(process.env["PREVIEW_PORT"] ?? 8801);
 
+const isWin = process.platform === "win32";
 console.log("building the renderer…");
-execFileSync("npx", ["electron-vite", "build"], { cwd: ROOT, stdio: "ignore" });
+execFileSync(isWin ? "npx.cmd" : "npx", ["electron-vite", "build"], { cwd: ROOT, stdio: "ignore", shell: isWin });
 if (!existsSync(BUILT)) throw new Error(`no build at ${BUILT}`);
 
 // This script runs under Node and reads the database, so better-sqlite3 has to
@@ -43,6 +44,7 @@ console.log("switching better-sqlite3 to the Node build…");
 execFileSync("node", [path.join(ROOT, "scripts", "native-abi.mjs"), "node"], {
   cwd: ROOT,
   stdio: "ignore",
+  shell: isWin,
 });
 
 console.log("reading the year from the database…");

@@ -54,7 +54,9 @@ const wanted = {
 };
 
 function run(command, args, options = {}) {
-  execFileSync(command, args, { stdio: "inherit", cwd: ROOT, ...options });
+  const isWin = process.platform === "win32";
+  const cmd = isWin && command === "npx" ? "npx.cmd" : command;
+  execFileSync(cmd, args, { stdio: "inherit", cwd: ROOT, shell: isWin, ...options });
 }
 
 /**
@@ -89,6 +91,20 @@ function compile() {
 }
 
 let cached = cachedBinaryPath(wanted);
+if (!existsSync(cached)) {
+  if (target === "node" && existsSync(BINARY)) {
+    try {
+      const Database = (await import("better-sqlite3")).default;
+      new Database(":memory:").close();
+      mkdirSync(CACHE_DIR, { recursive: true });
+      copyFileSync(BINARY, cached);
+      console.log(`cached current Node binary (${statSync(cached).size} bytes)`);
+    } catch {
+      // not usable by current runtime
+    }
+  }
+}
+
 if (!existsSync(cached)) {
   try {
     cached = await fetchPrebuild(wanted);

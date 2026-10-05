@@ -306,12 +306,17 @@ describe("changing next year's openings while closing", () => {
     const preview = await books.getYearEndPreview();
     const changed = preview.rows.find((row) => row.headCode === "SWACHHATA")!;
 
-    const refused = await books.closeYear({ nextLabel: "2028-29", openings: { [changed.grantHeadId]: -5 } });
-    expect(refused.ok).toBe(false);
+    // Non-integer paise is rejected
+    const nonInteger = await books.closeYear({
+      nextLabel: "2028-29",
+      openings: { [changed.grantHeadId]: 1.5 as unknown as number },
+    });
+    expect(nonInteger.ok).toBe(false);
 
+    // Negative and zero opening balances are allowed when carried or typed
     const result = await books.closeYear({
       nextLabel: "2028-29",
-      openings: { [changed.grantHeadId]: rupeesToPaise(1500) },
+      openings: { [changed.grantHeadId]: -500 },
     });
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
@@ -320,7 +325,7 @@ describe("changing next year's openings while closing", () => {
     for (const opening of openings) {
       const closing = preview.rows.find((row) => row.headCode === opening.headCode)!;
       expect(opening.bankPaise, opening.headCode).toBe(
-        opening.headCode === "SWACHHATA" ? rupeesToPaise(1500) : closing.closingPaise,
+        opening.headCode === "SWACHHATA" ? -500 : closing.closingPaise,
       );
     }
   });
