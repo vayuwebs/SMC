@@ -187,10 +187,18 @@ export type Orientation = (typeof ORIENTATIONS)[number];
 export const MIN_SCALE_PCT = 25;
 export const MAX_SCALE_PCT = 200;
 
+/** The widest a page margin may be, and the furthest a header or footer may sit from the edge. */
+export const MAX_MARGIN_MM = 50;
+export const MAX_HEADER_MM = 30;
+
 /**
- * How a report goes onto paper: which paper, which way round, the margin and
- * the zoom. Every field is optional; what is left out is the report's own
- * default (`DEFAULT_PAGE`), so a report nobody has touched prints as it always did.
+ * How a report goes onto paper: which paper, which way round, the margins and
+ * the zoom - what Excel's Page Setup offers. Every field is optional; what is
+ * left out is the report's own default (`DEFAULT_PAGE`), so a report nobody has
+ * touched prints as it always did.
+ *
+ * Margins are kept the way `cleanPageSetup` writes them: one `marginMm` when
+ * all four edges are the same, the four edges when they differ.
  */
 export const pageSetupSchema = z
   .object({
@@ -198,8 +206,22 @@ export const pageSetupSchema = z
     orientation: z.enum(ORIENTATIONS).optional(),
     /** 100 prints at full size; 80 fits more on the sheet, smaller. */
     scalePct: z.number().int().min(MIN_SCALE_PCT).max(MAX_SCALE_PCT).optional(),
-    /** The same margin on all four edges. */
-    marginMm: z.number().min(0).max(30).optional(),
+    /** The same margin on all four edges. An edge of its own (below) wins. */
+    marginMm: z.number().min(0).max(MAX_MARGIN_MM).optional(),
+    marginTopMm: z.number().min(0).max(MAX_MARGIN_MM).optional(),
+    marginRightMm: z.number().min(0).max(MAX_MARGIN_MM).optional(),
+    marginBottomMm: z.number().min(0).max(MAX_MARGIN_MM).optional(),
+    marginLeftMm: z.number().min(0).max(MAX_MARGIN_MM).optional(),
+    /**
+     * Excel's header and footer margins: how far from the paper's edge its
+     * page header and footer print. The forms carry their headings inside the
+     * sheet, so only the Excel export uses them.
+     */
+    headerMm: z.number().min(0).max(MAX_HEADER_MM).optional(),
+    footerMm: z.number().min(0).max(MAX_HEADER_MM).optional(),
+    /** Excel's "Center on page": the print centred between the margins. */
+    centerHorizontally: z.boolean().optional(),
+    centerVertically: z.boolean().optional(),
   })
   .strict();
 
@@ -537,7 +559,10 @@ export const PAPER_MM = { short: 215, long: 345 } as const;
  * on Indian Legal. The annexure 10 and the rojmel print with 5mm margins, as
  * the client's own workbook does to get its columns across at full size.
  */
-export const DEFAULT_PAGE: Record<PrintableReportId, Required<Omit<PageSetup, "scalePct">>> = {
+export const DEFAULT_PAGE: Record<
+  PrintableReportId,
+  Required<Pick<PageSetup, "paper" | "orientation" | "marginMm">>
+> = {
   rojmel: { paper: "legal-in", orientation: "landscape", marginMm: 5 },
   khatavahi: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   grantRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
@@ -556,11 +581,88 @@ export const LANDSCAPE_REPORTS: ReadonlySet<PrintableReportId> = new Set<Printab
   ),
 );
 
+/** The four page margins, in mm. */
+export interface PageMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const MARGIN_EDGES = ["top", "right", "bottom", "left"] as const;
+export type MarginEdge = (typeof MARGIN_EDGES)[number];
+
+const EDGE_FIELD = {
+  top: "marginTopMm",
+  right: "marginRightMm",
+  bottom: "marginBottomMm",
+  left: "marginLeftMm",
+} as const satisfies Record<MarginEdge, keyof PageSetup>;
+
+/** Margins, header and footer: what Excel's "Margins" button sets in one go. */
+export interface MarginSet extends PageMargins {
+  header: number;
+  footer: number;
+}
+
+/** Inches to mm. (Not round3: that is declared further down, after this runs.) */
+const inches = (value: number): number => Math.round(value * 25.4 * 1000) / 1000;
+
+/**
+ * Excel's three margin presets, with Excel's own figures (in inches there).
+ * The report's own default margins are offered beside them.
+ */
+export const MARGIN_PRESETS = [
+  {
+    id: "normal",
+    margins: { top: inches(0.75), bottom: inches(0.75), left: inches(0.7), right: inches(0.7), header: inches(0.3), footer: inches(0.3) },
+  },
+  {
+    id: "wide",
+    margins: { top: inches(1), bottom: inches(1), left: inches(1), right: inches(1), header: inches(0.5), footer: inches(0.5) },
+  },
+  {
+    id: "narrow",
+    margins: { top: inches(0.75), bottom: inches(0.75), left: inches(0.25), right: inches(0.25), header: inches(0.3), footer: inches(0.3) },
+  },
+] as const satisfies readonly { id: string; margins: MarginSet }[];
+
+export type MarginPresetId = (typeof MARGIN_PRESETS)[number]["id"];
+
+/** The page setup that gives these margins (to be merged over the current one). */
+export function marginsPatch(margins: MarginSet): PageSetup {
+  return {
+    marginTopMm: margins.top,
+    marginRightMm: margins.right,
+    marginBottomMm: margins.bottom,
+    marginLeftMm: margins.left,
+    headerMm: margins.header,
+    footerMm: margins.footer,
+  };
+}
+
+/** The report's own default margins: its edges, and no header or footer. */
+export function defaultMargins(report: PrintableReportId): MarginSet {
+  const edge = DEFAULT_PAGE[report].marginMm;
+  return { top: edge, right: edge, bottom: edge, left: edge, header: 0, footer: 0 };
+}
+
+/** True when two margin sets print the same (to a hundredth of a millimetre). */
+export function sameMargins(a: MarginSet, b: MarginSet): boolean {
+  return (["top", "right", "bottom", "left", "header", "footer"] as const).every(
+    (key) => Math.abs(a[key] - b[key]) < 0.01,
+  );
+}
+
 /** A report's page setup worked out: what the stylesheet, the PDF and Excel print with. */
 export interface ResolvedPage {
   paper: PaperId;
   landscape: boolean;
-  marginMm: number;
+  margins: PageMargins;
+  headerMm: number;
+  footerMm: number;
+  centerHorizontally: boolean;
+  centerVertically: boolean;
   /** 1 is full size. */
   scale: number;
   /** The sheet as it lies: width and height in mm. */
@@ -579,25 +681,74 @@ export function paperOf(id: PaperId): (typeof PAPER_SIZES)[number] {
   return PAPER_SIZES.find((paper) => paper.id === id) ?? PAPER_SIZES[0];
 }
 
+function marginsOf(report: PrintableReportId, page: PageSetup | undefined): PageMargins {
+  const all = page?.marginMm ?? DEFAULT_PAGE[report].marginMm;
+  return {
+    top: page?.marginTopMm ?? all,
+    right: page?.marginRightMm ?? all,
+    bottom: page?.marginBottomMm ?? all,
+    left: page?.marginLeftMm ?? all,
+  };
+}
+
 export function resolvePage(report: PrintableReportId, page: PageSetup | undefined): ResolvedPage {
   const base = DEFAULT_PAGE[report];
   const paperId = page?.paper ?? base.paper;
   const paper = paperOf(paperId);
   const landscape = (page?.orientation ?? base.orientation) === "landscape";
-  const marginMm = page?.marginMm ?? base.marginMm;
+  const margins = marginsOf(report, page);
   const scale = (page?.scalePct ?? 100) / 100;
   const paperWidthMm = landscape ? paper.longMm : paper.shortMm;
   const paperHeightMm = landscape ? paper.shortMm : paper.longMm;
   return {
     paper: paperId,
     landscape,
-    marginMm,
+    margins,
+    headerMm: page?.headerMm ?? 0,
+    footerMm: page?.footerMm ?? 0,
+    centerHorizontally: page?.centerHorizontally ?? false,
+    centerVertically: page?.centerVertically ?? false,
     scale,
     paperWidthMm,
     paperHeightMm,
-    contentWidthMm: round3(Math.max(10, paperWidthMm - 2 * marginMm) / scale),
-    contentHeightMm: round3(Math.max(10, paperHeightMm - 2 * marginMm) / scale),
+    contentWidthMm: round3(Math.max(10, paperWidthMm - margins.left - margins.right) / scale),
+    contentHeightMm: round3(Math.max(10, paperHeightMm - margins.top - margins.bottom) / scale),
   };
+}
+
+/** The margins, header and footer a page setup prints with. */
+export function resolvedMargins(page: ResolvedPage): MarginSet {
+  return { ...page.margins, header: page.headerMm, footer: page.footerMm };
+}
+
+/**
+ * Only what differs from the report's default is kept, so "back to default"
+ * really is the default - and a report nobody changed stores nothing. Four
+ * equal margins are kept as one `marginMm`.
+ */
+export function cleanPageSetup(report: PrintableReportId, page: PageSetup): PageSetup {
+  const base = DEFAULT_PAGE[report];
+  const out: PageSetup = {};
+  if (page.paper !== undefined && page.paper !== base.paper) out.paper = page.paper;
+  if (page.orientation !== undefined && page.orientation !== base.orientation) out.orientation = page.orientation;
+  if (page.scalePct !== undefined && page.scalePct !== 100) out.scalePct = page.scalePct;
+  const margins = marginsOf(report, page);
+  const edges = MARGIN_EDGES.map((edge) => round3(margins[edge]));
+  if (edges.every((edge) => edge === edges[0])) {
+    if (edges[0] !== base.marginMm) out.marginMm = edges[0]!;
+  } else {
+    MARGIN_EDGES.forEach((edge, index) => (out[EDGE_FIELD[edge]] = edges[index]!));
+  }
+  if (page.headerMm !== undefined && page.headerMm !== 0) out.headerMm = round3(page.headerMm);
+  if (page.footerMm !== undefined && page.footerMm !== 0) out.footerMm = round3(page.footerMm);
+  if (page.centerHorizontally) out.centerHorizontally = true;
+  if (page.centerVertically) out.centerVertically = true;
+  return out;
+}
+
+/** The same margin on all four edges, replacing any edge set on its own. */
+export function uniformMarginPatch(marginMm: number): PageSetup {
+  return { marginTopMm: marginMm, marginRightMm: marginMm, marginBottomMm: marginMm, marginLeftMm: marginMm };
 }
 
 /**

@@ -27,6 +27,7 @@ import { ReportLayoutContext, layoutFontsReady, type ReportLayoutValue } from ".
 import {
   columnWidths,
   layoutCss,
+  MARGIN_EDGES,
   resolvePage,
   type ReportLayout,
 } from "../../shared/report-layout.js";
@@ -434,13 +435,18 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
     "--sheet-width": `${page.contentWidthMm}mm`,
     "--sheet-height": `${page.contentHeightMm}mm`,
     "--sheet-zoom": String(page.scale),
-    "--sheet-margin": `${Math.round((page.marginMm / page.scale) * 100) / 100}mm`,
+    // The margins in the sheet's own (zoomed) mm, to draw the paper round it on screen.
+    ...Object.fromEntries(
+      MARGIN_EDGES.map((edge) => [`--sheet-m-${edge}`, `${Math.round((page.margins[edge] / page.scale) * 100) / 100}mm`]),
+    ),
   } as CSSProperties;
+  const { top, right, bottom, left } = page.margins;
+  const centred = `${page.centerHorizontally ? " center-x" : ""}${page.centerVertically ? " center-y" : ""}`;
 
   return (
     <PrintLayoutGate.Provider value={gate.gate}>
       <ReportLayoutContext.Provider value={layoutValue}>
-        <div id={LAYOUT_ROOT_ID} className="print-root" style={sheetVars}>
+        <div id={LAYOUT_ROOT_ID} className={`print-root${centred}`} style={sheetVars}>
           {/*
           The page box, set per report from its page setup.
           `printToPDF` is called with preferCSSPageSize, so this rule - not the
@@ -448,7 +454,7 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
           orientation. A single global `@page` would print all the landscape
           forms portrait, with their tables cropped down the right-hand side.
           */}
-          <style>{`@page { size: ${page.paperWidthMm}mm ${page.paperHeightMm}mm; margin: ${page.marginMm}mm; }`}</style>
+          <style>{`@page { size: ${page.paperWidthMm}mm ${page.paperHeightMm}mm; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }`}</style>
           {/* The school's layout, then - on the Reports screen - the editor's marks. */}
           <style>{layoutCss(report, layoutValue.layout, `#${LAYOUT_ROOT_ID}`)}</style>
           {editorCss && <style>{editorCss}</style>}

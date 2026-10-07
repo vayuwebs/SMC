@@ -27,6 +27,14 @@ import {
   parseTargetKey,
   reportLayoutSchema,
   resolvePage,
+  cleanPageSetup,
+  defaultMargins,
+  MARGIN_PRESETS,
+  marginsPatch,
+  pageSetupSchema,
+  resolvedMargins,
+  sameMargins,
+  uniformMarginPatch,
   textOf,
   setColumnWidth,
   styleAt,
@@ -296,7 +304,11 @@ describe("paper", () => {
       paper: "legal-in",
       paperWidthMm: 345,
       paperHeightMm: 215,
-      marginMm: 5,
+      margins: { top: 5, right: 5, bottom: 5, left: 5 },
+      headerMm: 0,
+      footerMm: 0,
+      centerHorizontally: false,
+      centerVertically: false,
     });
     expect(resolvePage("vouchers", undefined).paper).toBe("a4");
     expect(resolvePage("patrakD", undefined).paper).toBe("a4");
@@ -309,6 +321,49 @@ describe("paper", () => {
     expect(page.contentWidthMm).toBeCloseTo((297 - 20) / 0.5, 6);
     expect(page.contentHeightMm).toBeCloseTo((210 - 20) / 0.5, 6);
     expect(tableWidthMm("annexure9", { ...emptyLayout(), page: { orientation: "landscape" } })).toBeCloseTo(325, 6);
+  });
+
+  it("takes each margin on its own, as Excel's Page Setup does", () => {
+    const page = resolvePage("annexure9", {
+      marginMm: 10,
+      marginTopMm: 25,
+      marginLeftMm: 8.4,
+      headerMm: 7.6,
+      centerVertically: true,
+    });
+    expect(page.margins).toEqual({ top: 25, right: 10, bottom: 10, left: 8.4 });
+    expect(page.headerMm).toBe(7.6);
+    expect(page.centerVertically).toBe(true);
+    expect(page.contentWidthMm).toBeCloseTo(215 - 10 - 8.4, 6);
+    expect(page.contentHeightMm).toBeCloseTo(345 - 25 - 10, 6);
+  });
+
+  it("stores only what differs from the form's default, four equal margins as one", () => {
+    expect(cleanPageSetup("rojmel", { ...uniformMarginPatch(5) })).toEqual({});
+    expect(cleanPageSetup("rojmel", { ...uniformMarginPatch(12), marginMm: 3 })).toEqual({ marginMm: 12 });
+    expect(cleanPageSetup("rojmel", { marginMm: 5, marginTopMm: 20 })).toEqual({
+      marginTopMm: 20,
+      marginRightMm: 5,
+      marginBottomMm: 5,
+      marginLeftMm: 5,
+    });
+    expect(
+      cleanPageSetup("rojmel", { headerMm: 0, footerMm: 4, centerHorizontally: true, centerVertically: false }),
+    ).toEqual({ footerMm: 4, centerHorizontally: true });
+    // Back to the default margins clears the edges stored before.
+    const wide = cleanPageSetup("annexure9", marginsPatch(MARGIN_PRESETS[1].margins));
+    expect(cleanPageSetup("annexure9", { ...wide, ...marginsPatch(defaultMargins("annexure9")) })).toEqual({});
+    // What it writes is what the books accept.
+    expect(() => pageSetupSchema.parse(wide)).not.toThrow();
+  });
+
+  it("offers Excel's Normal, Wide and Narrow margins", () => {
+    const [normal, wide, narrow] = MARGIN_PRESETS;
+    expect(normal.margins).toEqual({ top: 19.05, bottom: 19.05, left: 17.78, right: 17.78, header: 7.62, footer: 7.62 });
+    expect(wide.margins.left).toBe(25.4);
+    expect(narrow.margins.left).toBe(6.35);
+    const page = resolvePage("rojmel", marginsPatch(narrow.margins));
+    expect(sameMargins(resolvedMargins(page), narrow.margins)).toBe(true);
   });
 
   it("fits a form onto a smaller paper", () => {

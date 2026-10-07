@@ -16,6 +16,8 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import path from "node:path";
 import { AccountsService } from "../../src/server/accounts-service.js";
 import { buildWorkbook, defaultExcelName, workbookBytes } from "../../src/server/excel.js";
+import { emptyLayout } from "../../src/shared/report-layout.js";
+import type { PrintableReportId } from "../../src/shared/api.js";
 
 const DB = path.join(process.cwd(), "prisma", "dev.db");
 
@@ -146,6 +148,48 @@ describe("one report at a time", () => {
     }
     expect(workbook.getWorksheet("પત્રક D")?.pageSetup.orientation).toBe("landscape");
     expect(workbook.getWorksheet("વાઉચર")?.pageSetup.orientation).toBe("portrait");
+  });
+
+  it("carries each margin, the header and footer and 'Center on page' into Excel", async () => {
+    // The books as they are, but annexure 9 set up as in Excel's Page Setup.
+    const books = new Proxy(accounts, {
+      get(target, key) {
+        if (key === "getReportLayout") {
+          return async (report: PrintableReportId) =>
+            report === "annexure9"
+              ? {
+                  ...emptyLayout(),
+                  page: {
+                    marginTopMm: 25.4,
+                    marginRightMm: 6.35,
+                    marginBottomMm: 19.05,
+                    marginLeftMm: 12.7,
+                    headerMm: 7.62,
+                    footerMm: 5.08,
+                    centerHorizontally: true,
+                    centerVertically: true,
+                  },
+                }
+              : target.getReportLayout(report);
+        }
+        const value = Reflect.get(target, key) as unknown;
+        return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    const bytes = await workbookBytes(await buildWorkbook(books, "annexure9"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
+    const setup = workbook.worksheets[0]!.pageSetup;
+    const margins = setup.margins!;
+    expect(margins.top).toBeCloseTo(1, 6);
+    expect(margins.right).toBeCloseTo(0.25, 6);
+    expect(margins.left).toBeCloseTo(0.5, 6);
+    // Portrait on Indian Legal: the bottom keeps the 10.6mm US Legal has spare.
+    expect(margins.bottom).toBeCloseTo(0.75 + (355.6 - 345) / 25.4, 6);
+    expect(margins.header).toBeCloseTo(0.3, 6);
+    expect(margins.footer).toBeCloseTo(0.2, 6);
+    expect(setup.horizontalCentered).toBe(true);
+    expect(setup.verticalCentered).toBe(true);
   });
 });
 

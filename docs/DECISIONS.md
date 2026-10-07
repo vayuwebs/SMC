@@ -199,6 +199,19 @@ preview, the PDF (`@page` from `PrintRoot`, and `printToPDF`'s own options),
 the new Print button (Electron's `webContents.print`, the system print dialog)
 and the Excel sheet's page setup.
 
+**Excel-style margins (October 2026).** At the client's request (screenshots
+of Excel's Margins menu and Page Setup dialog) the single margin became
+Excel's: a **Margins** drop-down (the form's own default, the last custom
+setting, Normal, Wide, Narrow - Excel's figures, converted to mm) and a
+**Custom Margins…** dialog with top, bottom, left, right, header, footer and
+"Center on page" horizontally / vertically, shown in mm or inches
+(`components/PageMargins.tsx`). Four equal margins are still stored as one
+`marginMm`, so older layouts read unchanged (`cleanPageSetup`). Header and
+footer only reach the Excel export: the forms print their headings inside the
+sheet and the PDF has no running header. Centring is `horizontalCentered` /
+`verticalCentered` in Excel and a flex rule on the sheet in the PDF. The unit
+and the last custom setting are per PC (localStorage), like Excel's.
+
 The zoom is CSS `zoom` on each sheet: a sheet at 80% is laid out 1/0.8 as large
 and zoomed back onto the paper, on screen and in print alike, so the preview
 still is the artefact. Chromium reports measured boxes zoomed and CSS sizes not,
@@ -543,6 +556,18 @@ client's book does. Which four share a sheet and which sits on top is chosen by
 length (`shared/ledger-layout.ts`); the four always stay on their sheet, and a
 grid taller than the sheet is zoomed down until it fits. The Excel export still
 gives each account its own sheet.
+
+**The ledger sheet is symmetrical (October 2026).** At the client's request the
+four accounts stand as a 2 x 2 grid rather than two independent columns, whose
+lower accounts started at different heights: the two longer accounts make the
+top row, the two shorter the bottom one, and both accounts of a row are drawn
+the same height with blank writing rows (whole rows first, then the last few
+pixels shared among them), so they start and end on the same line. The two
+rows share the sheet as equal halves whenever both fit in half
+(`ledgerRowHeights`), otherwise the taller keeps what it needs and the other
+takes the rest. Every ledger sheet uses the same zoom - the smallest any of
+them needs - so the text is the same size on every page, and a last sheet with
+one or two accounts looks like the top half of the others.
 
 **A rojmel sheet's spare height goes into its rows**, sheet by sheet, not into
 the gap between its blocks, which keeps its small fixed size. A row whose

@@ -365,6 +365,22 @@ export interface Strings {
   printDiscardConfirm: string;
   printPaperSizeMm: (width: number, height: number) => string;
   printRememberNote: string;
+  marginsButton: string;
+  marginsTitle: string;
+  marginsDefault: string;
+  marginsLastCustom: string;
+  marginsPreset: { normal: string; wide: string; narrow: string };
+  marginsCustom: string;
+  marginsCurrent: string;
+  marginEdge: { top: string; bottom: string; left: string; right: string; header: string; footer: string };
+  marginsCenterOnPage: string;
+  marginsHorizontally: string;
+  marginsVertically: string;
+  marginsUnit: string;
+  unitInch: string;
+  marginsOk: string;
+  marginsHeaderNote: string;
+  marginsTooBig: string;
   layoutExcelNote: string;
   layoutUnsavedExport: string;
   mm: string;
@@ -941,6 +957,22 @@ export const gu: Strings = {
   printDiscardConfirm: "પ્રિન્ટ સેટિંગના ફેરફાર સાચવ્યા નથી. તેને રદ કરવા છે?",
   printPaperSizeMm: (width, height) => `${width} × ${height} મિમી`,
   printRememberNote: "દરેક પત્રકનું સેટિંગ અલગ યાદ રહે છે, અને પેન ડ્રાઈવ સાથે બીજા કમ્પ્યુટર પર પણ જાય છે.",
+  marginsButton: "માર્જિન",
+  marginsTitle: "પેજ સેટઅપ – માર્જિન",
+  marginsDefault: "આ પત્રકનું મૂળ",
+  marginsLastCustom: "છેલ્લું પોતાનું સેટિંગ",
+  marginsPreset: { normal: "સામાન્ય (Normal)", wide: "પહોળું (Wide)", narrow: "સાંકડું (Narrow)" },
+  marginsCustom: "પોતાના માર્જિન…",
+  marginsCurrent: "હાલનું (પોતાનું)",
+  marginEdge: { top: "ઉપર", bottom: "નીચે", left: "ડાબે", right: "જમણે", header: "હેડર", footer: "ફૂટર" },
+  marginsCenterOnPage: "પાનાની વચ્ચે રાખો",
+  marginsHorizontally: "આડું (ડાબે-જમણે વચ્ચે)",
+  marginsVertically: "ઊભું (ઉપર-નીચે વચ્ચે)",
+  marginsUnit: "માપ",
+  unitInch: "ઇંચ",
+  marginsOk: "બરાબર (OK)",
+  marginsHeaderNote: "હેડર અને ફૂટર ફક્ત Excel માં વપરાય છે; PDF માં પત્રકનું મથાળું પાનાની અંદર જ છપાય છે.",
+  marginsTooBig: "માર્જિન એટલા મોટા છે કે છાપવા માટે જગ્યા રહેતી નથી.",
   layoutRojmelNote:
     "રોજમેળના દરેક પાનામાં ૨૬ લાઈન જ આવે છે (ખાતાવહીમાં પાના નંબર છપાય છે), એટલે મોટા અક્ષર કે વધારે જગ્યાથી પાનું કાગળની બહાર જઈ શકે.",
   layoutExcelNote:
@@ -1528,6 +1560,22 @@ export const en: Strings = {
   printDiscardConfirm: "The print settings have not been saved. Discard the changes?",
   printPaperSizeMm: (width, height) => `${width} × ${height} mm`,
   printRememberNote: "Each report remembers its own settings, and they travel to other PCs on the pen drive.",
+  marginsButton: "Margins",
+  marginsTitle: "Page Setup – Margins",
+  marginsDefault: "This form's default",
+  marginsLastCustom: "Last custom setting",
+  marginsPreset: { normal: "Normal", wide: "Wide", narrow: "Narrow" },
+  marginsCustom: "Custom Margins…",
+  marginsCurrent: "Current (custom)",
+  marginEdge: { top: "Top", bottom: "Bottom", left: "Left", right: "Right", header: "Header", footer: "Footer" },
+  marginsCenterOnPage: "Center on page",
+  marginsHorizontally: "Horizontally",
+  marginsVertically: "Vertically",
+  marginsUnit: "Unit",
+  unitInch: "inch",
+  marginsOk: "OK",
+  marginsHeaderNote: "Header and footer are used only in Excel; in the PDF the form's heading prints inside the page.",
+  marginsTooBig: "The margins are so large that no room is left to print.",
   layoutRojmelNote:
     "Every cash-book page holds exactly 26 rows (the ledger prints its page numbers), so larger text or more space can push a page past the paper's edge.",
   layoutExcelNote:

@@ -11,7 +11,6 @@ import type { PrintableReportId } from "../../shared/api.js";
 import {
   BORDER_SIDES,
   BORDER_STYLES,
-  DEFAULT_PAGE,
   LAYOUT_FONTS,
   MAX_SCALE_PCT,
   MIN_SCALE_PCT,
@@ -49,6 +48,7 @@ import { useLanguage, useStrings } from "../i18n/index.js";
 import { LAYOUT_ROOT_ID, PrintRoot, type LayoutCheck } from "../print/PrintRoot.js";
 import { sheetZoom } from "../print/PagedSheets.js";
 import { ColourButton } from "../components/ColourPalette.js";
+import { MarginsMenu } from "../components/PageMargins.js";
 import { cleanPage } from "./PrintDialog.js";
 
 /**
@@ -1022,14 +1022,8 @@ export function LayoutEditor({
           />
         ))}
       </Group>
-      <Group label={t.printMargin}>
-        <MiniStepper
-          label={t.mm}
-          value={page.marginMm}
-          step={1}
-          max={30}
-          onChange={(marginMm) => setPage({ marginMm: marginMm ?? DEFAULT_PAGE[report].marginMm })}
-        />
+      <Group label={t.marginsButton}>
+        <MarginsMenu report={report} setup={draft.page} onChange={setPage} />
       </Group>
       <Group label={t.printScale}>
         <MiniStepper

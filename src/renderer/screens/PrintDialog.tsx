@@ -8,7 +8,9 @@ import {
   MIN_SCALE_PCT,
   ORIENTATIONS,
   PAPER_SIZES,
+  cleanPageSetup,
   fitScalePct,
+  marginsPatch,
   paperOf,
   resolvePage,
   type Orientation,
@@ -18,6 +20,7 @@ import {
 } from "../../shared/report-layout.js";
 import { useLanguage, useStrings, type Strings } from "../i18n/index.js";
 import { PrintRoot, type LayoutCheck } from "../print/PrintRoot.js";
+import { CustomMarginsDialog, chosenMargins, marginChoices } from "../components/PageMargins.js";
 
 /**
  * The print window: the report as it will come out of the printer on the
@@ -61,6 +64,7 @@ export function PrintDialog({
   const [previewSize, setPreviewSize] = useState<PreviewSize>("fit");
   const [frameWidth, setFrameWidth] = useState(0);
   const [changed, setChanged] = useState(false);
+  const [marginDialog, setMarginDialog] = useState(false);
 
   useEffect(() => {
     void api
@@ -83,11 +87,11 @@ export function PrintDialog({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape" && !marginDialog) close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close]);
+  }, [close, marginDialog]);
 
   // The preview: the saved layout, with the page being chosen.
   const previewLayout = useMemo<ReportLayout | null>(
@@ -171,6 +175,8 @@ export function PrintDialog({
     defaults.orientation === "landscape" ? t.printLandscape : t.printPortrait
   } · ${defaults.marginMm} ${t.mm} · 100%`;
   const scalePct = Math.round(resolved.scale * 100);
+  const marginOptions = marginChoices(report, t);
+  const chosenMargin = chosenMargins(report, page, t);
 
   return (
     <div className="print-dialog" role="dialog" aria-modal="true" aria-label={t.printTitle(reportLabel)}>
@@ -274,30 +280,47 @@ export function PrintDialog({
         </div>
 
         <div className="field">
-          <label htmlFor="print-margin">{t.printMargin}</label>
+          <label htmlFor="print-margin">{t.marginsButton}</label>
           <div className="print-scale">
-            <button
-              className="ghost small"
-              aria-label="−"
-              onClick={() => set({ marginMm: Math.max(0, resolved.marginMm - 1) })}
-            >
-              −
-            </button>
-            <NumberBox
+            <select
               id="print-margin"
-              value={resolved.marginMm}
-              min={0}
-              max={30}
-              onChange={(value) => set({ marginMm: value })}
-            />
-            <button
-              className="ghost small"
-              aria-label="+"
-              onClick={() => set({ marginMm: Math.min(30, resolved.marginMm + 1) })}
+              value={chosenMargin ?? "custom"}
+              onChange={(event) => {
+                const choice = marginOptions.find((option) => option.id === event.target.value);
+                if (choice) set(marginsPatch(choice.margins));
+              }}
             >
-              +
+              {marginOptions.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.label}
+                </option>
+              ))}
+              {chosenMargin === null && <option value="custom">{t.marginsCurrent}</option>}
+            </select>
+            <button className="ghost small" onClick={() => setMarginDialog(true)}>
+              {t.marginsCustom}
             </button>
           </div>
+          <p className="layout-hint">
+            {t.marginEdge.top} {resolved.margins.top} · {t.marginEdge.bottom} {resolved.margins.bottom} ·{" "}
+            {t.marginEdge.left} {resolved.margins.left} · {t.marginEdge.right} {resolved.margins.right} {t.mm}
+            {resolved.centerHorizontally || resolved.centerVertically
+              ? ` · ${t.marginsCenterOnPage}: ${[
+                  resolved.centerHorizontally ? t.marginsHorizontally : null,
+                  resolved.centerVertically ? t.marginsVertically : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}`
+              : ""}
+          </p>
+          {marginDialog && (
+            <CustomMarginsDialog
+              report={report}
+              setup={page}
+              onApply={set}
+              onClose={() => setMarginDialog(false)}
+            />
+          )}
         </div>
 
         <p className="layout-hint">{t.printDefaultIs(defaultText)}</p>
@@ -352,19 +375,8 @@ export function PrintDialog({
   );
 }
 
-/**
- * Only what differs from the report's default is kept, so "back to default"
- * really is the default - and a report nobody changed stores nothing.
- */
-export function cleanPage(report: PrintableReportId, page: PageSetup): PageSetup {
-  const base = DEFAULT_PAGE[report];
-  const out: PageSetup = {};
-  if (page.paper !== undefined && page.paper !== base.paper) out.paper = page.paper;
-  if (page.orientation !== undefined && page.orientation !== base.orientation) out.orientation = page.orientation;
-  if (page.scalePct !== undefined && page.scalePct !== 100) out.scalePct = page.scalePct;
-  if (page.marginMm !== undefined && page.marginMm !== base.marginMm) out.marginMm = page.marginMm;
-  return out;
-}
+/** See cleanPageSetup: only what differs from the report's default is kept. */
+export const cleanPage = cleanPageSetup;
 
 function withPage(report: PrintableReportId, layout: ReportLayout, page: PageSetup): ReportLayout {
   const next: ReportLayout = { ...layout };

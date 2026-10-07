@@ -92,13 +92,45 @@
      inset comes from the @page margin. Adding screen-only padding would make
      the preview narrower than the page and hide an overflow that the PDF has. */
   .sheet {
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
-    /* The margin, drawn round the text block. The sheet is zoomed, so the
-       outline is given in its own millimetres (PrintRoot). */
-    outline: var(--sheet-margin, 8mm) solid #fff;
-    outline-offset: 0;
-    margin: 8mm auto 16mm;
+    /* The margins in the sheet's own (zoomed) millimetres (PrintRoot). */
+    --m-top: var(--sheet-m-top, 10mm);
+    --m-right: var(--sheet-m-right, 10mm);
+    --m-bottom: var(--sheet-m-bottom, 10mm);
+    --m-left: var(--sheet-m-left, 10mm);
+    /* The paper: white painted out past the text block by each margin.
+       border-image-outset paints without taking space or counting as
+       overflow, so the "does not fit" check still sees the text block
+       alone (a positioned ::before would count). */
+    border-image: linear-gradient(#fff, #fff) 0 fill / 0 / var(--m-top) var(--m-right) var(--m-bottom) var(--m-left);
+    /* Its shadow: the text block's, grown and moved to roughly the paper's
+       outline - exact when the margins are equal. */
+    --paper-dx: calc((var(--m-right) - var(--m-left)) / 2);
+    --paper-dy: calc((var(--m-bottom) - var(--m-top)) / 2);
+    --paper-spread: calc((var(--m-top) + var(--m-right) + var(--m-bottom) + var(--m-left)) / 4);
+    box-shadow: var(--paper-dx) calc(var(--paper-dy) + 2px) 12px var(--paper-spread) rgba(0, 0, 0, 0.45);
+    /* Room for the margins above and below, and the text block moved across
+       when the left and right margins differ. */
+    margin: calc(var(--m-top) + 6mm) auto calc(var(--m-bottom) + 6mm);
+    translate: calc(-1 * var(--paper-dx)) 0;
   }
+}
+
+/*
+ * Page Setup's "Center on page". The forms' tables already span the text
+ * block, so across it matters for what is narrower; down it moves a short
+ * form to the middle of the paper. `safe` keeps a sheet that is full from
+ * being pushed up past its top margin. The measuring pass (aria-hidden) is
+ * left alone: its heights decide where the sheets break.
+ */
+.print-root.center-x > .sheet:not([aria-hidden]) > * {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.print-root.center-y > .sheet:not([aria-hidden]) {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
 }
 
 @media print {
@@ -607,10 +639,11 @@ table.form.reconciliation tr.grand td {
   margin: 2.5mm 0 0;
 }
 
-/* Four accounts to a landscape sheet, two across and two down
-   (KhatavahiPage.tsx). The gap between the two columns is KHATAVAHI_GAP_MM
-   in shared/report-layout.ts, which the editor's column widths are worked
-   out from. */
+/* Four accounts to a landscape sheet, two rows of two, as a 2 x 2 grid
+   (KhatavahiPage.tsx). The gap between the two side by side is
+   KHATAVAHI_GAP_MM in shared/report-layout.ts, which the editor's column
+   widths are worked out from; the gap between the rows is ROW_GAP_PX in
+   KhatavahiPage.tsx. */
 /* The title at the head of the sheet, the four accounts, and the title again
    at its foot, as the client's book prints it. */
 .khatavahi-sheet {
@@ -624,16 +657,20 @@ table.form.reconciliation tr.grand td {
 
 .khatavahi-grid {
   display: flex;
+  flex-direction: column;
+  gap: 3mm;
+}
+
+.khatavahi-row {
+  display: flex;
   align-items: flex-start;
   gap: 4mm;
 }
 
-.khatavahi-column {
-  flex: 1 1 0;
+/* Each account half the sheet's width - also when it is alone in its row. */
+.khatavahi-row > .khatavahi-account {
+  flex: 0 0 calc((100% - 4mm) / 2);
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3mm;
 }
 
 .account-head {

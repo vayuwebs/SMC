@@ -161,7 +161,8 @@ const MM_PER_INCH = 25.4;
  * nothing is cut.
  */
 function printSetup(worksheet: ExcelJS.Worksheet, page: ResolvedPage, repeatRows?: string): void {
-  const edge = page.marginMm / MM_PER_INCH;
+  const inch = (mm: number): number => mm / MM_PER_INCH;
+  const { margins } = page;
   const spare = page.paper === "legal-in" ? (355.6 - PAPER_MM.long) / MM_PER_INCH : 0;
   const zoomed = page.scale !== 1;
   worksheet.pageSetup = {
@@ -172,13 +173,15 @@ function printSetup(worksheet: ExcelJS.Worksheet, page: ResolvedPage, repeatRows
     fitToPage: !zoomed,
     ...(zoomed ? { scale: Math.round(page.scale * 100) } : { fitToWidth: 1, fitToHeight: 0 }),
     margins: {
-      left: edge,
-      right: page.landscape ? edge + spare : edge,
-      top: edge,
-      bottom: page.landscape ? edge : edge + spare,
-      header: 0,
-      footer: 0,
+      left: inch(margins.left),
+      right: inch(margins.right) + (page.landscape ? spare : 0),
+      top: inch(margins.top),
+      bottom: inch(margins.bottom) + (page.landscape ? 0 : spare),
+      header: inch(page.headerMm),
+      footer: inch(page.footerMm),
     },
+    horizontalCentered: page.centerHorizontally,
+    verticalCentered: page.centerVertically,
     ...(repeatRows ? { printTitlesRow: repeatRows } : {}),
   };
 }
