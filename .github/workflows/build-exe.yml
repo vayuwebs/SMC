@@ -48,6 +48,7 @@ jobs:
         env:
           MAIN_VITE_SUPABASE_URL: ${{ secrets.MAIN_VITE_SUPABASE_URL || 'https://yshlmruzmfmbqpztmagp.supabase.co' }}
           MAIN_VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.MAIN_VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_SWv-5LtzHz-1xIdWsQLpvQ_R5yP-hGz' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run pack:win
 
       - name: Upload Installer Artifact

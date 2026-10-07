@@ -21,8 +21,8 @@
     "test": "vitest run",
     "show:reports": "tsx scripts/show-reports.ts",
     "preview": "electron-vite preview",
-    "pack:win": "prisma generate && npm run rebuild:electron && electron-vite build && node scripts/win-native.mjs && electron-builder --win",
-    "pack:linux": "prisma generate && electron-vite build && electron-builder --linux",
+    "pack:win": "prisma generate && npm run rebuild:electron && electron-vite build && node scripts/win-native.mjs && electron-builder --win --publish never",
+    "pack:linux": "prisma generate && electron-vite build && electron-builder --linux --publish never",
     "rebuild:node": "node scripts/native-abi.mjs node",
     "rebuild:electron": "node scripts/native-abi.mjs electron",
     "rebuild:win": "node scripts/win-native.mjs",
@@ -81,6 +81,7 @@
   "build": {
     "appId": "in.gov.gujarat.smc.accounts",
     "productName": "SMC Accounts",
+    "publish": null,
     "directories": {
       "output": "release",
       "buildResources": "build"
