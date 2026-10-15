@@ -175,8 +175,10 @@ describe("bank charges", () => {
     const ledgers = await accounts.getLedgers();
     const row = ledgers.find((each) => each.headCode === "SWACHHATA")!.rows.find((each) => each.descriptionGu === "બેન્ક ચાર્જ");
     expect(row?.debitPaise).toBe(1770);
-    expect(row?.rojmelPage).not.toBeNull();
-    expect(await accounts.getAnnexure10()).toEqual(annexureBefore);
+    expect(row?.rojmelPage).toBeNull();
+    const a10After = await accounts.getAnnexure10();
+    expect(a10After.totals.spentPaise).toBe(annexureBefore.totals.spentPaise + 1770);
+    expect(a10After.totals.closingPaise).toBe(annexureBefore.totals.closingPaise - 1770);
 
     const after = await accounts.getYearEndPreview();
     const closing = (preview: typeof after): number => preview.rows.find((each) => each.headCode === "SWACHHATA")!.closingPaise;
@@ -285,13 +287,25 @@ describe("closing the year", () => {
     expect((await accounts.getAnnexure10()).totals.closingPaise).toBe(rupeesToPaise(2154));
   });
 
-  it("switches which year is open", async () => {
+  it("switches which year is open and closes the other years", async () => {
     const years = await accounts.listFinancialYears();
     const next = years.find((year) => year.label === "2027-28")!;
 
     const opened = await accounts.openYear(next.id);
     expect(opened.ok).toBe(true);
-    if (opened.ok) expect(opened.data.label).toBe("2027-28");
+    if (opened.ok) {
+      expect(opened.data.label).toBe("2027-28");
+      expect(opened.data.status).toBe("OPEN");
+    }
+
+    const allYears = await accounts.listFinancialYears();
+    for (const y of allYears) {
+      if (y.id === next.id) {
+        expect(y.status).toBe("OPEN");
+      } else {
+        expect(y.status).toBe("CLOSED");
+      }
+    }
 
     const missing = await accounts.openYear(9999);
     expect(missing.ok).toBe(false);
@@ -328,5 +342,78 @@ describe("changing next year's openings while closing", () => {
         opening.headCode === "SWACHHATA" ? -500 : closing.closingPaise,
       );
     }
+  });
+});
+
+describe("reopening a closed year", () => {
+  it("reopens a closed year and permits writes again, ensuring only 1 year is open", async () => {
+    // yearId (2026-27) was closed when 2027-28 was created.
+    const closedYear = await prisma.financialYear.findUniqueOrThrow({ where: { id: yearId } });
+    expect(closedYear.status).toBe("CLOSED");
+
+    // Reopening succeeds
+    const reopened = await accounts.reopenYear(yearId);
+    expect(reopened.ok).toBe(true);
+    if (reopened.ok) {
+      expect(reopened.data.id).toBe(yearId);
+      expect(reopened.data.status).toBe("OPEN");
+    }
+
+    // Now yearId is OPEN, and all other years are CLOSED
+    const inDb = await prisma.financialYear.findUniqueOrThrow({ where: { id: yearId } });
+    expect(inDb.status).toBe("OPEN");
+
+    const others = await prisma.financialYear.findMany({ where: { id: { not: yearId } } });
+    for (const other of others) {
+      expect(other.status).toBe("CLOSED");
+    }
+
+    // Writes are now allowed again!
+    const head = (await accounts.listGrantHeads())[0]!;
+    const writeResult = await accounts.saveOpeningBalance({
+      grantHeadId: head.id,
+      bankPaise: rupeesToPaise(500),
+      cashPaise: 0,
+    });
+    expect(writeResult.ok).toBe(true);
+
+    // Refuses unknown year
+    const unknown = await accounts.reopenYear(9999);
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.issues[0]!.code).toBe("unknown_year");
+  });
+});
+
+describe("deleting a financial year", () => {
+  it("deletes a year and cascades its records, but refuses to delete the only year", async () => {
+    // Currently there are 2026-27 and 2027-28 (and 2028-29 from the previous test)
+    const yearsBefore = await accounts.listFinancialYears();
+    expect(yearsBefore.length).toBeGreaterThan(1);
+
+    const yearToDelete = yearsBefore.find((y) => y.label === "2028-29")!;
+
+    // Deleting yearToDelete succeeds
+    const deleteResult = await accounts.deleteYear({ yearId: yearToDelete.id });
+    expect(deleteResult.ok).toBe(true);
+    if (deleteResult.ok) expect(deleteResult.data.deletedYearId).toBe(yearToDelete.id);
+
+    // Year is gone from DB
+    expect(await prisma.financialYear.findUnique({ where: { id: yearToDelete.id } })).toBeNull();
+
+    // Delete other years until only 1 remains
+    const remaining = await accounts.listFinancialYears();
+    for (let i = 0; i < remaining.length - 1; i++) {
+      const res = await accounts.deleteYear({ yearId: remaining[i]!.id });
+      expect(res.ok).toBe(true);
+    }
+
+    // Now exactly 1 year remains
+    const lastYear = await accounts.listFinancialYears();
+    expect(lastYear.length).toBe(1);
+
+    // Refuses to delete the last remaining year
+    const failDelete = await accounts.deleteYear({ yearId: lastYear[0]!.id });
+    expect(failDelete.ok).toBe(false);
+    if (!failDelete.ok) expect(failDelete.issues[0]!.code).toBe("cannot_delete_only_year");
   });
 });

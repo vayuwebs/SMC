@@ -182,7 +182,15 @@ export interface LegacyImportSelection {
   /** Only the rows listed here are imported, each with its head decided. */
   receipts: { sourceRow: number; grantHeadId: number }[];
   bills: { sourceRow: number; grantHeadId: number }[];
-  cheques: { sourceRow: number; type: ChequeType; grantHeadId: number | null }[];
+  /**
+   * `returnSplit` is how much of a grant return goes back from each head; it must
+   * add up to the cheque. Empty for the other types, which take theirs from bills.
+   */
+  cheques: {
+    sourceRow: number;
+    type: ChequeType;
+    returnSplit: { grantHeadId: number; amountPaise: number }[];
+  }[];
 }
 
 export interface LegacyImportResultDto {
@@ -595,6 +603,10 @@ export interface BooksApi {
   closeYear(input: CloseYearInput): Promise<ApiResult<FinancialYearDto>>;
   /** Make another year the one every screen shows. Printing an old year needs it. */
   openYear(id: number): Promise<ApiResult<FinancialYearDto>>;
+  /** Reopen a closed financial year so entries can be edited again. */
+  reopenYear(id: number): Promise<ApiResult<FinancialYearDto>>;
+  /** Delete a financial year, permanently removing all its entries. Requires account password. */
+  deleteYear(input: { yearId: number; password?: string }): Promise<ApiResult<{ deletedYearId: number; switchedToYearId?: number }>>;
 
   // legacy import
   /** Ask the user for an old workbook. Returns null when they cancelled. */
@@ -724,6 +736,9 @@ export const MUTATING_METHODS = [
   "deleteCheque",
   "saveReconciliation",
   "closeYear",
+  "openYear",
+  "reopenYear",
+  "deleteYear",
   "applyLegacyImport",
   "saveReportLayout",
 ] as const satisfies readonly (keyof (SetupApi & BooksApi))[];
@@ -764,6 +779,8 @@ export const API_METHODS = [
   "getYearEndPreview",
   "closeYear",
   "openYear",
+  "reopenYear",
+  "deleteYear",
   "getReconciliation",
   "saveReconciliation",
   "exportPdf",

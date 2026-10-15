@@ -384,6 +384,24 @@ function registerBooksApi(): void {
     }),
   }));
 
+  handle(channelFor("deleteYear"), async (_event, input: { yearId: number; password?: string }) => {
+    try {
+      const current = requireController();
+      const result = await current.deleteYear(input);
+      if (result.ok && result.data.switchedToYearId) {
+        setImmediate(reloadWindows);
+      }
+      return result;
+    } catch (error) {
+      return internalFailure(
+        "delete_year_failed",
+        "વર્ષ કાઢી શકાયું નહીં.",
+        "Could not delete financial year.",
+        error,
+      );
+    }
+  });
+
   const answeredElsewhere = new Set<string>([
     ...SESSION_METHODS,
     "getSetupState",
@@ -392,6 +410,7 @@ function registerBooksApi(): void {
     "printReport",
     "exportExcel",
     "pickLegacyFile",
+    "deleteYear",
   ]);
 
   for (const method of API_METHODS) {
@@ -414,11 +433,15 @@ function registerBooksApi(): void {
         // next one and opens it, and openYear switches to an existing one. The
         // service is bound to a single year id, so it is rebuilt and the
         // windows reloaded onto the new year.
-        if (method === "closeYear" || method === "openYear") {
+        if (method === "closeYear" || method === "openYear" || method === "reopenYear") {
           const changed = result as { ok: boolean; data?: { id: number; label: string } };
           if (changed.ok && changed.data) {
-            current.switchYear(changed.data.id, changed.data.label);
-            setImmediate(reloadWindows);
+            if (method === "closeYear" || method === "openYear") {
+              current.switchYear(changed.data.id, changed.data.label);
+              setImmediate(reloadWindows);
+            } else if (method === "reopenYear" && changed.data.id === current.books?.currentYearId) {
+              setImmediate(reloadWindows);
+            }
           }
         }
 

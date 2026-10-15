@@ -11,8 +11,8 @@ import type { ChequeType } from "../../lib/types.js";
 import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
 import { Money } from "../components/Money.js";
-import { formatDate } from "../format.js";
-import { useStrings } from "../i18n/index.js";
+import { amountToInput, formatDate, tryParseAmount } from "../format.js";
+import { useStrings, type Strings } from "../i18n/index.js";
 import { useEffect } from "react";
 
 /**
@@ -28,7 +28,14 @@ import { useEffect } from "react";
  * to. Rows can be left out, and nothing at all is written until the button at the
  * bottom is pressed.
  */
-type Row = { include: boolean; grantHeadId: number | null; type?: ChequeType };
+type Row = {
+  include: boolean;
+  grantHeadId: number | null;
+  type?: ChequeType;
+  /** A grant return's share per head, as typed. */
+  split?: Share[];
+};
+type Share = { grantHeadId: number | null; amount: string };
 
 export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
   const t = useStrings();
@@ -72,6 +79,9 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
       read.data.headMatches.map((match) => [match.fileName, match.grantHeadId]),
     );
     const idByName = new Map((await api.listGrantHeads()).map((head) => [head.nameGu, head.id]));
+    const openings = new Map(
+      (await api.listOpeningBalances()).map((row) => [row.grantHeadId, row.bankPaise + row.cashPaise]),
+    );
 
     setPreview(read.data);
     setReceipts(
@@ -105,10 +115,14 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
           {
             include: true,
             type: row.suggestedType,
-            grantHeadId:
-              row.suggestedHeadName === null
-                ? null
-                : (idByName.get(row.suggestedHeadName) ?? null),
+            grantHeadId: null,
+            split: suggestSplit(
+              row.suggestedHeadNames.map(
+                (name) => headIdFor.get(name) ?? idByName.get(name) ?? null,
+              ),
+              openings,
+              row.amountPaise,
+            ),
           },
         ]),
       ),
@@ -125,8 +139,11 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
   const missingHeads =
     chosenReceipts.filter(([, row]) => row.grantHeadId === null).length +
     chosenBills.filter(([, row]) => row.grantHeadId === null).length +
-    chosenCheques.filter(([, row]) => row.type === "GRANT_RETURN" && row.grantHeadId === null)
-      .length;
+    chosenCheques.filter(
+      ([sourceRow, row]) =>
+        row.type === "GRANT_RETURN" &&
+        splitProblem(row.split ?? [], chequeAmount(preview, Number(sourceRow))) !== null,
+    ).length;
 
   const canImport =
     preview !== null && !preview.yearHasData && missingHeads === 0 && !busy && result === null;
@@ -149,7 +166,13 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
       cheques: chosenCheques.map(([sourceRow, row]) => ({
         sourceRow: Number(sourceRow),
         type: row.type ?? "DIRECT",
-        grantHeadId: row.type === "GRANT_RETURN" ? row.grantHeadId : null,
+        returnSplit:
+          row.type === "GRANT_RETURN"
+            ? (row.split ?? []).map((share) => ({
+                grantHeadId: share.grantHeadId!,
+                amountPaise: tryParseAmount(share.amount) ?? 0,
+              }))
+            : [],
       })),
     };
 
@@ -346,6 +369,9 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
                               [row.sourceRow]: {
                                 ...(current[row.sourceRow] ?? { include: true, grantHeadId: null }),
                                 type: event.target.value as ChequeType,
+                                split: current[row.sourceRow]?.split?.length
+                                  ? current[row.sourceRow]!.split
+                                  : suggestSplit([], new Map(), row.amountPaise),
                               },
                             }))
                           }
@@ -359,11 +385,17 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
                         {/* Only a grant return has a head of its own; the other
                             two take theirs from the bills they pay. */}
                         {chosen?.type === "GRANT_RETURN" ? (
-                          <HeadPicker
+                          <ReturnSplit
+                            t={t}
                             heads={heads}
-                            rows={cheques}
-                            setRows={setCheques}
-                            sourceRow={row.sourceRow}
+                            split={chosen.split ?? []}
+                            amountPaise={row.amountPaise}
+                            onChange={(split) =>
+                              setCheques((current) => ({
+                                ...current,
+                                [row.sourceRow]: { ...current[row.sourceRow]!, split },
+                              }))
+                            }
                           />
                         ) : (
                           <span className="muted">{t.importFromBills}</span>
@@ -451,5 +483,116 @@ function HeadPicker({
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * The first guess at how a grant return splits across the heads its purpose
+ * names. A return usually sends back what was left over from last year, so each
+ * head but the last is given its opening balance (no more than is left), and the
+ * last head takes the rest. The reviewer can change any of it.
+ */
+function suggestSplit(
+  headIds: (number | null)[],
+  openings: Map<number, number>,
+  amountPaise: number,
+): Share[] {
+  const ids = [...new Set(headIds.filter((id): id is number => id !== null))];
+  if (ids.length === 0) return [{ grantHeadId: null, amount: amountToInput(amountPaise) }];
+
+  let remaining = amountPaise;
+  return ids.map((grantHeadId, index) => {
+    const share =
+      index === ids.length - 1
+        ? remaining
+        : Math.max(0, Math.min(openings.get(grantHeadId) ?? 0, remaining));
+    remaining -= share;
+    return { grantHeadId, amount: amountToInput(share) };
+  });
+}
+
+function chequeAmount(preview: LegacyImportPreviewDto | null, sourceRow: number): number {
+  return preview?.plan.cheques.find((row) => row.sourceRow === sourceRow)?.amountPaise ?? 0;
+}
+
+/** Why this split cannot be imported yet, or null when it can. */
+function splitProblem(split: Share[], amountPaise: number): "head" | "total" | null {
+  if (split.length === 0 || split.some((share) => share.grantHeadId === null)) return "head";
+  if (new Set(split.map((share) => share.grantHeadId)).size !== split.length) return "head";
+  const amounts = split.map((share) => tryParseAmount(share.amount));
+  if (amounts.some((amount) => amount === null)) return "total";
+  const total = amounts.reduce<number>((sum, amount) => sum + amount!, 0);
+  return total === amountPaise ? null : "total";
+}
+
+/** One line per head a grant return went back from, with that head's share. */
+function ReturnSplit({
+  t,
+  heads,
+  split,
+  amountPaise,
+  onChange,
+}: {
+  t: Strings;
+  heads: GrantHeadDto[];
+  split: Share[];
+  amountPaise: number;
+  onChange: (split: Share[]) => void;
+}): JSX.Element {
+  const problem = splitProblem(split, amountPaise);
+  const update = (index: number, change: Partial<Share>): void =>
+    onChange(split.map((share, at) => (at === index ? { ...share, ...change } : share)));
+
+  return (
+    <div style={{ display: "grid", gap: 4 }}>
+      {split.map((share, index) => (
+        <div key={index} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <select
+            value={share.grantHeadId ?? ""}
+            style={share.grantHeadId === null ? { borderColor: "var(--error-line)" } : undefined}
+            onChange={(event) =>
+              update(index, {
+                grantHeadId: event.target.value === "" ? null : Number(event.target.value),
+              })
+            }
+          >
+            <option value="">—</option>
+            {heads.map((head) => (
+              <option key={head.id} value={head.id}>
+                {head.nameGu}
+              </option>
+            ))}
+          </select>
+          <input
+            className="num-input"
+            inputMode="decimal"
+            style={{ width: 90 }}
+            value={share.amount}
+            placeholder="0.00"
+            onChange={(event) => update(index, { amount: event.target.value })}
+          />
+          {split.length > 1 && (
+            <button
+              type="button"
+              title={t.importRemoveHead}
+              onClick={() => onChange(split.filter((_, at) => at !== index))}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+      <div>
+        <button
+          type="button"
+          onClick={() => onChange([...split, { grantHeadId: null, amount: "" }])}
+        >
+          {t.importAddHead}
+        </button>
+      </div>
+      {problem === "total" && (
+        <span style={{ color: "var(--error-line)" }}>{t.importSplitMismatch}</span>
+      )}
+    </div>
   );
 }

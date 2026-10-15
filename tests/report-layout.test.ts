@@ -68,8 +68,8 @@ describe("default widths", () => {
     expect(widths("khatavahi")).toEqual([12, 7, 33, 12, 12, 12, 12]);
     expect(widths("annexure9")).toEqual([11, 7, 58, 24]);
     expect(widths("annexure10").slice(0, 2)).toEqual([5, 17]);
-    // Fifteen: the જાવક side has no date column of its own.
-    expect(widths("rojmel")).toHaveLength(15);
+    // Fourteen: 7 columns on આવક side and 7 columns on જાવક side.
+    expect(widths("rojmel")).toHaveLength(14);
     expect(widths("rojmel").at(-1)).toBeCloseTo(6.1, 9);
   });
 
@@ -367,8 +367,10 @@ describe("paper", () => {
   });
 
   it("fits a form onto a smaller paper", () => {
-    // The rojmel's 335mm across onto A4 landscape's 287: 85%.
-    expect(fitScalePct("rojmel", { paper: "a4" })).toBe(85);
+    // The ledger's 325mm across onto A4 landscape's 277: 85%.
+    expect(fitScalePct("khatavahi", { paper: "a4" })).toBe(85);
+    // The rojmel's paper is fixed, so there is nothing to fit.
+    expect(fitScalePct("rojmel", { paper: "a4" })).toBe(100);
     // A larger paper is never zoomed up.
     expect(fitScalePct("chequeRegister", { paper: "a3" })).toBe(100);
   });
@@ -508,3 +510,17 @@ describe("headings, blank colours, alignment and height", () => {
 });
 
 const EMPTY = emptyLayout();
+
+describe("the rojmel's paper", () => {
+  it("is Indian Legal whatever paper was saved for it", () => {
+    for (const paper of ["a4", "legal-us", "letter", "a3"] as const) {
+      const page = resolvePage("rojmel", { paper });
+      expect(page.paper).toBe("legal-in");
+      expect([page.paperWidthMm, page.paperHeightMm]).toEqual([345, 215]);
+    }
+  });
+
+  it("does not hold any other report to it", () => {
+    expect(resolvePage("khatavahi", { paper: "a4" }).paper).toBe("a4");
+  });
+});

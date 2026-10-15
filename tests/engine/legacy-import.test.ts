@@ -184,7 +184,10 @@ describe("importing it into an empty year", () => {
       cheques: plan.cheques.map((row) => ({
         sourceRow: row.sourceRow,
         type: row.suggestedType,
-        grantHeadId: row.suggestedType === "GRANT_RETURN" ? swachhata : null,
+        returnSplit:
+          row.suggestedType === "GRANT_RETURN"
+            ? [{ grantHeadId: swachhata, amountPaise: row.amountPaise }]
+            : [],
       })),
     };
 

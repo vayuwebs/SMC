@@ -65,9 +65,13 @@ export function receivedByHead(book: YearBook): Map<string, Paise> {
   return totals;
 }
 
-/** Σ spending allocated to each head (reimbursement and direct cheques). */
+/** Σ spending allocated to each head (reimbursement and direct cheques, plus bank charges). */
 export function spentByHead(book: YearBook): Map<string, Paise> {
-  return totalAllocation(spendingCheques(book));
+  const totals = totalAllocation(spendingCheques(book));
+  for (const charge of book.bankCharges) {
+    totals.set(charge.headCode, add(totals.get(charge.headCode) ?? ZERO, charge.amountPaise));
+  }
+  return totals;
 }
 
 /** Σ returned to the CRC from each head (grant-return cheques). */

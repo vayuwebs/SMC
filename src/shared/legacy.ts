@@ -50,8 +50,13 @@ export interface LegacyChequeRow {
   sourceRow: number;
   /** Guessed from the payee and the purpose; confirmed by the reviewer. */
   suggestedType: ChequeType;
-  /** For a grant return, the head the money probably went back from. */
-  suggestedHeadName: string | null;
+  /**
+   * For a grant return, the heads the money probably went back from, in the
+   * order the purpose names them. One return often covers several heads
+   * ("વ્યાજ વટાવ, સિવિલ ગ્રાન્ટ પરત"); each keeps its own share, so Annexure 10
+   * shows it in that head's પરત કરેલ ગ્રાન્ટ cell rather than as a row of its own.
+   */
+  suggestedHeadNames: string[];
   chequeNo: number | null;
   chequeDate: string | null;
   voucherNo: number | null;

@@ -9,7 +9,7 @@ import type {
 import type { GrantRegisterRowDto, SchoolDto, FinancialYearDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
 import { formatDate } from "../../lib/dates.js";
-import { toGujaratiDigits } from "../../lib/gujarati.js";
+import { formatSchoolTitle, toGujaratiDigits } from "../../lib/gujarati.js";
 import { PagedSheets } from "./PagedSheets.js";
 import { ROW_KEYS, billRowKeys, ROW_GROUPS } from "../../shared/report-layout.js";
 
@@ -47,9 +47,11 @@ function RegisterTitle({
 }): JSX.Element {
   return (
     <div className="register-title" data-part="title">
-      <span className="smc">{school.smcLabelGu}</span>
-      <span className="what">
-        {titleGu} ÷ {gu(`${year.startDate.slice(0, 4)}-${year.endDate.slice(0, 4)}`)}
+      <span className="smc" data-part="titleSchool">
+        <Text id="part:titleSchool">{formatSchoolTitle(school.smcLabelGu)}</Text>
+      </span>
+      <span className="what" data-part="titleReport">
+        <Text id="part:titleReport">{`${titleGu} ÷ ${gu(`${year.startDate.slice(0, 4)}-${year.endDate.slice(0, 4)}`)}`}</Text>
       </span>
     </div>
   );
@@ -273,24 +275,24 @@ export function VoucherPages({
               <table className="form voucher-meta" data-part="meta">
                 <tbody>
                   <tr>
-                    <td className="label"><Text id="voucher.school">શાળાનું નામ –:</Text></td>
-                    <td>{school.nameGu}</td>
-                    <td className="label"><Text id="voucher.number">વાઉચર નંબર –:</Text></td>
-                    <td className="centre">{gu(String(voucher.voucherNo))}</td>
+                    <td className="label" data-part="metaSchoolLabel"><Text id="voucher.school">શાળાનું નામ –:</Text></td>
+                    <td data-part="metaSchool">{formatSchoolTitle(school.nameGu)}</td>
+                    <td className="label" data-part="metaNumberLabel"><Text id="voucher.number">વાઉચર નંબર –:</Text></td>
+                    <td className="centre voucher-no" data-part="metaNumber">{gu(String(voucher.voucherNo))}</td>
                   </tr>
                   <tr>
-                    <td className="label"><Text id="voucher.principal">આચાર્યશ્રીનું નામ –:</Text></td>
-                    <td>{school.memberSecretaryGu}</td>
-                    <td className="label"><Text id="voucher.date">તારીખ –:</Text></td>
-                    <td className="centre">{voucher.chequeDate ? date(voucher.chequeDate) : ""}</td>
+                    <td className="label" data-part="metaPrincipalLabel"><Text id="voucher.principal">આચાર્યશ્રીનું નામ –:</Text></td>
+                    <td data-part="metaPrincipal">{school.memberSecretaryGu}</td>
+                    <td className="label" data-part="metaDateLabel"><Text id="voucher.date">તારીખ –:</Text></td>
+                    <td className="centre" data-part="metaDate">{voucher.chequeDate ? date(voucher.chequeDate) : ""}</td>
                   </tr>
                   <tr>
                     {/* The cheque register's બિલની વિગત for this cheque. */}
-                    <td colSpan={2} className="budget-head">
+                    <td colSpan={2} className="budget-head" data-part="metaBudget">
                       <Text id="voucher.budgetHead">ઉધાર બજેટ હેડ –:</Text> {voucher.purposeGu ?? ""}
                     </td>
-                    <td className="label"><Text id="voucher.total">કુલ રકમ</Text></td>
-                    <td className="figure">{money(voucher.totalPaise)}</td>
+                    <td className="label" data-part="metaTotalLabel"><Text id="voucher.total">કુલ રકમ</Text></td>
+                    <td className="figure" data-part="metaTotal">{money(voucher.totalPaise)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -334,15 +336,7 @@ export function VoucherPages({
               <td data-col="remarks" />
             </tr>
           }
-          foot={
-            <>
-              <VoucherNote voucher={voucher} />
-              <div className="signatures" data-part="signatures">
-                <div><Text id="voucher.signSecretary">સભ્ય સચિવ</Text></div>
-                <div><Text id="voucher.signChair">અધ્યક્ષશ્રી</Text></div>
-              </div>
-            </>
-          }
+          foot={<VoucherNote voucher={voucher} />}
         />
       ))}
     </>
@@ -398,7 +392,7 @@ export function PatrakDPages({
       head={() => (
         <>
           <div className="register-title" data-part="title">
-            <span className="what">
+            <span className="what" data-part="titleReport">
               SMCE એજ્યુકેશન {school.bankNameGu} બેંકના ખર્ચની વિગત દર્શાવતું પત્રક ( એપ્રિલ{" "}
               {gu(year.startDate.slice(0, 4))} થી માર્ચ {gu(year.endDate.slice(0, 4))} ) પત્રક – D
             </span>
@@ -407,28 +401,28 @@ export function PatrakDPages({
           <table className="form patrak-meta" data-part="meta">
             <tbody>
               <tr>
-                <td className="label">શાળા</td>
-                <td>{school.nameGu}</td>
-                <td className="label">ક્લસ્ટર</td>
-                <td>{school.clusterGu}</td>
-                <td className="label">તાલુકો</td>
-                <td>{school.talukaGu}</td>
+                <td className="label" data-part="metaSchoolLabel">શાળા</td>
+                <td data-part="metaSchool">{formatSchoolTitle(school.nameGu)}</td>
+                <td className="label" data-part="metaClusterLabel">ક્લસ્ટર</td>
+                <td data-part="metaCluster">{school.clusterGu}</td>
+                <td className="label" data-part="metaTalukaLabel">તાલુકો</td>
+                <td data-part="metaTaluka">{school.talukaGu}</td>
               </tr>
               <tr>
-                <td className="label">બેંક</td>
-                <td>
+                <td className="label" data-part="metaBankLabel">બેંક</td>
+                <td data-part="metaBank">
                   {school.bankNameGu} {school.bankBranchGu}
                 </td>
-                <td className="label">ખાતા નંબર</td>
-                <td>{school.bankAccountNo}</td>
-                <td className="label">ડાયસ કોડ</td>
-                <td>{school.diseCode}</td>
+                <td className="label" data-part="metaAccountLabel">ખાતા નંબર</td>
+                <td data-part="metaAccount">{school.bankAccountNo}</td>
+                <td className="label" data-part="metaDiseLabel">ડાયસ કોડ</td>
+                <td data-part="metaDise">{school.diseCode}</td>
               </tr>
               <tr>
-                <td className="label">મુખ્ય શિક્ષક</td>
-                <td colSpan={3}>{school.memberSecretaryGu}</td>
-                <td className="label">મોબાઈલ</td>
-                <td>{school.memberSecretaryMobile ?? ""}</td>
+                <td className="label" data-part="metaPrincipalLabel">મુખ્ય શિક્ષક</td>
+                <td colSpan={3} data-part="metaPrincipal">{school.memberSecretaryGu}</td>
+                <td className="label" data-part="metaMobileLabel">મોબાઈલ</td>
+                <td data-part="metaMobile">{school.memberSecretaryMobile ?? ""}</td>
               </tr>
             </tbody>
           </table>

@@ -101,6 +101,10 @@ export class AccountsService implements BooksApi {
     private readonly financialYearId: number,
   ) {}
 
+  get currentYearId(): number {
+    return this.financialYearId;
+  }
+
   /** The current year as the engine sees it. Rebuilt per call - always fresh. */
   private book(): Promise<YearBook> {
     return loadYearBook(this.prisma, this.financialYearId);
@@ -605,13 +609,34 @@ export class AccountsService implements BooksApi {
           skipped.push({ kind: "cheque", sourceRow: row.sourceRow, reasonGu: "ચેક નંબર કે તારીખ નથી" });
           continue;
         }
-        if (choice.type === "GRANT_RETURN" && choice.grantHeadId === null) {
-          skipped.push({
-            kind: "cheque",
-            sourceRow: row.sourceRow,
-            reasonGu: "પરત કરેલ ગ્રાન્ટનું હેડ પસંદ કરેલ નથી",
-          });
-          continue;
+        // A return is split across the heads it went back from, so each head's
+        // share lands in that head's own પરત કરેલ ગ્રાન્ટ. The shares must add up
+        // to the cheque, or the cash book and Annexure 10 would disagree.
+        const returnSplit =
+          choice.type === "GRANT_RETURN"
+            ? choice.returnSplit.filter((share) => share.amountPaise !== 0)
+            : [];
+        if (choice.type === "GRANT_RETURN") {
+          const splitTotal = returnSplit.reduce((total, share) => total + share.amountPaise, 0);
+          if (returnSplit.length === 0) {
+            skipped.push({
+              kind: "cheque",
+              sourceRow: row.sourceRow,
+              reasonGu: "પરત કરેલ ગ્રાન્ટનું હેડ પસંદ કરેલ નથી",
+            });
+            continue;
+          }
+          if (
+            splitTotal !== row.amountPaise ||
+            new Set(returnSplit.map((share) => share.grantHeadId)).size !== returnSplit.length
+          ) {
+            skipped.push({
+              kind: "cheque",
+              sourceRow: row.sourceRow,
+              reasonGu: "પરત કરેલ ગ્રાન્ટની હેડવાર રકમનો સરવાળો ચેકની રકમ જેટલો નથી",
+            });
+            continue;
+          }
         }
 
         const created = await tx.cheque.create({
@@ -628,14 +653,15 @@ export class AccountsService implements BooksApi {
             purposeGu: row.purposeGu,
             type: choice.type,
             remarksGu: "જૂની ફાઈલમાંથી લાવેલ",
-            // A grant return's split is typed, never computed, so the head the
-            // reviewer chose takes the whole amount.
+            // A grant return's split is typed, never computed: it is the share
+            // per head the reviewer confirmed.
             allocations:
-              choice.type === "GRANT_RETURN" && choice.grantHeadId !== null
+              returnSplit.length > 0
                 ? {
-                    create: [
-                      { grantHeadId: choice.grantHeadId, amountPaise: row.amountPaise },
-                    ],
+                    create: returnSplit.map((share) => ({
+                      grantHeadId: share.grantHeadId,
+                      amountPaise: share.amountPaise,
+                    })),
                   }
                 : undefined,
           },
@@ -684,13 +710,6 @@ export class AccountsService implements BooksApi {
     const heads = await this.listGrantHeads();
     const idByCode = new Map(heads.map((head) => [head.code, head.id]));
     const years = await this.listFinancialYears();
-    const charged = new Map<string, number>();
-    for (const charge of book.bankCharges) {
-      charged.set(charge.headCode, (charged.get(charge.headCode) ?? 0) + charge.amountPaise);
-    }
-    const closingOf = (headCode: string, closingPaise: number): number =>
-      closingPaise - (charged.get(headCode) ?? 0);
-
     return {
       year,
       suggestedNextLabel: nextYearLabel(year.label),
@@ -700,9 +719,9 @@ export class AccountsService implements BooksApi {
         grantHeadId: idByCode.get(row.headCode) ?? 0,
         headCode: row.headCode,
         headNameGu: row.nameGu,
-        closingPaise: closingOf(row.headCode, row.closingPaise),
+        closingPaise: row.closingPaise,
       })),
-      totalClosingPaise: statement.totals.closingPaise - [...charged.values()].reduce((a, b) => a + b, 0),
+      totalClosingPaise: statement.totals.closingPaise,
       blocking: validate(book).issues.filter(
         (issue) => issue.severity === "error" && issue.code !== "bank_overdrawn",
       ),
@@ -853,26 +872,76 @@ export class AccountsService implements BooksApi {
   }
 
   /**
-   * Which year the screens show.
-   *
-   * The service itself is built around one year id, so this only checks that the
-   * year exists and hands it back - rebinding is the caller's job (the main
-   * process rebuilds the service and reloads the window). Keeping the check here
-   * means a web build gets the same refusal for free.
+   * Open a financial year and make it the active one.
+   * At a time, only 1 year is open for the school: this marks all other years as CLOSED,
+   * and marks the target year as OPEN.
    */
   async openYear(id: number): Promise<ApiResult<FinancialYearDto>> {
-    const year = await this.prisma.financialYear.findUnique({ where: { id } });
-    if (!year) {
+    const target = await this.prisma.financialYear.findUnique({ where: { id } });
+    if (!target) {
       return fail("unknown_year", "એ નાણાકીય વર્ષ મળ્યું નહીં", `financial year ${id} does not exist`);
     }
+
+    await this.prisma.$transaction([
+      this.prisma.financialYear.updateMany({
+        where: { schoolId: target.schoolId, id: { not: id } },
+        data: { status: "CLOSED" },
+      }),
+      this.prisma.financialYear.update({
+        where: { id },
+        data: { status: "OPEN" },
+      }),
+    ]);
+
     return {
       ok: true,
       data: {
-        id: year.id,
-        label: year.label,
-        startDate: year.startDate,
-        endDate: year.endDate,
-        status: year.status,
+        id: target.id,
+        label: target.label,
+        startDate: target.startDate,
+        endDate: target.endDate,
+        status: "OPEN",
+      },
+    };
+  }
+
+  /**
+   * Reopen a closed financial year so records can be edited again.
+   * Equivalent to opening this year and closing all others.
+   */
+  async reopenYear(id: number): Promise<ApiResult<FinancialYearDto>> {
+    return this.openYear(id);
+  }
+
+  /**
+   * Delete a financial year, permanently removing all its entries and cascade deleting child records.
+   * Safety check: school must have more than 1 financial year.
+   */
+  async deleteYear(input: { yearId: number; password?: string }): Promise<ApiResult<{ deletedYearId: number; switchedToYearId?: number }>> {
+    const year = await this.prisma.financialYear.findUnique({ where: { id: input.yearId } });
+    if (!year) {
+      return fail("unknown_year", "એ નાણાકીય વર્ષ મળ્યું નહીં", `financial year ${input.yearId} does not exist`);
+    }
+
+    const yearCount = await this.prisma.financialYear.count({
+      where: { schoolId: year.schoolId },
+    });
+    if (yearCount <= 1) {
+      return fail(
+        "cannot_delete_only_year",
+        "શાળાનું એકમાત્ર નાણાકીય વર્ષ કાઢી શકાતું નથી.",
+        "Cannot delete the only financial year of the school",
+      );
+    }
+
+    await this.prisma.financialYear.delete({
+      where: { id: input.yearId },
+    });
+
+    return {
+      ok: true,
+      data: {
+        deletedYearId: year.id,
       },
     };
   }

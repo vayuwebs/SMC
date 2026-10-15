@@ -5,7 +5,7 @@ import { formatAmount } from "../../lib/money.js";
 import { formatDate } from "../../lib/dates.js";
 import { toGujaratiDigits } from "../../lib/gujarati.js";
 import { AnnexureBanner } from "./AnnexureBanner.js";
-import { GapRow, LayoutColGroup } from "./layout-context.js";
+import { GapRow, LayoutColGroup, Text } from "./layout-context.js";
 import type { ANNEXURE9_ROWS } from "../../shared/report-layout.js";
 
 /**
@@ -42,7 +42,9 @@ export function Annexure9Page({
     <div className="sheet">
       <AnnexureBanner school={school} year={year} numberGu="૯" />
 
-      <div className="annexure-heading" data-part="heading">બેંક સાથે મેળવણું – રીકન્સીલિએશન</div>
+      <div className="annexure-heading" data-part="heading">
+        <Text id="part:heading">બેંક સાથે મેળવણું – રીકન્સીલિએશન</Text>
+      </div>
 
       <table className="form reconciliation" data-layout="">
         <LayoutColGroup />
@@ -93,12 +95,6 @@ export function Annexure9Page({
           <strong>{money(report.computedPassbookPaise)}</strong> બતાવે છે. તફાવત તપાસો.
         </div>
       )}
-
-      <div className="signatures" data-part="signatures">
-        <div>સભ્ય સચિવ</div>
-        <div>અધ્યક્ષશ્રી</div>
-        <div>સી.આર.સી. કો.ઓર્ડિનેટર</div>
-      </div>
     </div>
   );
 }
@@ -129,13 +125,13 @@ function Line({
     <>
       <tr className={className} data-row={k}>
         <td data-col="marker" className="marker">
-          {marker}
+          {marker ? <Text id={`cell:${k}:marker`}>{marker}</Text> : ""}
         </td>
         <td data-col="index" className="index">
-          {index}
+          {index ? <Text id={`cell:${k}:index`}>{index}</Text> : ""}
         </td>
         <td data-col="detail" className={right ? "right" : undefined}>
-          {text}
+          <Text id={`cell:${k}:detail`}>{text}</Text>
         </td>
         <td data-col="amount" className="figure">
           {children}

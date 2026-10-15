@@ -1853,19 +1853,26 @@ tr.clickable {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 14px;
+  padding: 4px 12px;
   background: var(--excel-green);
   color: #fff;
+  min-height: 32px;
+  box-sizing: border-box;
 }
 
 .excel-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .excel-titlebar-actions {
   display: flex;
   gap: 6px;
+}
+
+.excel-titlebar-actions button {
+  padding: 3px 10px;
+  font-size: 12px;
 }
 
 .excel-titlebar-actions .ghost {
@@ -1883,7 +1890,7 @@ tr.clickable {
 .excel-tabs {
   display: flex;
   gap: 2px;
-  padding: 0 10px;
+  padding: 0 8px;
   background: var(--excel-green);
 }
 
@@ -1892,9 +1899,10 @@ tr.clickable {
   border-radius: 4px 4px 0 0;
   background: transparent;
   color: #fff;
-  padding: 6px 16px;
-  font-size: 13px;
+  padding: 3px 14px;
+  font-size: 12px;
   cursor: pointer;
+  line-height: 1.4;
 }
 
 .excel-tabs button:hover {
@@ -1911,44 +1919,49 @@ tr.clickable {
   display: flex;
   align-items: stretch;
   gap: 0;
-  min-height: 96px;
-  padding: 4px 6px 0;
+  height: 78px;
+  min-height: 78px;
+  max-height: 78px;
+  padding: 2px 4px 0;
   background: var(--ribbon-bg);
   border-bottom: 1px solid var(--ribbon-line);
-  /* Not scrolled: a scrolling box would clip the drop-down palettes. A narrow
-     window wraps the groups onto a second line instead. */
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
   position: relative;
   z-index: 5;
+  box-sizing: border-box;
 }
 
 .ribbon-group {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 0 8px;
+  padding: 0 6px;
   border-right: 1px solid var(--ribbon-line);
+  flex-shrink: 0;
 }
 
 .ribbon-group-body {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: center;
+  gap: 3px;
   flex: 1;
 }
 
 .ribbon-group-label {
   text-align: center;
-  font-size: 11px;
+  font-size: 10px;
   color: #616161;
-  padding: 2px 0 3px;
+  padding: 1px 0 2px;
   white-space: nowrap;
+  user-select: none;
 }
 
 .ribbon-rows {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .ribbon-row {
@@ -1960,14 +1973,14 @@ tr.clickable {
 .ribbon-button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 26px;
-  padding: 2px 6px;
+  gap: 3px;
+  min-height: 24px;
+  padding: 1px 5px;
   border: 1px solid transparent;
   border-radius: 3px;
   background: transparent;
   color: #1f1f1f;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1990,21 +2003,26 @@ tr.clickable {
 .ribbon-button.big {
   flex-direction: column;
   justify-content: center;
-  min-width: 54px;
-  min-height: 62px;
+  min-width: 44px;
+  min-height: 50px;
+  padding: 2px 4px;
 }
 
 .ribbon-button.big .ribbon-button-icon {
-  font-size: 22px;
+  font-size: 17px;
+}
+
+.ribbon-button.big .ribbon-button-label {
+  font-size: 11px;
 }
 
 .ribbon-button-icon {
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1;
 }
 
 .ribbon-button-label {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .ribbon-hint {
@@ -2030,31 +2048,34 @@ tr.clickable {
 }
 
 .ribbon-select {
-  font-size: 13px;
-  padding: 3px 6px;
+  font-size: 12px;
+  padding: 2px 5px;
+  height: 24px;
+  border-radius: 2px;
+  border: 1px solid #b5b5b5;
 }
 
 .mini-stepper {
   display: grid;
-  grid-template-columns: auto 24px 56px 24px;
+  grid-template-columns: auto 18px 44px 18px;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
 }
 
 .mini-stepper-label {
-  font-size: 12px;
+  font-size: 11px;
   color: #3a3a3a;
   white-space: nowrap;
-  padding-right: 4px;
+  padding-right: 3px;
 }
 
 .mini-stepper input,
 .size-box input {
   min-width: 0;
-  padding: 2px 4px;
-  font-size: 13px;
+  padding: 1px 2px;
+  font-size: 12px;
   text-align: center;
-  height: 24px;
+  height: 22px;
   box-sizing: border-box;
 }
 
@@ -2065,7 +2086,7 @@ tr.clickable {
 }
 
 .size-box input {
-  width: 52px;
+  width: 44px;
 }
 
 .size-box sup,
@@ -2082,10 +2103,10 @@ tr.clickable {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  width: 190px;
-  height: 26px;
-  padding: 0 6px;
+  gap: 4px;
+  width: 150px;
+  height: 24px;
+  padding: 0 5px;
   border: 1px solid #b5b5b5;
   border-radius: 2px;
   background: #fff;
@@ -2457,20 +2478,87 @@ tr.clickable {
 .excel-namebar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 4px 10px;
+  gap: 8px;
+  padding: 2px 8px;
   background: #fff;
   border-bottom: 1px solid var(--ribbon-line);
   min-height: 28px;
+  height: 28px;
+  box-sizing: border-box;
 }
 
 .excel-namebox {
-  min-width: 220px;
-  padding: 2px 8px;
+  min-width: 170px;
+  max-width: 230px;
+  padding: 1px 6px;
   border: 1px solid #c6c6c6;
   font-weight: 600;
+  font-size: 11px;
+  background: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excel-formulabar {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fx-label {
+  font-style: italic;
+  font-weight: 700;
+  font-family: Georgia, serif;
+  color: #707070;
+  font-size: 13px;
+  user-select: none;
+  padding: 0 3px;
+}
+
+.excel-formula-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 1px 6px;
+  border: 1px solid #c6c6c6;
   font-size: 12px;
   background: #fff;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.excel-formula-input:focus {
+  outline: none;
+  border-color: #107c41;
+  box-shadow: 0 0 0 1px #107c41;
+}
+
+.excel-formula-input:disabled {
+  background: #f7f7f7;
+  color: #888;
+  cursor: not-allowed;
+}
+
+.excel-formula-reset-btn {
+  height: 22px;
+  padding: 1px 6px;
+  border: 1px solid #c6c6c6;
+  background: #f9f9f9;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.excel-formula-reset-btn:hover {
+  background: #eee;
+  border-color: #999;
 }
 
 .excel-namebar-note {

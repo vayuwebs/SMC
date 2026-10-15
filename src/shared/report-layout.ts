@@ -318,14 +318,11 @@ function rojmelSide(
   sideGu: string,
   widths: (number | null)[],
 ): [string, string, number | null][] {
-  // The જાવક side has no date column of its own: its date is printed with the
-  // voucher number, and the આવક side carries the block's date.
   const names: [string, string][] = [
-    ...(side === "r" ? ([["date", "તારીખ"]] as [string, string][]) : []),
+    ["date", "તારીખ"],
     ["detail", "વિગત"],
     ["ref", side === "r" ? "પહોંચ નંબર" : "વાઉચર નંબર"],
     ["cheque", "ચેક નં"],
-    ["class", "વર્ગીકરણ"],
     ["cash", "રોકડ"],
     ["bank", "બેન્ક"],
     ["total", "કુલ રકમ"],
@@ -340,12 +337,12 @@ function rojmelSide(
  */
 export const REPORT_COLUMNS: Record<PrintableReportId, ReportColumn[]> = {
   rojmel: columns([
-    // The date column holds "02/04/2025 TO" on one line, so a month's range
-    // prints on two lines rather than three.
-    ...rojmelSide("r", "આવક", [8.4, 10, 6.6, 3.4, 2.6, 5.7, 5.7, 5.7]),
+    // The date column holds "02/04/2025 થી" on one line, so a month's range
+    // prints cleanly on both the આવક and જાવક sides.
+    ...rojmelSide("r", "આવક", [8.4, 11.6, 6.6, 3.4, 5.7, 5.7, 5.7]),
     // The cheque column holds the cheque number - its date only when it is not
     // the block's own - so it is as wide as "103" and its heading, no wider.
-    ...rojmelSide("p", "જાવક", [18.6, 8.6, 4.6, 2.6, 5.7, 5.7, null]),
+    ...rojmelSide("p", "જાવક", [8.4, 13.8, 8.6, 4.6, 5.7, 5.7, null]),
   ]),
   khatavahi: columns([
     ["date", "તારીખ", 12],
@@ -469,21 +466,66 @@ export const REPORT_PARTS: Record<PrintableReportId, ReportPart[]> = {
   khatavahi: [
     heading("title", "મથાળું (શાળાનું નામ)"),
     heading("accountKind", "ખાતાવહી પટ્ટી"),
-    heading("accountMeta", "ખાતાનું નામ અને વર્ષ"),
+    heading("accountMeta", "ખાતાનું નામ અને વર્ષ (આખું)"),
+    { id: "accountName", labelGu: "ખાતાનું નામ", sizable: true },
+    { id: "accountYear", labelGu: "વર્ષ", sizable: true },
     heading("footTitle", "નીચેનું નામ"),
   ],
-  grantRegister: [heading("title", "મથાળું")],
-  chequeRegister: [heading("title", "મથાળું")],
-  billRegister: [heading("title", "મથાળું")],
+  grantRegister: [
+    heading("title", "મથાળું (આખું)"),
+    { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
+  ],
+  chequeRegister: [
+    heading("title", "મથાળું (આખું)"),
+    { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
+  ],
+  billRegister: [
+    heading("title", "મથાળું (આખું)"),
+    { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
+  ],
   vouchers: [
     heading("programme", "મથાળું (યોજના)"),
     heading("voucherTitle", "વાઉચર પટ્ટી"),
-    heading("meta", "વાઉચરની વિગત"),
+    heading("meta", "વાઉચરની વિગત (આખી)"),
+    { id: "metaSchoolLabel", labelGu: "શાળા લેબલ", sizable: true },
+    { id: "metaSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "metaNumberLabel", labelGu: "વાઉચર નંબર લેબલ", sizable: true },
+    { id: "metaNumber", labelGu: "વાઉચર નંબર", sizable: true },
+    { id: "metaPrincipalLabel", labelGu: "આચાર્ય લેબલ", sizable: true },
+    { id: "metaPrincipal", labelGu: "આચાર્યનું નામ", sizable: true },
+    { id: "metaDateLabel", labelGu: "તારીખ લેબલ", sizable: true },
+    { id: "metaDate", labelGu: "તારીખ", sizable: true },
+    { id: "metaBudget", labelGu: "બજેટ હેડ", sizable: true },
+    { id: "metaTotalLabel", labelGu: "કુલ રકમ લેબલ", sizable: true },
+    { id: "metaTotal", labelGu: "કુલ રકમ", sizable: true },
     heading("closingNote", "નીચેનું વાક્ય"),
     heading("signatures", "સહી"),
   ],
-  patrakD: [heading("title", "મથાળું"), heading("meta", "શાળાની વિગત")],
-  annexure9: [...annexureBannerParts(), heading("heading", "બેંક મેળવણું"), heading("signatures", "સહી")],
+  patrakD: [
+    heading("title", "મથાળું (આખું)"),
+    { id: "titleReport", labelGu: "પત્રક-D શીર્ષક", sizable: true },
+    heading("meta", "શાળાની વિગત (આખી)"),
+    { id: "metaSchoolLabel", labelGu: "શાળા લેબલ", sizable: true },
+    { id: "metaSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "metaClusterLabel", labelGu: "ક્લસ્ટર લેબલ", sizable: true },
+    { id: "metaCluster", labelGu: "ક્લસ્ટર", sizable: true },
+    { id: "metaTalukaLabel", labelGu: "તાલુકો લેબલ", sizable: true },
+    { id: "metaTaluka", labelGu: "તાલુકો", sizable: true },
+    { id: "metaBankLabel", labelGu: "બેંક લેબલ", sizable: true },
+    { id: "metaBank", labelGu: "બેંક", sizable: true },
+    { id: "metaAccountLabel", labelGu: "ખાતા નંબર લેબલ", sizable: true },
+    { id: "metaAccount", labelGu: "ખાતા નંબર", sizable: true },
+    { id: "metaDiseLabel", labelGu: "ડાયસ કોડ લેબલ", sizable: true },
+    { id: "metaDise", labelGu: "ડાયસ કોડ", sizable: true },
+    { id: "metaPrincipalLabel", labelGu: "મુખ્ય શિક્ષક લેબલ", sizable: true },
+    { id: "metaPrincipal", labelGu: "મુખ્ય શિક્ષક", sizable: true },
+    { id: "metaMobileLabel", labelGu: "મોબાઈલ લેબલ", sizable: true },
+    { id: "metaMobile", labelGu: "મોબાઈલ", sizable: true },
+  ],
+  annexure9: [...annexureBannerParts(), heading("heading", "બેંક મેળવણું")],
   annexure10: [...annexureBannerParts(), heading("certificate", "પ્રમાણપત્ર"), heading("signatures", "સહી")],
 };
 
@@ -498,7 +540,16 @@ function annexureBannerParts(): ReportPart[] {
     heading("bannerProgramme", "યોજનાનું નામ"),
     heading("bannerNumber", "પરિશિષ્ટ નંબર"),
     heading("bannerYear", "વર્ષ"),
+    { id: "bannerSchoolLabel", labelGu: "શાળા લેબલ", sizable: true },
     { id: "bannerSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "bannerDiseLabel", labelGu: "ડાયસ કોડ લેબલ", sizable: true },
+    { id: "bannerDise", labelGu: "ડાયસ કોડ", sizable: true },
+    { id: "bannerClusterLabel", labelGu: "કલસ્ટર લેબલ", sizable: true },
+    { id: "bannerCluster", labelGu: "કલસ્ટર", sizable: true },
+    { id: "bannerTalukaLabel", labelGu: "તાલુકો લેબલ", sizable: true },
+    { id: "bannerTaluka", labelGu: "તાલુકો", sizable: true },
+    { id: "bannerAccountLabel", labelGu: "ખાતા નંબર લેબલ", sizable: true },
+    { id: "bannerAccount", labelGu: "ખાતા નંબર", sizable: true },
     heading("bannerDetails", "શાળાની વિગત (કલસ્ટર, તાલુકો, ખાતા નંબર)"),
   ];
 }
@@ -572,6 +623,15 @@ export const DEFAULT_PAGE: Record<
   patrakD: { paper: "a4", orientation: "landscape", marginMm: 10 },
   annexure9: { paper: "legal-in", orientation: "portrait", marginMm: 10 },
   annexure10: { paper: "legal-in", orientation: "portrait", marginMm: 5 },
+};
+
+/**
+ * Reports whose paper cannot be changed. The rojmel is always Indian Legal -
+ * the school's cash book is kept on it - so its PDF, its Excel file, the
+ * preview and the printer all get that size whatever page setup was saved.
+ */
+export const FIXED_PAPER: Partial<Record<PrintableReportId, PaperId>> = {
+  rojmel: "legal-in",
 };
 
 /** Which reports print sideways by default. */
@@ -693,7 +753,7 @@ function marginsOf(report: PrintableReportId, page: PageSetup | undefined): Page
 
 export function resolvePage(report: PrintableReportId, page: PageSetup | undefined): ResolvedPage {
   const base = DEFAULT_PAGE[report];
-  const paperId = page?.paper ?? base.paper;
+  const paperId = FIXED_PAPER[report] ?? page?.paper ?? base.paper;
   const paper = paperOf(paperId);
   const landscape = (page?.orientation ?? base.orientation) === "landscape";
   const margins = marginsOf(report, page);
@@ -776,7 +836,7 @@ export const KHATAVAHI_GAP_MM = 4;
  */
 export function tableWidthMm(report: PrintableReportId, layout?: ReportLayout): number {
   const width = resolvePage(report, layout?.page).contentWidthMm;
-  return report === "khatavahi" ? round3((width - KHATAVAHI_GAP_MM) / 2) : width;
+  return width;
 }
 
 // ---------------------------------------------------------------- row keys
@@ -930,6 +990,7 @@ export function styleAt(
   return {
     ...(col !== null ? pick(targetKey({ kind: "col", col })) : {}),
     ...(group !== null ? pick(targetKey({ kind: "row", row: group })) : {}),
+    ...(group !== null && col !== null ? pick(targetKey({ kind: "cell", row: group, col })) : {}),
     ...(row !== null ? pick(targetKey({ kind: "row", row })) : {}),
     ...(row !== null && col !== null ? pick(targetKey({ kind: "cell", row, col })) : {}),
   };
@@ -1093,9 +1154,14 @@ function boxDeclarations(style: CellStyle): string[] {
   return out;
 }
 
-function declarations(style: CellStyle): string[] {
+function declarations(style: CellStyle, report?: PrintableReportId): string[] {
   const out: string[] = [];
-  if (style.fill) out.push(`background: ${style.fill === NO_FILL ? "transparent" : style.fill}`);
+  if (style.fill) {
+    out.push(`background: ${style.fill === NO_FILL ? "transparent" : style.fill}`);
+    if (report === "rojmel" && style.fill !== NO_FILL && !style.colour) {
+      out.push("color: #1a0dab", "text-decoration: none");
+    }
+  }
   return [...out, ...textDeclarations(style), ...boxDeclarations(style)];
 }
 
@@ -1200,7 +1266,7 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   const order = { part: 0, col: 1, row: 2, cell: 3 } as const;
   // A row group before a single row, so the row's own choice wins.
   const groupFirst = (target: LayoutTarget): number =>
-    target.kind === "row" && !isGroupKey(target.row) ? 1 : 0;
+    (target.kind === "row" || target.kind === "cell") && !isGroupKey(target.row) ? 1 : 0;
   // REPORT_PARTS lists a heading before the pieces inside it, and its rules
   // reach those pieces too: in that order a piece's own choice comes later and wins.
   const partOrder = (target: LayoutTarget): number =>
@@ -1221,7 +1287,7 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
       rules.push(...partRules(root, target.part, style, part));
       continue;
     }
-    const body = declarations(style);
+    const body = declarations(style, report);
     const rowSelector = (row: string): string =>
       isGroupKey(row) ? `tr[data-row-group=${cssString(row)}]` : `tr[data-row=${cssString(row)}]`;
     if (target.kind === "row" && style.heightMm !== undefined) {
@@ -1233,8 +1299,11 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
         ? `${table} :is(td, th)[data-col=${cssString(target.col)}]`
         : target.kind === "row"
           ? `${table} ${rowSelector(target.row)} > :is(td, th)`
-          : `${table} tr[data-row=${cssString(target.row)}] > :is(td, th)[data-col=${cssString(target.col)}]`;
+          : `${table} ${rowSelector(target.row)} > :is(td, th)[data-col=${cssString(target.col)}]`;
     rules.push(`${selector} { ${body.join("; ")}; }`);
+    if (report === "rojmel" && style.fill && style.fill !== NO_FILL && !style.colour) {
+      rules.push(`${selector} * { color: inherit; text-decoration: none; }`);
+    }
     // A total printed in <strong> follows its cell's choice of weight.
     if (style.bold !== undefined) rules.push(`${selector} strong { font-weight: inherit; }`);
   }

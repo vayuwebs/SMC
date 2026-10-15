@@ -44,3 +44,19 @@ export function paidForGu(text: string): string {
   const trimmed = text.trim().replace(/\s*નાણાં$/, "");
   return `${withNa(trimmed)} નાણાં ચુકવ્યા`;
 }
+
+/**
+ * Ensure school titles show "બેટાવાડા ના મુવાડા પ્રા. શાળા" when referring to Betawada.
+ */
+export function formatSchoolTitle(text: string): string {
+  if (!text) return text;
+  if (
+    (text.includes("બેટાવાડા ના મુવાડા") || text.includes("બેટાવાડાના મુવાડા")) &&
+    !text.includes("પ્રા. શાળા") &&
+    !text.includes("પ્રા.શાળા")
+  ) {
+    return text.replace(/બેટાવાડા\s*ના\s*મુવાડા/g, "બેટાવાડા ના મુવાડા પ્રા. શાળા");
+  }
+  return text;
+}
+

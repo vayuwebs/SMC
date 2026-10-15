@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import type { PrintableReportId } from "../../shared/api.js";
 import {
   DEFAULT_PAGE,
+  FIXED_PAPER,
   MAX_SCALE_PCT,
   MIN_SCALE_PCT,
   ORIENTATIONS,
@@ -206,6 +207,7 @@ export function PrintDialog({
           <select
             id="print-paper"
             value={resolved.paper}
+            disabled={FIXED_PAPER[report] !== undefined}
             onChange={(event) => set({ paper: event.target.value as PaperId })}
           >
             {PAPER_SIZES.map((paper) => (

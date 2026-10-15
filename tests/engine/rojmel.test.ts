@@ -249,13 +249,52 @@ describe("one block per cheque", () => {
     expect(blocks.map((block) => block.paymentLines[0]!.chequeText.split(" ")[0])).toEqual(["108", "109"]);
   });
 
-  it("prints the block's date once: a cheque of the same day shows only its number", () => {
+  it("always prints the cheque and voucher date beside their numbers", () => {
     const block = rojmel.blocks.find((candidate) => candidate.paymentLines.some((line) => line.chequeText.startsWith("103")))!;
     const chequeLine = block.paymentLines[0]!;
-    expect(chequeLine.chequeText).toBe("103");
-    expect(chequeLine.referenceText).toBe("1");
-    // A cheque written on another day keeps its own date beside its number.
+    expect(chequeLine.chequeText).toBe("103 09/06/2025");
+    expect(chequeLine.referenceText).toBe("1 09/06/2025");
     const later = rojmel.blocks.find((candidate) => candidate.id === "2026-03-03")!;
     expect(later.paymentLines[0]!.chequeText).toBe("108 26/02/2026");
+  });
+});
+
+describe("order of the cheques", () => {
+  /** Each cheque number, in the order the cash book first prints it. */
+  const printedOrder = (rojmel: ReturnType<typeof buildRojmel>): number[] => {
+    const seen: number[] = [];
+    for (const block of rojmel.blocks) {
+      for (const line of block.paymentLines) {
+        if (line.source.kind === "cheque" && !seen.includes(line.source.chequeNo)) {
+          seen.push(line.source.chequeNo);
+        }
+      }
+    }
+    return seen;
+  };
+
+  it("follows the dates, not the cheque numbers", () => {
+    const base = sampleBook();
+    const [first, second] = base.cheques;
+    // Cheque `second` is written on an earlier day than `first`.
+    const cheques = [
+      { ...first!, chequeDate: "2025-06-20", cashbookDate: "2025-06-20" },
+      { ...second!, chequeDate: "2025-06-10", cashbookDate: "2025-06-10" },
+      ...base.cheques.slice(2),
+    ];
+    const order = printedOrder(buildRojmel({ ...base, cheques }));
+    expect(order.indexOf(second!.chequeNo)).toBeLessThan(order.indexOf(first!.chequeNo));
+  });
+
+  it("on one cash-book date, puts the earlier cheque date first", () => {
+    const base = sampleBook();
+    const [first, second] = base.cheques;
+    const cheques = [
+      { ...first!, chequeDate: "2025-06-20", cashbookDate: "2025-06-20" },
+      { ...second!, chequeDate: "2025-06-18", cashbookDate: "2025-06-20" },
+      ...base.cheques.slice(2),
+    ];
+    const order = printedOrder(buildRojmel({ ...base, cheques }));
+    expect(order.indexOf(second!.chequeNo)).toBeLessThan(order.indexOf(first!.chequeNo));
   });
 });

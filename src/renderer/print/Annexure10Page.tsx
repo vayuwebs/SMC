@@ -126,13 +126,6 @@ export function Annexure10Page({
             એસ.એમ.સી.ઈ કક્ષાએ જમા રહેલ છે. સદર આવક તથા ખર્ચ હિસાબી રેકર્ડ પરથી ખરાઈ કરેલ છે. જે આપ
             સાહેબશ્રીને વિદિત થાય.
           </div>
-
-          {/* Signed by hand, as on the original (SPEC 11.12). */}
-          <div className="signatures" data-part="signatures">
-            <div>સભ્ય સચિવ</div>
-            <div>અધ્યક્ષશ્રી</div>
-            <div>સી.આર.સી. કો.ઓર્ડિનેટર</div>
-          </div>
         </>
       }
     />

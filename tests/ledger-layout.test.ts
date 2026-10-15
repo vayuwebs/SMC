@@ -9,38 +9,34 @@ import { arrangeLedgers, ledgerFill, ledgerRowHeights } from "../src/shared/ledg
 const all = (sheets: ReturnType<typeof arrangeLedgers>): number[] =>
   sheets.flatMap(([top, bottom]) => [...top, ...bottom]).sort((a, b) => a - b);
 
-describe("four accounts to a sheet", () => {
-  it("places every account once, four to every sheet but the last", () => {
+describe("two accounts to a sheet", () => {
+  it("places every account once, two to every sheet but the last", () => {
     const sizes = [12, 3, 8, 5, 4, 9, 2, 7, 6];
     const sheets = arrangeLedgers(sizes);
     expect(all(sheets)).toEqual(sizes.map((_, index) => index));
-    expect(sheets.map(([top, bottom]) => top.length + bottom.length)).toEqual([4, 4, 1]);
+    expect(sheets.map(([top, bottom]) => top.length + bottom.length)).toEqual([2, 2, 2, 2, 1]);
   });
 
-  it("puts the two larger accounts in the top row and the two smaller below, larger on the left", () => {
-    // Sizes 10, 8, 3, 1: top row 10 and 8, bottom row 3 and 1.
-    const [sheet] = arrangeLedgers([3, 10, 1, 8]);
-    expect(sheet).toEqual([
-      [1, 3],
-      [0, 2],
-    ]);
+  it("puts the larger account in the top row and the smaller below", () => {
+    // Sizes 10, 8, 3, 1: sheet 0 has 10 (top) and 1 (bottom), sheet 1 has 8 (top) and 3 (bottom).
+    const [sheet0, sheet1] = arrangeLedgers([3, 10, 1, 8]);
+    expect(sheet0).toEqual([[1], [2]]);
+    expect(sheet1).toEqual([[3], [0]]);
   });
 
   it("mixes long and short accounts across sheets", () => {
     const sizes = [20, 19, 18, 17, 4, 3, 2, 1];
     const sheets = arrangeLedgers(sizes);
-    // Each sheet's height is its two rows' taller accounts. Not 20+19 and
-    // 18+17 on one sheet: each sheet has a long row and a short one.
     const heights = sheets.map(([top, bottom]) =>
       [top, bottom].reduce((sum, row) => sum + Math.max(0, ...row.map((index) => sizes[index]!)), 0),
     );
-    expect(Math.max(...heights)).toBeLessThanOrEqual(24);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(22);
   });
 
-  it("copes with fewer than four", () => {
+  it("copes with fewer than two", () => {
     expect(arrangeLedgers([])).toEqual([]);
     expect(arrangeLedgers([5])).toEqual([[[0], []]]);
-    expect(arrangeLedgers([2, 5, 3])).toEqual([[[1, 2], [0]]]);
+    expect(arrangeLedgers([2, 5, 3])).toEqual([[[1], [0]], [[2], []]]);
   });
 });
 

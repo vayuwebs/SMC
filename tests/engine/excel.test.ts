@@ -113,7 +113,7 @@ describe("one report at a time", () => {
     const bands: string[] = [];
     sheet.eachRow((row) => {
       const value = row.getCell(1).value;
-      if (typeof value === "string" && value.startsWith("આવક")) bands.push(String(row.getCell(14).value));
+      if (typeof value === "string" && value.startsWith("આવક")) bands.push(String(row.getCell(13).value));
     });
     expect(bands).toEqual(rojmel.pages.map((page) => `પાના.નંબર   ${page.pageNo}`));
 
@@ -124,7 +124,12 @@ describe("one report at a time", () => {
     sheet.eachRow((row) => {
       if (row.getCell(2).value === "શ્રી ઉઘડતી સિલક" && !found) {
         found = true;
-        expect(row.getCell(7).value).toBe(first.openingBankPaise / 100);
+        expect(row.getCell(6).value).toBe(first.openingBankPaise / 100);
+        expect(row.getCell(8).value).toBe(
+          first.paymentLines[0]!.dateText.includes(" થી ")
+            ? first.paymentLines[0]!.dateText.replace(" થી ", "\nથી\n")
+            : first.paymentLines[0]!.dateText,
+        );
         expect(row.getCell(9).value).toBe(first.paymentLines[0]!.descriptionGu);
       }
     });
@@ -136,6 +141,28 @@ describe("one report at a time", () => {
     expect(sheet.pageSetup.paperSize).toBe(5);
     const margins = sheet.pageSetup.margins!;
     expect((margins.left + margins.right) * 25.4).toBeGreaterThanOrEqual(355.6 - 345);
+  });
+
+  it("keeps the rojmel on Indian Legal even when another paper was saved", async () => {
+    const books = new Proxy(accounts, {
+      get(target, key) {
+        if (key === "getReportLayout") {
+          return async (report: PrintableReportId) =>
+            report === "rojmel"
+              ? { ...emptyLayout(), page: { paper: "a4" as const } }
+              : target.getReportLayout(report);
+        }
+        const value = Reflect.get(target, key) as unknown;
+        return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    const bytes = await workbookBytes(await buildWorkbook(books, "rojmel"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
+    const setup = workbook.worksheets[0]!.pageSetup;
+    // Legal (5), with the 10.6mm US Legal has over Indian Legal kept as margin.
+    expect(setup.paperSize).toBe(5);
+    expect(setup.margins!.right).toBeCloseTo((5 + 355.6 - 345) / 25.4, 6);
   });
 
   it("gives every sheet a print setup", async () => {

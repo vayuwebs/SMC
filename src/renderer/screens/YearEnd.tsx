@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { JSX } from "react";
 import { api } from "../api.js";
 import type { FinancialYearDto, YearEndPreviewDto } from "../../shared/api.js";
@@ -31,6 +32,10 @@ export function YearEnd(): JSX.Element {
   const [failure, setFailure] = useState<string | null>(null);
   // Next year's opening per head, as typed; starts as this year's closing.
   const [openings, setOpenings] = useState<Record<number, string>>({});
+  const [deleteTarget, setDeleteTarget] = useState<FinancialYearDto | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -109,12 +114,48 @@ export function YearEnd(): JSX.Element {
     setIssues([]);
   }
 
-  async function switchTo(year: FinancialYearDto): Promise<void> {
-    if (year.id === preview!.year.id || busy) return;
+  async function reopenYear(year: FinancialYearDto): Promise<void> {
+    if (busy) return;
+    if (!window.confirm(t.yearConfirmReopen(year.label))) return;
     setBusy(true);
     const result = await api.openYear(year.id);
     setBusy(false);
-    if (!result.ok) setIssues(result.issues);
+    if (!result.ok) {
+      setIssues(result.issues);
+      return;
+    }
+    setIssues([]);
+    const [nextPreview, nextYears] = await Promise.all([
+      api.getYearEndPreview(),
+      api.listFinancialYears(),
+    ]);
+    setPreview(nextPreview);
+    setYears(nextYears);
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await api.deleteYear({
+      yearId: deleteTarget.id,
+      password: deletePassword,
+    });
+    setDeleting(false);
+    if (!result.ok) {
+      const msg = result.issues[0]?.messageGu ?? result.issues[0]?.messageEn ?? "Error deleting year";
+      setDeleteError(msg);
+      return;
+    }
+    setDeleteTarget(null);
+    setDeletePassword("");
+    setDeleteError(null);
+    const [nextPreview, nextYears] = await Promise.all([
+      api.getYearEndPreview(),
+      api.listFinancialYears(),
+    ]);
+    setPreview(nextPreview);
+    setYears(nextYears);
   }
 
   return (
@@ -209,8 +250,16 @@ export function YearEnd(): JSX.Element {
         <h3>{t.yearEndCloseSection}</h3>
 
         {closed && (
-          <div className="issue warning">
+          <div className="issue warning" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>{t.yearAlreadyClosed(preview.year.label)}</div>
+            <button
+              type="button"
+              className="ghost small"
+              disabled={busy}
+              onClick={() => void reopenYear(preview.year)}
+            >
+              {t.yearReopen}
+            </button>
           </div>
         )}
 
@@ -278,12 +327,32 @@ export function YearEnd(): JSX.Element {
                 </td>
                 <td>{year.status === "OPEN" ? t.yearOpen : t.yearClosed}</td>
                 <td>
-                  <div className="row-actions">
+                  <div className="row-actions" style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end" }}>
                     {year.id === preview.year.id ? (
                       <span className="muted">{t.yearCurrent}</span>
                     ) : (
-                      <button className="ghost" disabled={busy} onClick={() => void switchTo(year)}>
-                        {t.yearSwitchTo}
+                      <button
+                        type="button"
+                        className="ghost small"
+                        disabled={busy}
+                        onClick={() => void reopenYear(year)}
+                      >
+                        {t.yearReopen}
+                      </button>
+                    )}
+                    {years.length > 1 && (
+                      <button
+                        type="button"
+                        className="ghost small"
+                        style={{ color: "var(--error-line, #c53030)" }}
+                        disabled={busy}
+                        onClick={() => {
+                          setDeleteTarget(year);
+                          setDeletePassword("");
+                          setDeleteError(null);
+                        }}
+                      >
+                        {t.yearDelete}
                       </button>
                     )}
                   </div>
@@ -293,6 +362,77 @@ export function YearEnd(): JSX.Element {
           </tbody>
         </table>
       </section>
+
+      {deleteTarget &&
+        createPortal(
+          <div className="custom-colour-backdrop" onClick={() => !deleting && setDeleteTarget(null)}>
+            <div
+              className="custom-colour"
+              style={{ width: 440, padding: "20px 24px" }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <h3 style={{ margin: "0 0 12px", color: "var(--error-line, #c53030)" }}>
+                {t.yearDeletePrompt(deleteTarget.label)}
+              </h3>
+              <p style={{ margin: "0 0 16px", fontSize: "13px", lineHeight: "1.5", color: "var(--muted)" }}>
+                {t.yearDeleteWarning}
+              </p>
+
+              {deleteError && (
+                <div className="issue error" style={{ marginBottom: "16px" }}>
+                  <div>{deleteError}</div>
+                </div>
+              )}
+
+              <div className="field" style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", marginBottom: "6px", fontWeight: 500, fontSize: "13px" }}>
+                  {t.yearDeletePasswordLabel}
+                </label>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder={t.yearDeletePasswordPlaceholder}
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && deletePassword.trim()) {
+                      void confirmDelete();
+                    }
+                  }}
+                  disabled={deleting}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="ghost small"
+                  disabled={deleting}
+                  onClick={() => setDeleteTarget(null)}
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="button"
+                  className="primary small"
+                  style={{
+                    backgroundColor: "var(--error-line, #c53030)",
+                    borderColor: "var(--error-line, #c53030)",
+                    color: "#fff",
+                  }}
+                  disabled={deleting || !deletePassword.trim()}
+                  onClick={() => void confirmDelete()}
+                >
+                  {deleting ? "…" : t.yearDeleteSubmit}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

@@ -121,6 +121,16 @@ function outflowsFor(book: YearBook, headCode: string): Outflow[] {
     });
   }
 
+  for (const charge of book.bankCharges) {
+    if (charge.headCode !== headCode || charge.amountPaise === 0) continue;
+    outflows.push({
+      date: charge.date,
+      chequeNo: 0,
+      amount: charge.amountPaise,
+      isReturn: false,
+    });
+  }
+
   return outflows.sort((a, b) =>
     a.date === b.date ? a.chequeNo - b.chequeNo : a.date < b.date ? -1 : 1,
   );

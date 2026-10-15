@@ -4,7 +4,7 @@ import type { Ledger } from "../../engine/types.js";
 import type { FinancialYearDto, SchoolDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
 import { formatDate } from "../../lib/dates.js";
-import { toGujaratiDigits } from "../../lib/gujarati.js";
+import { formatSchoolTitle, toGujaratiDigits } from "../../lib/gujarati.js";
 import { PrintLayoutGate } from "./PagedSheets.js";
 import { GapRow, LayoutColGroup, layoutFontsReady, useReportLayout, Text } from "./layout-context.js";
 import { ROW_GROUPS, ROW_KEYS, ledgerRowKeys } from "../../shared/report-layout.js";
@@ -211,7 +211,9 @@ function LedgerSheet({
   let slot = 0;
   return (
     <div className="sheet landscape khatavahi-sheet" ref={ref}>
-      <div className="khatavahi-title" data-part="title">{school.smcLabelGu}</div>
+      <div className="khatavahi-title" data-part="title">
+        <Text id="part:title">{formatSchoolTitle(school.smcLabelGu)}</Text>
+      </div>
       <div className="khatavahi-grid">
         {rows
           .filter((row) => row.length > 0)
@@ -223,7 +225,6 @@ function LedgerSheet({
             </div>
           ))}
       </div>
-      <div className="khatavahi-title foot" data-part="footTitle">{school.smcLabelGu}</div>
     </div>
   );
 }
@@ -309,12 +310,18 @@ function Account({
           <Text id="khatavahi.kind">સામાન્ય ( જનરલ ) ખાતાવહી</Text>
         </div>
         <div className="account-meta" data-part="accountMeta">
-          <span>
-            <Text id="khatavahi.account">ખાતાનું નામ –:</Text> {account.nameGu}
-          </span>
-          <span>
-            <Text id="khatavahi.year">વર્ષ –:</Text> {yearLabel}
-          </span>
+          <div className="account-meta-cell account-name" data-part="accountName">
+            <span className="meta-label">
+              <Text id="khatavahi.account">ખાતાનું નામ –:</Text>
+            </span>{" "}
+            <span className="meta-value">{account.nameGu}</span>
+          </div>
+          <div className="account-meta-cell account-year" data-part="accountYear">
+            <span className="meta-label">
+              <Text id="khatavahi.year">વર્ષ –:</Text>
+            </span>{" "}
+            <span className="meta-value">{yearLabel}</span>
+          </div>
         </div>
       </div>
       <table className="form khatavahi" data-layout="">
@@ -338,7 +345,9 @@ function Account({
                 <td data-col="page" className="centre">
                   {row.rojmelPage === null ? "" : gu(String(row.rojmelPage))}
                 </td>
-                <td data-col="detail" className="detail">{row.descriptionGu}</td>
+                <td data-col="detail" className="detail">
+                  <Text id={`cell:${keys[index]}:detail`}>{row.descriptionGu}</Text>
+                </td>
                 <td data-col="credit" className="figure">{money(row.creditPaise)}</td>
                 <td data-col="debit" className="figure">{money(row.debitPaise)}</td>
                 <td data-col="creditBalance" className="figure">{money(row.creditBalancePaise)}</td>

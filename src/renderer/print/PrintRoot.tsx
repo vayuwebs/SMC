@@ -453,6 +453,9 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
           landscape flag passed to Electron - decides the actual paper and
           orientation. A single global `@page` would print all the landscape
           forms portrait, with their tables cropped down the right-hand side.
+          The size is always the paper's own millimetres: the CSS keyword
+          "legal" is US Legal (355.6mm), which made an Indian Legal (345mm)
+          PDF 10mm too long, with a blank strip at its end.
           */}
           <style>{`@page { size: ${page.paperWidthMm}mm ${page.paperHeightMm}mm; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }`}</style>
           {/* The school's layout, then - on the Reports screen - the editor's marks. */}

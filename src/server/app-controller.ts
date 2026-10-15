@@ -227,6 +227,58 @@ export class AppController {
     this.backups?.markChanged();
   }
 
+  /**
+   * Delete a financial year after verifying the user's account password.
+   */
+  async deleteYear(input: { yearId: number; password?: string }): Promise<ApiResult<{ deletedYearId: number; switchedToYearId?: number }>> {
+    const current = this.current;
+    if (!current || !current.books) {
+      return failure(issue("no_school_open", "કોઈ શાળા ખૂલેલી નથી.", "No school is open."));
+    }
+
+    // 1. Password verification for safety
+    if (!this.standalone && this.account && this.account.user) {
+      if (!input.password || input.password.trim() === "") {
+        return failure(issue("password_required", "સુરક્ષા માટે ખાતાનો પાસવર્ડ દાખલ કરો.", "Please enter your account password for safety."));
+      }
+      try {
+        await this.account.backend.signIn(this.account.user.email, input.password);
+      } catch (error) {
+        if (error instanceof CloudError && error.code === "invalid-credentials") {
+          return failure(issue("invalid_credentials", "પાસવર્ડ ખોટો છે.", "Incorrect password."));
+        }
+        return failure(cloudIssue(error, "deleteYear"));
+      }
+    }
+
+    // 2. Perform delete in books
+    const deleteResult = await current.books.deleteYear(input);
+    if (!deleteResult.ok) {
+      return deleteResult;
+    }
+
+    // 3. If the active year was deleted, switch to another remaining year
+    let switchedToYearId: number | undefined;
+    if (input.yearId === current.books.currentYearId) {
+      const remaining = await current.prisma.financialYear.findFirst({
+        orderBy: { label: "desc" },
+      });
+      if (remaining) {
+        this.switchYear(remaining.id, remaining.label);
+        switchedToYearId = remaining.id;
+      }
+    }
+
+    this.onBooksChanged();
+    return {
+      ok: true,
+      data: {
+        deletedYearId: input.yearId,
+        switchedToYearId,
+      },
+    };
+  }
+
   // ---------------------------------------------------------------- account
 
   async signIn(email: string, password: string): Promise<ApiResult<AppStateDto>> {

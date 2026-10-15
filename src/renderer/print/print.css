@@ -404,6 +404,49 @@ table.form.rojmel td.ref {
   white-space: nowrap;
 }
 
+table.form.rojmel td[data-col="p.ref"] {
+  padding: 0.2mm 0.5mm;
+  line-height: 1.05;
+}
+
+table.form.rojmel .voucher-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2mm;
+  line-height: 1.05;
+}
+
+table.form.rojmel .voucher-date {
+  font-size: 8.5pt;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  white-space: nowrap;
+}
+
+table.form.rojmel td[data-col="r.date"],
+table.form.rojmel td[data-col="p.date"] {
+  padding: 0.2mm 0.5mm;
+  line-height: 1.05;
+}
+
+table.form.rojmel .date-range-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 8.5pt;
+  line-height: 1.05;
+}
+
+table.form.rojmel .date-separator {
+  font-size: 8pt;
+  font-weight: 700;
+  color: inherit;
+  margin: 0.1mm 0;
+}
+
 table.form.rojmel td.label {
   text-align: center;
   font-weight: 700;
@@ -417,29 +460,67 @@ table.form.rojmel tr.footer-row td {
    as in the client's own book. */
 table.form.rojmel tr.footer-row.spent td:is(.label, .figure) {
   background: #fdeee4;
+  color: #1a0dab;
+  text-decoration: none;
 }
 
 table.form.rojmel tr.footer-row.closing td:is(.label, .figure) {
   background: #fdf6e3;
+  color: #1a0dab;
+  text-decoration: none;
 }
 
 table.form.rojmel tr.footer-row.grand td:is(.label, .figure) {
   background: #eaf3ea;
+  color: #1a0dab;
+  text-decoration: none;
 }
 
 /* A grant received: coloured from its words to its amounts
-   (GRANT_CREDIT_FILL in shared/rojmel-rows.ts, which the Excel copies). */
+   (GRANT_CREDIT_FILL in shared/rojmel-rows.ts, which the Excel copies - pink). */
 table.form.rojmel td.grant-credit {
-  background: #e3eefa;
+  background: #fce4ec;
+  color: #1a0dab;
+  text-decoration: none;
+}
+
+/* Bank-to-hand reimbursement cash line: row highlighted, amounts in blue. */
+table.form.rojmel td.cash-in-hand {
+  background: #fff9c4;
+  color: #1a0dab;
+  text-decoration: none;
+}
+
+table.form.rojmel td.cash-in-hand.figure {
+  color: #1a0dab;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* All text and child elements in highlighted rojmel cells appear as clean link-style text (no underline) */
+table.form.rojmel :is(td.grant-credit, td.cash-in-hand, tr.footer-row td:is(.label, .figure)) * {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Voucher & Cheque numbers red, sub-vouchers (1/1, 1/2) pink. */
+table.form.rojmel .voucher-no,
+table.form.rojmel .cheque-no,
+table.form.register td[data-col="chequeNo"],
+table.form.register td[data-col="voucherNo"],
+.voucher-meta td.voucher-no {
+  color: #c62828;
+  font-weight: 700;
+}
+
+table.form.rojmel .sub-voucher-no {
+  color: #d81b60;
+  font-weight: 700;
 }
 
 /* "1/3 11/07/24": the voucher number is bold, its date is not. */
 table.form.rojmel td.ref {
   font-weight: 400;
-}
-
-table.form.rojmel td.ref .voucher-no {
-  font-weight: 700;
 }
 
 /* A blank band between blocks, as on the printed book. */
@@ -667,14 +748,18 @@ table.form.reconciliation tr.grand td {
   gap: 4mm;
 }
 
-/* Each account half the sheet's width - also when it is alone in its row. */
+/* Each account takes the full width across the sheet. */
 .khatavahi-row > .khatavahi-account {
-  flex: 0 0 calc((100% - 4mm) / 2);
+  flex: 1 1 100%;
+  width: 100%;
   min-width: 0;
 }
 
 .account-head {
-  margin-bottom: 1.5mm;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5mm;
+  margin-bottom: 2.5mm;
 }
 
 .account-kind {
@@ -683,16 +768,49 @@ table.form.reconciliation tr.grand td {
   font-size: var(--report-font);
   background: #fdeee4;
   border: 0.7pt solid #000;
-  padding: 1mm;
+  padding: 1.2mm 2mm;
+  box-sizing: border-box;
 }
 
 .account-meta {
   display: flex;
   justify-content: space-between;
-  gap: 3mm;
+  align-items: stretch;
+  gap: 2mm;
   font-size: var(--report-font);
   font-weight: 700;
-  padding: 1mm 1.5mm 0;
+  box-sizing: border-box;
+}
+
+.account-meta-cell {
+  border: 0.7pt solid #000;
+  background: #fff;
+  padding: 1mm 2mm;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  font-size: var(--report-font);
+  line-height: 1.2;
+}
+
+.account-meta-cell.account-name {
+  flex: 1 1 65%;
+  justify-content: flex-start;
+}
+
+.account-meta-cell.account-year {
+  flex: 0 0 auto;
+  min-width: 48mm;
+  justify-content: center;
+}
+
+.account-meta-cell .meta-label {
+  margin-right: 1.5mm;
+  white-space: nowrap;
+}
+
+.account-meta-cell .meta-value {
+  white-space: nowrap;
 }
 
 table.form.khatavahi {

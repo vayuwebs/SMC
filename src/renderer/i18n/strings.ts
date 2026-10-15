@@ -243,6 +243,7 @@ export interface Strings {
   layoutHeadRow: string;
   layoutApplyTo: string;
   layoutScopeCell: string;
+  layoutScopeGroupCell: string;
   layoutScopeRow: string;
   layoutScopeColumn: string;
   layoutWidth: string;
@@ -277,6 +278,7 @@ export interface Strings {
   layoutTextColour: string;
   excelTabHome: string;
   excelGroupText: string;
+  excelFormulaPlaceholder: string;
   excelTextReset: string;
   excelTextVars: (names: string) => string;
   excelTabPage: string;
@@ -446,6 +448,9 @@ export interface Strings {
   importFileHead: string;
   importNotes: string;
   importFromBills: string;
+  importAddHead: string;
+  importRemoveHead: string;
+  importSplitMismatch: string;
   importMissingHeads: (count: number) => string;
   importRun: string;
   importConfirm: (receipts: number, bills: number, cheques: number) => string;
@@ -478,6 +483,15 @@ export interface Strings {
   yearClosed: string;
   yearCurrent: string;
   yearSwitchTo: string;
+  yearReopen: string;
+  yearConfirmReopen: (label: string) => string;
+  yearDelete: string;
+  yearDeletePrompt: (label: string) => string;
+  yearDeleteWarning: string;
+  yearDeletePasswordLabel: string;
+  yearDeletePasswordPlaceholder: string;
+  yearDeleteOnlyYearError: string;
+  yearDeleteSubmit: string;
 
   // -------------------------------------------------------------- settings
   settingsTitle: string;
@@ -831,7 +845,8 @@ export const gu: Strings = {
   layoutHeadRow: "મથાળાની લાઈન",
   layoutApplyTo: "ફેરફાર લાગુ કરો",
   layoutScopeCell: "આ ખાનું",
-  layoutScopeRow: "આખી લાઈન",
+  layoutScopeGroupCell: "આ ખાનું (દરેક બ્લોકમાં)",
+  layoutScopeRow: "આખી લાઈન (દરેક બ્લોકમાં)",
   layoutScopeColumn: "આખી કોલમ",
   layoutWidth: "કોલમની પહોળાઈ",
   layoutHighlight: "રંગ (હાઈલાઈટ)",
@@ -867,6 +882,7 @@ export const gu: Strings = {
   layoutTextColour: "અક્ષરનો રંગ",
   excelTabHome: "હોમ",
   excelGroupText: "લખાણ",
+  excelFormulaPlaceholder: "સેલનું લખાણ બદલવા અહીં લખો…",
   excelTextReset: "મૂળ લખાણ",
   excelTextVars: (names) => `${names} ની જગ્યાએ આંકડો આપોઆપ આવશે — તેને રહેવા દો.`,
   excelTabPage: "પેજ લેઆઉટ",
@@ -1042,6 +1058,9 @@ export const gu: Strings = {
   importFileHead: "ફાઈલમાં લખેલ હેડ",
   importNotes: "નોંધ / તપાસવાનું",
   importFromBills: "બિલ પ્રમાણે",
+  importAddHead: "+ હેડ ઉમેરો",
+  importRemoveHead: "આ હેડ કાઢો",
+  importSplitMismatch: "હેડવાર રકમનો સરવાળો ચેકની રકમ જેટલો નથી",
   importMissingHeads: (count) => `${count} લીટીનું ગ્રાન્ટ હેડ પસંદ કરવાનું બાકી છે.`,
   importRun: "લાવો",
   importConfirm: (receipts, bills, cheques) =>
@@ -1078,6 +1097,16 @@ export const gu: Strings = {
   yearClosed: "બંધ",
   yearCurrent: "ચાલુ વર્ષ",
   yearSwitchTo: "આ વર્ષ ખોલો",
+  yearReopen: "વર્ષ ફરી ખોલો",
+  yearConfirmReopen: (label) => `શું તમે ખરેખર ${label} વર્ષ ફરીથી ખોલવા માંગો છો? આનાથી તે ચાલુ વર્ષ બની જશે અને બાકીના વર્ષો બંધ થશે.`,
+  yearDelete: "વર્ષ કાઢી નાખો",
+  yearDeletePrompt: (label) => `નાણાકીય વર્ષ ${label} કાઢી નાખવું છે?`,
+  yearDeleteWarning:
+    "ચેતવણી: આ નાણાકીય વર્ષ કાઢી નાખવાથી તેની તમામ વિગતો (બિલ, ચેક, પહોંચ, બેન્ક વ્યવહારો વગેરે) કાયમ માટે કાઢી નાખવામાં આવશે. આ ક્રિયા પાછી ખેંચી શકાશે નહીં.",
+  yearDeletePasswordLabel: "સુરક્ષા માટે તમારા ખાતાનો પાસવર્ડ દાખલ કરો:",
+  yearDeletePasswordPlaceholder: "ખાતાનો પાસવર્ડ",
+  yearDeleteOnlyYearError: "શાળાનું એકમાત્ર નાણાકીય વર્ષ કાઢી શકાતું નથી.",
+  yearDeleteSubmit: "ખાતરીપૂર્વક કાઢી નાખો",
 
   settingsTitle: "સેટિંગ",
   settingsSubtitle: "સોફ્ટવેરની પસંદગીઓ",
@@ -1434,7 +1463,8 @@ export const en: Strings = {
   layoutHeadRow: "Heading row",
   layoutApplyTo: "Apply changes to",
   layoutScopeCell: "This cell",
-  layoutScopeRow: "Whole row",
+  layoutScopeGroupCell: "This cell (in every block)",
+  layoutScopeRow: "Whole row (in every block)",
   layoutScopeColumn: "Whole column",
   layoutWidth: "Column width",
   layoutHighlight: "Highlight",
@@ -1470,6 +1500,7 @@ export const en: Strings = {
   layoutTextColour: "Text colour",
   excelTabHome: "Home",
   excelGroupText: "Text",
+  excelFormulaPlaceholder: "Type here to edit cell text…",
   excelTextReset: "Original text",
   excelTextVars: (names) => `${names} is filled in with the figure — keep it in the text.`,
   excelTabPage: "Page Layout",
@@ -1644,6 +1675,9 @@ export const en: Strings = {
   importFileHead: "Head as written in the file",
   importNotes: "Notes / check these",
   importFromBills: "From its bills",
+  importAddHead: "+ Add head",
+  importRemoveHead: "Remove this head",
+  importSplitMismatch: "The amounts per head do not add up to the cheque",
   importMissingHeads: (count) => `${count} row(s) still need a grant head.`,
   importRun: "Import",
   importConfirm: (receipts, bills, cheques) =>
@@ -1680,6 +1714,16 @@ export const en: Strings = {
   yearClosed: "Closed",
   yearCurrent: "Current year",
   yearSwitchTo: "Open this year",
+  yearReopen: "Reopen year",
+  yearConfirmReopen: (label) => `Are you sure you want to reopen year ${label}? This will make it the current year and close all other years.`,
+  yearDelete: "Delete year",
+  yearDeletePrompt: (label) => `Delete financial year ${label}?`,
+  yearDeleteWarning:
+    "Warning: Deleting this financial year will permanently erase all its records (bills, cheques, receipts, bank charges, etc.). This action cannot be undone.",
+  yearDeletePasswordLabel: "Enter your account password for safety:",
+  yearDeletePasswordPlaceholder: "Account password",
+  yearDeleteOnlyYearError: "Cannot delete the school's only financial year.",
+  yearDeleteSubmit: "Confirm Delete",
 
   settingsTitle: "Settings",
   settingsSubtitle: "Application preferences",

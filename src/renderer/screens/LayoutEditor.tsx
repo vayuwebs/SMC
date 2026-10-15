@@ -17,6 +17,7 @@ import {
   NO_FILL,
   ORIENTATIONS,
   PAPER_SIZES,
+  FIXED_PAPER,
   REPORT_COLUMNS,
   REPORT_DEFAULTS,
   REPORT_PARTS,
@@ -88,7 +89,7 @@ const SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36];
 /** How large the sheet can be drawn on screen. */
 const VIEW_ZOOMS = [50, 75, 90, 100, 125, 150];
 
-type Scope = "cell" | "row" | "col";
+type Scope = "cell" | "groupCell" | "row" | "col";
 type Tab = "home" | "page" | "report" | "view";
 type BorderCommand = "all" | "outside" | "thickOutside" | "none" | BorderSide;
 type Pen = { style: Exclude<BorderStyle, "none">; colour: string | undefined };
@@ -137,13 +138,50 @@ type Selection = (
 function textAt(element: Element | null, box: Element | null): TextRef | null {
   const span =
     element?.closest<HTMLElement>("[data-text]") ??
-    (box && box.querySelectorAll("[data-text]").length === 1 ? box.querySelector<HTMLElement>("[data-text]") : null);
-  if (!span) return null;
-  return {
-    id: span.dataset["text"] ?? "",
-    fallback: span.dataset["textDefault"] ?? "",
-    vars: (span.dataset["textVars"] ?? "").split(",").filter((name) => name !== ""),
-  };
+    (box && box.querySelectorAll("[data-text]").length === 1
+      ? box.querySelector<HTMLElement>("[data-text]")
+      : box?.querySelector<HTMLElement>("[data-text]"));
+  if (span && span.dataset["text"]) {
+    return {
+      id: span.dataset["text"],
+      fallback: span.dataset["textDefault"] ?? span.textContent ?? "",
+      vars: (span.dataset["textVars"] ?? "").split(",").filter((name) => name !== ""),
+    };
+  }
+
+  // Universal text editing for any part or cell
+  const partEl = element?.closest<HTMLElement>("[data-part]") ?? box?.closest<HTMLElement>("[data-part]");
+  if (partEl && partEl.dataset["part"]) {
+    const part = partEl.dataset["part"];
+    const textContent = partEl.textContent?.trim() ?? "";
+    return {
+      id: `part:${part}`,
+      fallback: textContent,
+      vars: [],
+    };
+  }
+  const cellEl =
+    element?.closest<HTMLElement>("td[data-col], th[data-col]") ??
+    box?.closest<HTMLElement>("td[data-col], th[data-col]");
+  if (cellEl && cellEl.dataset["col"]) {
+    const col = cellEl.dataset["col"];
+    const tr = cellEl.closest<HTMLElement>("tr");
+    const row = tr?.dataset["row"];
+    const textContent = cellEl.textContent?.trim() ?? "";
+    if (row) {
+      return {
+        id: `cell:${row}:${col}`,
+        fallback: textContent,
+        vars: [],
+      };
+    }
+    return {
+      id: `col:${col}`,
+      fallback: textContent,
+      vars: [],
+    };
+  }
+  return null;
 }
 
 /** A size measured on a zoomed sheet, in the sheet's own pixels. */
@@ -199,6 +237,18 @@ function targetsFor(selection: Selection | null, scope: Scope): LayoutTarget[] {
   if (effective === "row") {
     // The whole row is that row in every block, where the report has blocks.
     return unique(selection.cells.map((cell) => cell.group ?? cell.row)).map((row) => ({ kind: "row", row }));
+  }
+  if (effective === "groupCell") {
+    const seen = new Set<string>();
+    return selection.cells.flatMap((cell): LayoutTarget[] => {
+      const rowKey = cell.group ?? cell.row;
+      if (rowKey === null) return [];
+      const target: LayoutTarget = { kind: "cell", row: rowKey, col: cell.col };
+      const key = targetKey(target);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [target];
+    });
   }
   const seen = new Set<string>();
   return selection.cells.flatMap((cell): LayoutTarget[] => {
@@ -660,8 +710,9 @@ export function LayoutEditor({
           const attribute = target.row.startsWith("group:") ? "data-row-group" : "data-row";
           rules.push(`${root} tr[${attribute}=${cssString(target.row)}] > :is(td, th) { ${tint} }`);
         } else if (target.kind === "cell") {
+          const attribute = target.row.startsWith("group:") ? "data-row-group" : "data-row";
           rules.push(
-            `${root} tr[data-row=${cssString(target.row)}] > :is(td, th)[data-col=${cssString(target.col)}] { ${tint} }`,
+            `${root} tr[${attribute}=${cssString(target.row)}] > :is(td, th)[data-col=${cssString(target.col)}] { ${tint} }`,
           );
         }
       }
@@ -895,95 +946,75 @@ export function LayoutEditor({
 
       <Group label={t.excelGroupCells}>
         <div className="ribbon-rows">
-          {cellSelection && column && (
-            <MiniStepper
-              label={`${t.layoutWidth} (${t.mm})`}
-              value={round1((widths[cellSelection.anchor.col]! / 100) * tableMm)}
-              step={1}
-              min={1}
-              max={round1(tableMm)}
-              onChange={(mm) => {
-                if (mm !== undefined) {
-                  change(setColumnWidth(report, draft, cellSelection.anchor.col, (mm / tableMm) * 100));
+          <div className="ribbon-row">
+            {cellSelection && column && (
+              <MiniStepper
+                label={`${t.layoutWidth} (${t.mm})`}
+                value={round1((widths[cellSelection.anchor.col]! / 100) * tableMm)}
+                step={1}
+                min={1}
+                max={round1(tableMm)}
+                onChange={(mm) => {
+                  if (mm !== undefined) {
+                    change(setColumnWidth(report, draft, cellSelection.anchor.col, (mm / tableMm) * 100));
+                  }
+                }}
+              />
+            )}
+            {part?.sizable && selection?.kind === "part" && (
+              <MiniStepper
+                label={`${t.layoutPartWidth} (${t.mm})`}
+                value={own.widthMm}
+                placeholder={selection.widthMm}
+                step={1}
+                min={5}
+                max={400}
+                onChange={(widthMm) => apply({ widthMm })}
+              />
+            )}
+          </div>
+          <div className="ribbon-row">
+            {heightTargets.length > 0 && (
+              <MiniStepper
+                label={`${t.layoutThisRowHeight} (${t.mm})`}
+                value={heightNow}
+                placeholder={
+                  selection?.kind === "part" ? selection.heightMm : (cellSelection?.anchor.rowMm ?? undefined)
                 }
-              }}
-            />
-          )}
-          {part?.sizable && selection?.kind === "part" && (
-            <MiniStepper
-              label={`${t.layoutPartWidth} (${t.mm})`}
-              value={own.widthMm}
-              placeholder={selection.widthMm}
-              step={1}
-              min={5}
-              max={400}
-              onChange={(widthMm) => apply({ widthMm })}
-            />
-          )}
-          {heightTargets.length > 0 && (
-            <MiniStepper
-              label={`${t.layoutThisRowHeight} (${t.mm})`}
-              value={heightNow}
-              placeholder={
-                selection?.kind === "part" ? selection.heightMm : (cellSelection?.anchor.rowMm ?? undefined)
-              }
-              step={0.5}
-              min={2}
-              max={80}
-              onChange={setHeight}
-            />
-          )}
-          {cellSelection?.anchor.gapAllowed && gapKey !== null && (
-            <MiniStepper
-              label={`${t.layoutGapAfter} (${t.mm})`}
-              value={draft.rowGapsMm[gapKey]}
-              placeholder={0}
-              step={1}
-              max={80}
-              onChange={(mm) => change(withRowGap(draft, gapKey, mm ?? null))}
-            />
-          )}
-          {!cellSelection && !part && <span className="ribbon-hint">{t.excelCellsHint}</span>}
-          {heightTargets.length > 0 && cellSelection?.anchor.group && (
-            <span className="ribbon-hint">{t.excelRowHeightHint}</span>
-          )}
+                title={cellSelection?.anchor.group ? t.excelRowHeightHint : undefined}
+                step={0.5}
+                min={2}
+                max={80}
+                onChange={setHeight}
+              />
+            )}
+            {cellSelection?.anchor.gapAllowed && gapKey !== null && (
+              <MiniStepper
+                label={`${t.layoutGapAfter} (${t.mm})`}
+                value={draft.rowGapsMm[gapKey]}
+                placeholder={0}
+                step={1}
+                max={80}
+                onChange={(mm) => change(withRowGap(draft, gapKey, mm ?? null))}
+              />
+            )}
+          </div>
         </div>
       </Group>
 
-      {selection?.text && (
-        <Group label={t.excelGroupText}>
-          <TextEditor
-            key={selection.text.id}
-            text={selection.text}
-            value={draft.texts?.[selection.text.id]}
-            onChange={(value) => change(withText(draft, selection.text!.id, value))}
-          />
-        </Group>
-      )}
-
       <Group label={t.layoutApplyTo}>
-        <div className="ribbon-rows">
-          {(
-            [
-              ["cell", t.layoutScopeCell],
-              ["row", t.excelScopeRow],
-              ["col", t.layoutScopeColumn],
-            ] as const
-          ).map(([id, label]) => {
-            const off = !cellSelection || (id !== "col" && !anchorHasRow);
-            return (
-              <label key={id} className={`ribbon-radio${off ? " disabled" : ""}`}>
-                <input
-                  type="radio"
-                  name="excel-scope"
-                  checked={cellSelection !== null && effectiveScope === id}
-                  disabled={off}
-                  onChange={() => setScope(id)}
-                />
-                {label}
-              </label>
-            );
-          })}
+        <div className="ribbon-rows" style={{ justifyContent: "center", height: "100%" }}>
+          <select
+            className="ribbon-select"
+            value={effectiveScope}
+            disabled={!cellSelection}
+            onChange={(e) => setScope(e.target.value as Scope)}
+          >
+            <option value="cell">{t.layoutScopeCell}</option>
+            {anchorHasRow && <option value="groupCell">{t.layoutScopeGroupCell}</option>}
+            {anchorHasRow && <option value="row">{t.layoutScopeRow}</option>}
+            <option value="col">{t.layoutScopeColumn}</option>
+          </select>
         </div>
       </Group>
     </>
@@ -1001,6 +1032,7 @@ export function LayoutEditor({
         <select
           className="ribbon-select"
           value={page.paper}
+          disabled={FIXED_PAPER[report] !== undefined}
           onChange={(event) => setPage({ paper: event.target.value as PaperId })}
         >
           {PAPER_SIZES.map((paper) => (
@@ -1178,6 +1210,37 @@ export function LayoutEditor({
 
       <div className="excel-namebar">
         <span className="excel-namebox">{nameBox}</span>
+        <div className="excel-formulabar">
+          <span className="fx-label" title={t.excelGroupText}>fx</span>
+          <input
+            type="text"
+            className="excel-formula-input"
+            placeholder={
+              selection?.text
+                ? selection.text.fallback
+                : cellSelection || selection?.kind === "part"
+                  ? t.excelFormulaPlaceholder
+                  : ""
+            }
+            value={selection?.text ? (draft.texts?.[selection.text.id] ?? selection.text.fallback) : ""}
+            disabled={!selection?.text}
+            onChange={(e) => {
+              if (selection?.text) {
+                change(withText(draft, selection.text.id, e.target.value));
+              }
+            }}
+          />
+          {selection?.text && draft.texts?.[selection.text.id] !== undefined && (
+            <button
+              type="button"
+              className="excel-formula-reset-btn"
+              title={t.excelTextReset}
+              onClick={() => change(withText(draft, selection.text!.id, undefined))}
+            >
+              ↺
+            </button>
+          )}
+        </div>
         {selection?.kind === "part" && selection.parent && (
           <button className="link" onClick={selectParent}>
             {t.layoutSelectParent(
@@ -1333,6 +1396,7 @@ function MiniStepper({
   label,
   value,
   placeholder,
+  title,
   step,
   min = 0,
   max = 1000,
@@ -1341,6 +1405,7 @@ function MiniStepper({
   label: string;
   value: number | undefined;
   placeholder?: number | undefined;
+  title?: string;
   step: number;
   min?: number;
   max?: number;
@@ -1360,7 +1425,7 @@ function MiniStepper({
     else setText(value === undefined ? "" : String(value));
   };
   return (
-    <div className="mini-stepper">
+    <div className="mini-stepper" title={title}>
       <span className="mini-stepper-label">{label}</span>
       <button type="button" className="ribbon-button" onClick={() => onChange(clamp(base - step))} aria-label="−">
         −

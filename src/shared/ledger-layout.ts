@@ -27,12 +27,11 @@
  * Pure, so the arrangement is tested without a browser (tests/ledger-layout.test.ts).
  */
 
-export const ACCOUNTS_PER_SHEET = 4;
+export const ACCOUNTS_PER_SHEET = 2;
 
 /**
- * One sheet: its top row and its bottom row, each the accounts left to right,
- * as indexes into the input. A row holds at most two; the bottom one may be
- * empty on the last sheet.
+ * One sheet: its top row and its bottom row, each an account,
+ * as indexes into the input. The bottom row may be empty on the last sheet.
  */
 export type LedgerSheet = [number[], number[]];
 
@@ -49,7 +48,7 @@ export function arrangeLedgers(sizes: readonly number[]): LedgerSheet[] {
   let high = order.length - 1;
   while (low <= high) {
     const chosen: number[] = [];
-    // Largest, smallest, next largest, next smallest.
+    // Largest, smallest.
     for (let pick = 0; pick < ACCOUNTS_PER_SHEET && low <= high; pick += 1) {
       chosen.push(pick % 2 === 0 ? order[low++]! : order[high--]!);
     }
@@ -58,10 +57,10 @@ export function arrangeLedgers(sizes: readonly number[]): LedgerSheet[] {
   return sheets;
 }
 
-/** Up to four accounts into two rows: the two larger on top, the larger of each row on the left. */
+/** Up to two accounts into two rows: larger on top, smaller below. */
 function rowsOf(accounts: number[], sizes: readonly number[]): LedgerSheet {
   const bySize = [...accounts].sort((a, b) => sizes[b]! - sizes[a]! || a - b);
-  return [bySize.slice(0, 2), bySize.slice(2, 4)];
+  return [bySize.slice(0, 1), bySize.slice(1, 2)];
 }
 
 /**

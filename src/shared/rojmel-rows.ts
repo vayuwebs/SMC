@@ -34,8 +34,8 @@ export function isGrantCredit(line: RojmelLine): boolean {
   return line.side === "receipt" && line.source.kind === "receipt";
 }
 
-/** The colour of a grant-received row, from its words to its amounts. */
-export const GRANT_CREDIT_FILL = "#e3eefa";
+/** The colour of a grant-received row, from its words to its amounts (pink). */
+export const GRANT_CREDIT_FILL = "#fce4ec";
 
 export function rojmelBlockRows(block: RojmelBlock): RojmelTableRow[] {
   // The આવક side with its blank rows: opening, blank, receipts, blank, and the

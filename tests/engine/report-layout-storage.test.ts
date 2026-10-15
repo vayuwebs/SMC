@@ -216,9 +216,9 @@ describe("colours and page setup in the workbook", () => {
     const sheet = (await roundTrip("rojmel")).worksheets[0]!;
     const coloured: string[] = [];
     sheet.eachRow((row) => {
-      // Column 2 is the આવક side's વિગત, 8 its કુલ રકમ.
-      if (fillOf(row.getCell(2)) === "FFE3EEFA") {
-        expect(fillOf(row.getCell(8))).toBe("FFE3EEFA");
+      // Column 2 is the આવક side's વિગત, 7 its કુલ રકમ.
+      if (fillOf(row.getCell(2)) === "FFFCE4EC") {
+        expect(fillOf(row.getCell(7))).toBe("FFFCE4EC");
         // Not the date, nor the payment side.
         expect(fillOf(row.getCell(1))).toBeNull();
         coloured.push(String(row.getCell(2).value));

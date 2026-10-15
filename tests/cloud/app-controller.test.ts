@@ -83,7 +83,7 @@ describe("the contract", () => {
 
   it("marks every write to the books as needing a backup", () => {
     const writes = API_METHODS.filter((method) =>
-      /^(create|update|delete|save|close|apply|complete)/.test(method),
+      /^(create|update|delete|save|close|apply|complete|reopen|open)/.test(method),
     ).filter((method) => !(SESSION_METHODS as readonly string[]).includes(method));
     expect([...MUTATING_METHODS].sort()).toEqual([...writes].sort());
   });
@@ -396,5 +396,42 @@ describe("the books from before schools had folders", () => {
     const restored = await pc2.restoreSchool(state.school.profileId, backups.data[0]!.id, tempDir("new-pendrive"));
     if (!restored.ok) throw new Error(JSON.stringify(restored.issues));
     expect((await pc2.books!.getAnnexure10()).totals).toEqual(report.totals);
+  });
+
+  it("requires the account password to delete a financial year and deletes when valid", async () => {
+    const w = world();
+    const penDrive = tempDir("pendrive");
+    w.plugIn(penDrive);
+    const pc1 = w.pc();
+    await signUp(w, pc1);
+    const created = await createSchool(pc1, penDrive);
+    expect(created.phase).toBe("open");
+
+    // Close year to create a second year (2027-28)
+    const closed = await pc1.books!.closeYear({ nextLabel: "2027-28" });
+    expect(closed.ok).toBe(true);
+
+    const years = await pc1.books!.listFinancialYears();
+    expect(years.length).toBe(2);
+    const oldYear = years.find((y) => y.label === "2026-27")!;
+
+    // 1. Refuse empty password
+    const noPass = await pc1.deleteYear({ yearId: oldYear.id, password: "" });
+    expect(noPass.ok).toBe(false);
+    if (!noPass.ok) expect(noPass.issues[0]!.code).toBe("password_required");
+
+    // 2. Refuse wrong password
+    const wrongPass = await pc1.deleteYear({ yearId: oldYear.id, password: "wrong-password" });
+    expect(wrongPass.ok).toBe(false);
+    if (!wrongPass.ok) expect(wrongPass.issues[0]!.code).toBe("invalid_credentials");
+
+    // 3. Succeed with correct password
+    const success = await pc1.deleteYear({ yearId: oldYear.id, password: PASSWORD });
+    expect(success.ok).toBe(true);
+    if (success.ok) expect(success.data.deletedYearId).toBe(oldYear.id);
+
+    const afterDelete = await pc1.books!.listFinancialYears();
+    expect(afterDelete.length).toBe(1);
+    expect(afterDelete[0]!.label).toBe("2027-28");
   });
 });

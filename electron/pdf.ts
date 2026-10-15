@@ -17,7 +17,7 @@
  * true`, because offscreen rendering skips some font and layout work that the
  * printed output depends on.
  */
-import { BrowserWindow } from "electron";
+import { BrowserWindow, type WebContentsPrintOptions } from "electron";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
 
@@ -42,13 +42,14 @@ export async function exportReportPdf(request: PdfRequest): Promise<string> {
   const window = await renderReport(request);
   try {
     const { page } = request;
+    const isLegal = page.paper === "legal-in" || page.paper === "legal-us";
     const pdf = await window.webContents.printToPDF({
       landscape: page.landscape,
       // The paper as it stands upright, in inches. preferCSSPageSize below
       // means the stylesheet's @page wins anyway (PrintRoot writes it from
       // the same page setup), but stating it here keeps the two from
       // disagreeing silently.
-      pageSize: paperInches(page),
+      pageSize: isLegal && page.paper === "legal-us" ? "Legal" : paperInches(page),
       printBackground: true,
       // The stylesheet owns the margins through @page, so Chromium must not
       // add its own on top.
@@ -66,37 +67,83 @@ export async function exportReportPdf(request: PdfRequest): Promise<string> {
 export type PrintRequest = Omit<PdfRequest, "outputPath">;
 
 /**
- * Print a report on a printer: the same hidden window as the PDF, then the
- * system's print dialog, where the printer, the copies and the pages are chosen.
- * Resolves true when it was sent to the printer, false when the dialog was
- * cancelled.
+ * Standard paper sizes supported directly by Chromium and printer drivers,
+ * or custom micron dimensions for other sheets (e.g. folio).
+ */
+function printPageSize(page: ResolvedPage): WebContentsPrintOptions["pageSize"] {
+  switch (page.paper) {
+    case "a4":
+      return "A4";
+    case "a3":
+      return "A3";
+    case "letter":
+      return "Letter";
+    case "legal-in":
+    case "legal-us":
+      return "Legal";
+    default:
+      return {
+        width: Math.round(Math.min(page.paperWidthMm, page.paperHeightMm) * 1000),
+        height: Math.round(Math.max(page.paperWidthMm, page.paperHeightMm) * 1000),
+      };
+  }
+}
+
+/**
+ * Print a report on a printer: loads the report, then presents the system
+ * print dialog where the printer, copies, and options are chosen.
+ * Resolves true when sent to printer, false when dialog was cancelled.
  */
 export async function printReport(request: PrintRequest): Promise<boolean> {
   const window = await renderReport(request);
   try {
     const { page } = request;
+
+    // On Linux/Wayland, Chromium crashes with SIGTRAP if webContents.print(silent: false)
+    // is called on an unmapped (show: false) window because the compositor rejects the
+    // unmapped surface (zxdg_exporter_v2 error).
+    // The window must be mapped, parented, and displayed for the OS print dialog.
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((w) => w !== window);
+    if (parent && !parent.isDestroyed()) {
+      window.setParentWindow(parent);
+    }
+    window.setMenuBarVisibility(false);
+    window.setTitle(`છાપો — ${defaultPdfName(request.report, "")}`);
+    window.show();
+
     return await new Promise<boolean>((resolve, reject) => {
+      let settled = false;
+      const done = (value: boolean | Error) => {
+        if (settled) return;
+        settled = true;
+        if (value instanceof Error) reject(value);
+        else resolve(value);
+      };
+
+      window.once("closed", () => done(false));
+
       window.webContents.print(
         {
           silent: false,
           printBackground: true,
           landscape: page.landscape,
-          // In microns. The stylesheet's @page says the same.
-          pageSize: {
-            width: Math.round(Math.min(page.paperWidthMm, page.paperHeightMm) * 1000),
-            height: Math.round(Math.max(page.paperWidthMm, page.paperHeightMm) * 1000),
-          },
+          pageSize: printPageSize(page),
           margins: { marginType: "none" },
         },
         (success, failureReason) => {
           // Cancelling the dialog is not a failure.
-          if (success || /cancel/i.test(failureReason)) resolve(success);
-          else reject(new Error(`printing failed: ${failureReason}`));
+          if (success || !failureReason || /cancel/i.test(failureReason)) {
+            done(success);
+          } else {
+            done(new Error(`printing failed: ${failureReason}`));
+          }
         },
       );
     });
   } finally {
-    window.destroy();
+    if (!window.isDestroyed()) {
+      window.destroy();
+    }
   }
 }
 

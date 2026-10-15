@@ -22,7 +22,7 @@
  */
 import { add, paise, sum, type Paise, ZERO } from "../lib/money.js";
 import { paidForGu } from "../lib/gujarati.js";
-import { addDays, endOfMonth, formatDate, formatDateShort } from "../lib/dates.js";
+import { addDays, endOfMonth, formatDate, formatDateShort, startOfMonth } from "../lib/dates.js";
 import { billNet, chequeAllocation, chequeAmount } from "./allocation.js";
 import { openingBank, openingCash } from "./balances.js";
 import type { PageResolver } from "./ledger.js";
@@ -136,15 +136,28 @@ export interface RojmelOptions {
   nilBlocks?: "fill-gaps" | "none";
 }
 
+/**
+ * The cash book runs in date order, never in cheque-number order: cheques are
+ * not always written in the order of their numbers. Cheques entered on the same
+ * cash-book date follow their own cheque date; the number only breaks a tie.
+ */
+function byDate(a: BookCheque, b: BookCheque): number {
+  return (
+    a.cashbookDate.localeCompare(b.cashbookDate) ||
+    a.chequeDate.localeCompare(b.chequeDate) ||
+    a.chequeNo - b.chequeNo
+  );
+}
+
 export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel {
   const fillGaps = (options.nilBlocks ?? "fill-gaps") === "fill-gaps";
 
   const receiptsByDate = groupBy(book.receipts, (receipt) => receipt.date);
   const chequesByDate = groupBy(book.cheques, (cheque) => cheque.cashbookDate);
-  const chargesByDate = groupBy(book.bankCharges, (charge) => charge.date);
 
+  // Bank charges are not shown in the cash book (Rojmel).
   const activeDates = [
-    ...new Set([...receiptsByDate.keys(), ...chequesByDate.keys(), ...chargesByDate.keys()]),
+    ...new Set([...receiptsByDate.keys(), ...chequesByDate.keys()]),
   ].sort();
 
   const blocks: RojmelBlock[] = [];
@@ -179,12 +192,35 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
     if (from <= to) emit(nilBlock(from, to, cash, bank));
   };
 
+  /**
+   * For calendar months with no expenses/transactions at all, emits one nil block per month
+   * (e.g. 01/09/2025 થી 30/09/2025 with "કોઈ નાણાંકીય ખર્ચ કરેલ નથી").
+   */
+  const emitEmptyMonths = (afterDate: string, upToDate: string): void => {
+    if (!fillGaps) return;
+    let cursor = startOfMonth(addDays(endOfMonth(afterDate), 1));
+    const limit = startOfMonth(upToDate);
+    while (cursor < limit && cursor <= book.year.endDate) {
+      const monthEnd = endOfMonth(cursor);
+      const to = monthEnd <= book.year.endDate ? monthEnd : book.year.endDate;
+      emit(nilBlock(cursor, to, cash, bank));
+      cursor = startOfMonth(addDays(monthEnd, 1));
+    }
+  };
+
   // The year opens with its own block, even when nothing happened on 1 April.
   const firstDate = book.year.startDate;
   const startHasEntries = activeDates[0] === firstDate;
   if (fillGaps && !startHasEntries) {
-    emit(nilBlock(firstDate, firstDate, cash, bank));
-    emitTailGap(firstDate, activeDates[0]);
+    if (activeDates.length === 0 || activeDates[0]! > endOfMonth(firstDate)) {
+      emit(nilBlock(firstDate, endOfMonth(firstDate), cash, bank));
+      if (activeDates[0]) {
+        emitEmptyMonths(endOfMonth(firstDate), activeDates[0]);
+      }
+    } else {
+      emit(nilBlock(firstDate, firstDate, cash, bank));
+      emitTailGap(firstDate, activeDates[0]);
+    }
   }
 
   for (let index = 0; index < activeDates.length; index += 1) {
@@ -194,7 +230,7 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
     // sheet chains them. A cheque's bills (its sub-vouchers) stay in its block.
     // The date's receipts - and what the bank charged that day - go in its
     // first block.
-    const cheques = [...(chequesByDate.get(date) ?? [])].sort((a, b) => a.chequeNo - b.chequeNo);
+    const cheques = [...(chequesByDate.get(date) ?? [])].sort(byDate);
     const parts = cheques.length === 0 ? [[]] : cheques.map((cheque) => [cheque]);
     parts.forEach((cheques, part) => {
       emit(
@@ -203,14 +239,19 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
           date,
           part === 0 ? (receiptsByDate.get(date) ?? []) : [],
           cheques,
-          part === 0 ? (chargesByDate.get(date) ?? []) : [],
           cash,
           bank,
           part === 0 ? date : `${date}#${part + 1}`,
         ),
       );
     });
-    emitTailGap(date, activeDates[index + 1]);
+    const nextDate = activeDates[index + 1];
+    emitTailGap(date, nextDate);
+    if (nextDate !== undefined) {
+      emitEmptyMonths(date, nextDate);
+    } else {
+      emitEmptyMonths(date, addDays(book.year.endDate, 1));
+    }
   }
 
   // A year with no transactions at all still prints a book.
@@ -273,7 +314,6 @@ function activeBlock(
   date: string,
   receipts: BookReceipt[],
   cheques: BookCheque[],
-  charges: BookBankCharge[],
   cash: Paise,
   bank: Paise,
   id: string,
@@ -302,7 +342,7 @@ function activeBlock(
       dateText: "",
       descriptionGu:
         receipt.headCode === "INTEREST" ? "શ્રી વ્યાજના નાણાં જમા" : `${head} જમા`,
-      referenceText: receipt.creditedDate ? formatDate(receipt.creditedDate) : "",
+      referenceText: "",
       chequeText: receipt.ddChequeNo ?? "",
       cashPaise: ZERO,
       bankPaise: receipt.amountPaise,
@@ -314,11 +354,9 @@ function activeBlock(
 
   const paymentLines: RojmelLine[] = [];
 
-  for (const cheque of [...cheques].sort((a, b) => a.chequeNo - b.chequeNo)) {
+  for (const cheque of [...cheques].sort(byDate)) {
     const amount = chequeAmount(cheque);
-    // The block's date is printed once, on the આવક side. The cheque's own date
-    // is repeated beside its number only when it is a different day.
-    const ownDate = cheque.chequeDate === date ? "" : ` ${formatDate(cheque.chequeDate)}`;
+    const ownDate = ` ${formatDate(cheque.chequeDate)}`;
     const chequeText = `${cheque.chequeNo}${ownDate}`;
     const voucherText = cheque.voucherNo === null ? "" : `${cheque.voucherNo}${ownDate}`;
 
@@ -445,23 +483,7 @@ function activeBlock(
     }
   }
 
-  // What the bank took itself: straight out of the bank, with no voucher and no
-  // cheque to print beside it.
-  for (const charge of charges) {
-    const head = nameByCode.get(charge.headCode) ?? charge.headCode;
-    paymentLines.push({
-      side: "payment",
-      dateText: paymentLines.length === 0 ? formatDate(date) : "",
-      descriptionGu: `${charge.descriptionGu} (${head})`,
-      referenceText: "",
-      chequeText: "",
-      cashPaise: ZERO,
-      bankPaise: charge.amountPaise,
-      totalPaise: charge.amountPaise,
-      headingOnly: false,
-      source: { kind: "charge", id: charge.id },
-    });
-  }
+  // Bank charges are not printed in Rojmel (cash book).
 
   if (paymentLines.length === 0) {
     paymentLines.push({
@@ -651,9 +673,9 @@ function previousDay(date: string): string {
   return addDays(date, -1);
 }
 
-/** "01/04/2025" or "02/04/2025 TO 30/04/2025", as the form prints it. */
+/** "01/04/2026" or "01/09/2025 થી 30/09/2025", as requested. */
 function dateRangeText(from: string, to: string): string {
-  return from === to ? formatDate(from) : `${formatDate(from)} TO ${formatDate(to)}`;
+  return from === to ? formatDate(from) : `${formatDate(from)} થી ${formatDate(to)}`;
 }
 
 /** "a, b અને c" - the form joins the last pair with અને. */

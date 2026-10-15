@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import type { FinancialYearDto, SchoolDto } from "../../shared/api.js";
-import { toGujaratiDigits } from "../../lib/gujarati.js";
+import { formatSchoolTitle, toGujaratiDigits } from "../../lib/gujarati.js";
+import { Text } from "./layout-context.js";
 
 /**
  * The stacked heading both annexures carry (SPEC 6.8 and 6.9).
@@ -29,36 +30,58 @@ export function AnnexureBanner({
       <tbody>
         <tr data-part="bannerProgramme">
           <td colSpan={4} className="banner-title">
-            {line1}
+            <Text id="part:bannerProgramme">{line1}</Text>
           </td>
         </tr>
-        <tr data-part="bannerProgramme">
-          <td colSpan={4}>{line2}</td>
-        </tr>
+        {line2 && (
+          <tr data-part="bannerProgramme">
+            <td colSpan={4}>
+              <Text id="part:bannerProgramme2">{line2}</Text>
+            </td>
+          </tr>
+        )}
         <tr data-part="bannerNumber">
-          <td colSpan={4}>પરિશિષ્ટ –: {numberGu}</td>
+          <td colSpan={4}>
+            <Text id="part:bannerNumber">{`પરિશિષ્ટ –: ${numberGu}`}</Text>
+          </td>
         </tr>
         <tr data-part="bannerYear">
-          <td colSpan={4}>વર્ષ –: {yearLabel}</td>
-        </tr>
-        <tr data-part="bannerDetails">
-          <td className="label">શાળાનું નામ –:</td>
-          <td className="value" data-part="bannerSchool">
-            {school.nameGu}
+          <td colSpan={4}>
+            <Text id="part:bannerYear">{`વર્ષ –: ${yearLabel}`}</Text>
           </td>
-          <td className="label">ડાયસ કોડ–:</td>
+        </tr>
+        <tr>
+          <td className="label" data-part="bannerSchoolLabel">
+            <Text id="part:bannerSchoolLabel">શાળાનું નામ –:</Text>
+          </td>
+          <td className="value" data-part="bannerSchool">
+            <Text id="part:bannerSchool">{formatSchoolTitle(school.nameGu)}</Text>
+          </td>
+          <td className="label" data-part="bannerDiseLabel">
+            <Text id="part:bannerDiseLabel">ડાયસ કોડ–:</Text>
+          </td>
           {/* An identifier, not a quantity - Latin digits, as on the original. */}
-          <td className="value">{school.diseCode}</td>
+          <td className="value" data-part="bannerDise">{school.diseCode}</td>
         </tr>
-        <tr data-part="bannerDetails">
-          <td className="label">કલસ્ટર –:</td>
-          <td className="value">{school.clusterGu}</td>
-          <td className="label">તાલુકો–:</td>
-          <td className="value">{school.talukaGu}</td>
+        <tr>
+          <td className="label" data-part="bannerClusterLabel">
+            <Text id="part:bannerClusterLabel">કલસ્ટર –:</Text>
+          </td>
+          <td className="value" data-part="bannerCluster">
+            <Text id="part:bannerCluster">{school.clusterGu}</Text>
+          </td>
+          <td className="label" data-part="bannerTalukaLabel">
+            <Text id="part:bannerTalukaLabel">તાલુકો–:</Text>
+          </td>
+          <td className="value" data-part="bannerTaluka">
+            <Text id="part:bannerTaluka">{school.talukaGu}</Text>
+          </td>
         </tr>
-        <tr data-part="bannerDetails">
-          <td className="label">{bankShortName(school.bankNameGu)} ખાતા નંબર –:</td>
-          <td className="value" colSpan={3}>
+        <tr>
+          <td className="label" data-part="bannerAccountLabel">
+            <Text id="part:bannerAccountLabel">{`${bankShortName(school.bankNameGu)} ખાતા નંબર –:`}</Text>
+          </td>
+          <td className="value" colSpan={3} data-part="bannerAccount">
             {school.bankAccountNo}
           </td>
         </tr>

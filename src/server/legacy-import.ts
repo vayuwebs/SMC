@@ -320,7 +320,7 @@ function readChequeRegister(
       payeeGu: text(row.getCell("H")),
       purposeGu: text(row.getCell("J")),
       suggestedType: "DIRECT",
-      suggestedHeadName: null,
+      suggestedHeadNames: [],
       cashedDate: readDate(row.getCell("L"), range, notes, "વટાવ્યા તારીખ"),
       notes,
     });
@@ -391,7 +391,7 @@ export async function readLegacyWorkbook(
   for (const cheque of plan.cheques) {
     cheque.suggestedType = guessChequeType(cheque);
     if (cheque.suggestedType === "GRANT_RETURN") {
-      cheque.suggestedHeadName = suggestHead(cheque.purposeGu, plan.headNames);
+      cheque.suggestedHeadNames = suggestHeads(cheque.purposeGu, plan.headNames);
     }
   }
 
@@ -438,19 +438,46 @@ const EMPTY_WORDS = new Set(["ગ્રાન્ટ", "જમા", "જમાં
  * signal there is. It is a suggestion - see LegacyBillRow.suggestedHeadName.
  */
 export function suggestHead(description: string, headNames: readonly string[]): string | null {
-  const haystack = description.replace(/\s+/g, "");
   let best: { name: string; score: number } | null = null;
+  for (const match of headMentions(description, headNames)) {
+    if (best === null || match.score > best.score) best = match;
+  }
+  return best?.name ?? null;
+}
+
+/**
+ * Every head a free-text description names, in the order it names them.
+ *
+ * For a grant return: "વ્યાજ વટાવ, સિવિલ ગ્રાન્ટ પરત" sends money back from two
+ * heads, and each has to keep its own share.
+ */
+export function suggestHeads(description: string, headNames: readonly string[]): string[] {
+  return headMentions(description, headNames)
+    .sort((a, b) => a.position - b.position)
+    .map((match) => match.name);
+}
+
+function headMentions(
+  description: string,
+  headNames: readonly string[],
+): { name: string; score: number; position: number }[] {
+  const haystack = description.replace(/\s+/g, "");
+  const found: { name: string; score: number; position: number }[] = [];
 
   for (const name of headNames) {
     let score = 0;
-    for (const word of name.split(/\s+/)) {
+    let position = Infinity;
+    for (const word of name.split(/[\s/,]+/)) {
       if (word.length < 3 || EMPTY_WORDS.has(word)) continue;
-      if (haystack.includes(word)) score += word.length;
+      const at = haystack.indexOf(word);
+      if (at === -1) continue;
+      score += word.length;
+      position = Math.min(position, at);
     }
-    if (score > 0 && (best === null || score > best.score)) best = { name, score };
+    if (score > 0) found.push({ name, score, position });
   }
 
-  return best?.name ?? null;
+  return found;
 }
 
 /**

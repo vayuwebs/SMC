@@ -81,7 +81,7 @@ import {
   type ReportLayout,
   type ResolvedPage,
 } from "../shared/report-layout.js";
-import { GRANT_CREDIT_FILL, isGrantCredit, rojmelBlockRows } from "../shared/rojmel-rows.js";
+import { GRANT_CREDIT_FILL, isCashInHand, isGrantCredit, rojmelBlockRows } from "../shared/rojmel-rows.js";
 import type { RojmelBlock, RojmelLine } from "../engine/rojmel.js";
 
 /** Rupees, as a number. Paise are integers; Excel gets the decimal. */
@@ -344,14 +344,13 @@ const ROJMEL_HEADINGS: [id: string, heading: string][] = [
   ["r.detail", "આવકની વિગત"],
   ["r.ref", "પહોંચ નંબર અને તારીખ"],
   ["r.cheque", "ચેક નં તારીખ ડી.ડી.નં તારીખ"],
-  ["r.class", "વર્ગીકરણ રજી.નો પાન નં"],
   ["r.cash", "રોકડ"],
   ["r.bank", "બેન્ક"],
   ["r.total", "કુલ રકમ"],
+  ["p.date", "તારીખ"],
   ["p.detail", "જાવક ની વિગત"],
   ["p.ref", "વાઉચર નંબર અને તારીખ"],
   ["p.cheque", "ચેક નં તારીખ"],
-  ["p.class", "વર્ગીકરણ રજી.નો પાન નં"],
   ["p.cash", "રોકડ"],
   ["p.bank", "બેન્ક"],
   ["p.total", "કુલ રકમ"],
@@ -418,7 +417,7 @@ function rojmelSheet(
       if (!target.font) target.font = font;
     }
     // The heavy rule down the middle, between આવક and જાવક.
-    const middle = cell(row, "p.detail");
+    const middle = cell(row, "p.date");
     middle.border = { ...ruling, left: { ...ruling.left, style: "medium" } };
   };
   const text = (target: ExcelJS.Cell, value: string, shrink = true): void => {
@@ -428,15 +427,18 @@ function rojmelSheet(
 
   const half = (row: ExcelJS.Row, side: "r" | "p", line: RojmelLine | null): void => {
     if (!line) return;
-    if (side === "r") {
-      text(cell(row, "r.date"), line.dateText, false);
-      cell(row, "r.date").font = latin;
+    const dateCell = cell(row, `${side}.date`);
+    const isRange = line.dateText.includes(" થી ");
+    text(dateCell, isRange ? line.dateText.replace(" થી ", "\nથી\n") : line.dateText, !isRange);
+    dateCell.font = latin;
+    if (isRange) {
+      dateCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     }
     text(cell(row, `${side}.detail`), line.descriptionGu);
     const ref = cell(row, `${side}.ref`);
     text(ref, line.referenceText);
     ref.font = latin;
-    // "1/3 11/07/24": the voucher number bold, the date not.
+    // "1/3 11/07/24": voucher number bold on top, date on the next line underneath.
     const space = line.referenceText.indexOf(" ");
     if (side === "p" && line.referenceText !== "") {
       ref.value = {
@@ -444,10 +446,11 @@ function rojmelSheet(
           space > 0
             ? [
                 { text: line.referenceText.slice(0, space), font: latinBold },
-                { text: line.referenceText.slice(space), font: latin },
+                { text: `\n${line.referenceText.slice(space).trim()}`, font: latin },
               ]
             : [{ text: line.referenceText, font: latinBold }],
       };
+      ref.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     }
     text(cell(row, `${side}.cheque`), line.chequeText);
     cell(row, `${side}.cheque`).font = latin;
@@ -458,12 +461,30 @@ function rojmelSheet(
     }
     // A grant received, coloured from its words to its amounts, as printed.
     if (isGrantCredit(line) && !layout.plain) {
-      for (const column of ["detail", "ref", "cheque", "class", "cash", "bank", "total"]) {
-        cell(row, `${side}.${column}`).fill = {
+      for (const column of ["detail", "ref", "cheque", "cash", "bank", "total"]) {
+        const c = cell(row, `${side}.${column}`);
+        c.fill = {
           type: "pattern",
           pattern: "solid",
           fgColor: { argb: argb(GRANT_CREDIT_FILL) },
         };
+        c.font = { ...c.font, color: { argb: "FF1A0DAB" }, underline: false };
+      }
+    }
+    // Bank-to-hand reimbursement cash line: row highlighted, amounts in dark blue.
+    if (isCashInHand(line) && !layout.plain) {
+      for (const column of ["detail", "ref", "cheque", "cash", "bank", "total"]) {
+        const c = cell(row, `${side}.${column}`);
+        c.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFFF9C4" },
+        };
+        c.font = { ...c.font, color: { argb: "FF1A0DAB" }, underline: false };
+      }
+      for (const column of ["cash", "bank", "total"]) {
+        const c = cell(row, `${side}.${column}`);
+        c.font = { ...c.font, color: { argb: "FF1A0DAB" }, bold: true, underline: false };
       }
     }
   };
@@ -492,7 +513,7 @@ function rojmelSheet(
     });
     for (const target of painted) {
       target.fill = fill;
-      target.font = target === label ? bold : latinBold;
+      target.font = { ...(target === label ? bold : latinBold), color: { argb: "FF1A0DAB" }, underline: false };
     }
     keyed.push({ row, key: ROW_KEYS.rojmelFooter(block.id, which), group: ROW_GROUPS.rojmelFooter(which) });
   };
@@ -524,7 +545,7 @@ function rojmelSheet(
       "FFEEF2EA",
     );
     bandCell(
-      colOf.get("p.detail")!,
+      colOf.get("p.date")!,
       colOf.get("p.cash")!,
       `${word("rojmel.bandCashBookGu", "( કેશ બુક )")}            ${word("rojmel.bandOut", "જાવક")}`,
       "FFEEF2EA",
@@ -544,7 +565,9 @@ function rojmelSheet(
       for (const [index, tableRow] of rojmelBlockRows(block).entries()) {
         const row = worksheet.addRow([]);
         // The first row holds the date, which may be a range on three lines.
-        row.height = tableRow.left?.dateText.includes("TO") ? 44 : 21;
+        const isRange =
+          Boolean(tableRow.left?.dateText.includes(" થી ")) || Boolean(tableRow.right?.dateText.includes(" થી "));
+        row.height = isRange ? 44 : 21;
         ruled(row);
         half(row, "r", tableRow.left);
         half(row, "p", tableRow.right);
@@ -608,6 +631,9 @@ function heightOfRow(layout: ReportLayout, key: string, group: string | null): n
 function applyStyle(cell: ExcelJS.Cell, style: CellStyle, excelSize: (pt: number) => number): void {
   if (style.fill && style.fill !== NO_FILL) {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(style.fill) } };
+    if (!style.colour && !style.underline) {
+      cell.font = { ...cell.font, color: { argb: "FF1A0DAB" }, underline: false };
+    }
   }
   if (
     style.bold !== undefined ||
