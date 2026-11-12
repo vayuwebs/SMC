@@ -11,7 +11,7 @@
  * asserts the two agree.
  */
 import type { Paise } from "../lib/money.js";
-import type { ChequeType } from "../lib/types.js";
+import type { ChequeType, PayMode } from "../lib/types.js";
 
 export interface BookSchool {
   nameGu: string;
@@ -81,6 +81,11 @@ export interface BookBill {
   remarksGu: string | null;
   /** The cheque that paid this bill, or null while it is still unpaid. */
   chequeNo: number | null;
+  /**
+   * How a reimbursement paid it: in cash or online. Null (or absent) follows the
+   * cheque's type. See billPaidInCash.
+   */
+  payMode?: PayMode | null;
 }
 
 export interface BookCheque {
@@ -108,6 +113,18 @@ export interface BookCheque {
  * cheque and no voucher. It leaves the bank in the rojmel and is a debit in
  * its head's ledger; no register, voucher, પત્રક-D or Annexure 10 shows it.
  */
+/**
+ * A cheque the bank sent back unpaid. It still leaves the bank on its cash-book
+ * date, and its money comes back on `returnedDate` - an આવક line in the rojmel
+ * and a credit in each head's ledger. No other report shows it: the registers,
+ * vouchers, પત્રક-D and Annexure 10 see only the cheque written in its place.
+ */
+export interface BookReturnedCheque extends BookCheque {
+  returnedDate: string;
+  /** The cheque written again in its place, or null while there is none. */
+  replacedByChequeNo: number | null;
+}
+
 export interface BookBankCharge {
   id: string;
   /** Cash-book date. */
@@ -141,7 +158,14 @@ export interface YearBook {
   opening: Map<string, BookOpening>;
   receipts: BookReceipt[];
   bills: BookBill[];
+  /**
+   * The cheques that stand: every cheque except the returned ones. A cheque
+   * written for a returned one is here, with that cheque's voucher number,
+   * type, bills and allocation.
+   */
   cheques: BookCheque[];
+  /** Cheques the bank sent back. Only the rojmel and the ledgers read these. */
+  returnedCheques: BookReturnedCheque[];
   /** In date order. */
   bankCharges: BookBankCharge[];
   reconciliation: BookReconciliation | null;
@@ -196,6 +220,12 @@ export interface Ledger {
   totalDebitPaise: Paise;
   /** Σ credits − Σ debits. */
   closingPaise: Paise;
+  /**
+   * The rojmel page the year closes on - its last page - printed beside the
+   * બંધ સિલક row. The same for every head: the year has one closing. Null until
+   * the rojmel is paginated.
+   */
+  closingRojmelPage: number | null;
 }
 
 /** One row of the ગ્રાન્ટ રજીસ્ટર - one receipt, plus how much of it was spent. */

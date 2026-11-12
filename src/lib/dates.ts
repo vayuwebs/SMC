@@ -101,6 +101,18 @@ export function endOfMonth(value: string): IsoDate {
   return isoDate(end.toISOString().slice(0, 10));
 }
 
+/**
+ * The same day and month, `years` years later (or earlier, when negative).
+ * 29 February lands on 28 February in a year that has no 29th.
+ */
+export function shiftYears(value: string, years: number): IsoDate {
+  const year = Number(value.slice(0, 4)) + years;
+  let monthDay = value.slice(5, 10);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  if (monthDay === "02-29" && !leap) monthDay = "02-28";
+  return isoDate(`${String(year).padStart(4, "0")}-${monthDay}`);
+}
+
 /** First day of the month `value` falls in. */
 export function startOfMonth(value: string): IsoDate {
   return isoDate(`${value.slice(0, 7)}-01`);
@@ -119,6 +131,14 @@ export function financialYearOf(value: string): string {
 /** The 1 April that opens the financial year with this label. */
 export function financialYearStart(label: string): IsoDate {
   return isoDate(`${label.slice(0, 4)}-04-01`);
+}
+
+/**
+ * True when the financial year `label` begins before `than` - "2023-24" before
+ * "2025-26": a year the school is filling in behind the one it is on.
+ */
+export function isEarlierYear(label: string, than: string): boolean {
+  return Number(label.slice(0, 4)) < Number(than.slice(0, 4));
 }
 
 /** The 31 March that closes the financial year with this label. */

@@ -3,7 +3,6 @@ import { Text } from "./layout-context.js";
 import type { Annexure10 } from "../../engine/types.js";
 import type { SchoolDto, FinancialYearDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
-import { toGujaratiDigits } from "../../lib/gujarati.js";
 import { PagedSheets } from "./PagedSheets.js";
 import { ROW_KEYS } from "../../shared/report-layout.js";
 import { AnnexureBanner } from "./AnnexureBanner.js";
@@ -15,10 +14,8 @@ import { AnnexureBanner } from "./AnnexureBanner.js";
  * row per grant head in print order, a કુલ total row, and the certificate
  * paragraph with the totals written into it.
  *
- * Everything prints in GUJARATI DIGITS, including the amounts and the year -
- * only the Rojmel uses Latin digits (SPEC section 6). The DISE code and bank
- * account number stay Latin because they are identifiers, not quantities, and
- * the original prints them that way.
+ * Everything prints in LATIN DIGITS, including the amounts and the year, as on
+ * every other report (the client asked for English figures throughout).
  *
  * This page is always Gujarati whatever the interface language is set to: it is
  * a statutory form, not application chrome.
@@ -32,25 +29,23 @@ export function Annexure10Page({
   year: FinancialYearDto;
   report: Annexure10;
 }): JSX.Element {
-  /** An amount, two decimals, in Gujarati digits. */
-  const money = (paise: number): string => toGujaratiDigits(formatAmount(paise));
+  /** An amount, two decimals, in Latin digits. */
+  const money = (paise: number): string => formatAmount(paise);
 
-  /** "2025-26" as the form writes it: ૨૦૨૫ / ૨૦૨૬ */
-  const yearLabel = toGujaratiDigits(`${year.startDate.slice(0, 4)} / ${year.endDate.slice(0, 4)}`);
+  /** "2025-26" as the form writes it: 2025 / 2026 */
+  const yearLabel = `${year.startDate.slice(0, 4)} / ${year.endDate.slice(0, 4)}`;
 
   const totals = report.totals;
 
-  /** The year's last day as the heading writes it, "૩૧/૦૩/૨૬" - never a fixed year. */
-  const closingDateLabel = toGujaratiDigits(
-    `${year.endDate.slice(8, 10)}/${year.endDate.slice(5, 7)}/${year.endDate.slice(2, 4)}`,
-  );
+  /** The year's last day as the heading writes it, "31/03/26" - never a fixed year. */
+  const closingDateLabel = `${year.endDate.slice(8, 10)}/${year.endDate.slice(5, 7)}/${year.endDate.slice(2, 4)}`;
 
   // One portrait sheet at 14pt, as the client prints it; a school with more
   // heads than fit runs on to a second, banner repeated (PagedSheets).
   return (
     <PagedSheets
       landscape={false}
-      head={() => <AnnexureBanner school={school} year={year} numberGu="૧૦" />}
+      head={() => <AnnexureBanner school={school} year={year} numberGu="10" />}
       tableClassName="form annexure10"
       thead={
         <tr data-row="head">
@@ -71,7 +66,7 @@ export function Annexure10Page({
         key: ROW_KEYS.grantHead(row.headCode),
         cells: (
           <>
-            <td data-col="serial" className="centre">{toGujaratiDigits(String(index + 1))}</td>
+            <td data-col="serial" className="centre">{String(index + 1)}</td>
             <td data-col="head">{row.nameGu}</td>
             <td data-col="opening" className="figure">{money(row.openingPaise)}</td>
             <td data-col="received" className="figure">{money(row.receivedPaise)}</td>
@@ -122,7 +117,7 @@ export function Annexure10Page({
             રૂા. <span className="blank">{money(totals.receivedPaise)}</span> કુલ ગ્રાન્ટ રૂા.{" "}
             <span className="blank">{money(totals.totalPaise)}</span> તથા ગ્રાન્ટ પૈકી કુલ ખર્ચ રૂા.{" "}
             <span className="blank">{money(totals.totalOutPaise)}</span> થયેલ છે. અગાઉના વર્ષ સહિત
-            ૩૧મી માર્ચના રોજ બચત રૂા. <span className="blank">{money(totals.closingPaise)}</span>{" "}
+            31મી માર્ચના રોજ બચત રૂા. <span className="blank">{money(totals.closingPaise)}</span>{" "}
             એસ.એમ.સી.ઈ કક્ષાએ જમા રહેલ છે. સદર આવક તથા ખર્ચ હિસાબી રેકર્ડ પરથી ખરાઈ કરેલ છે. જે આપ
             સાહેબશ્રીને વિદિત થાય.
           </div>

@@ -433,10 +433,11 @@ function registerBooksApi(): void {
         // next one and opens it, and openYear switches to an existing one. The
         // service is bound to a single year id, so it is rebuilt and the
         // windows reloaded onto the new year.
-        if (method === "closeYear" || method === "openYear" || method === "reopenYear") {
+        // Renaming keeps the same year but changes the label every window shows.
+        if (method === "closeYear" || method === "openYear" || method === "reopenYear" || method === "renameYear") {
           const changed = result as { ok: boolean; data?: { id: number; label: string } };
           if (changed.ok && changed.data) {
-            if (method === "closeYear" || method === "openYear") {
+            if (method === "closeYear" || method === "openYear" || method === "renameYear") {
               current.switchYear(changed.data.id, changed.data.label);
               setImmediate(reloadWindows);
             } else if (method === "reopenYear" && changed.data.id === current.books?.currentYearId) {

@@ -130,7 +130,8 @@ export function sampleBook(): YearBook {
 
     cheques,
 
-    // The sample year has none.
+    // The sample year has none of either.
+    returnedCheques: [],
     bankCharges: [],
 
     reconciliation: {

@@ -28,7 +28,7 @@ import path from "node:path";
 import type { Account } from "../cloud/account.js";
 import { sha256 } from "../cloud/checksum.js";
 import { CloudError, type CloudBackup } from "../cloud/types.js";
-import { booksFile, readSyncState, writeSyncState, type SyncState } from "../profiles/data-folder.js";
+import { booksFile, readManifest, readSyncState, writeSyncState, type SyncState } from "../profiles/data-folder.js";
 import { snapshotInto } from "../vault.js";
 
 export const QUIET_MS = 3 * 60 * 1000;
@@ -210,16 +210,32 @@ export class CloudBackups {
     try {
       snapshotInto(booksFile(target.folder), target.keyHex, temporary);
       const bytes = new Uint8Array(readFileSync(temporary));
-      return await this.account.withSession((session) =>
-        this.account.backend.uploadBackup(session, {
+      return await this.account.withSession(async (session) => {
+        try {
+          const profiles = await this.account.backend.listProfiles(session);
+          if (!profiles.some((p) => p.id === target.profileId)) {
+            const manifest = readManifest(target.folder);
+            if (manifest) {
+              await this.account.backend.createProfile(session, {
+                id: target.profileId,
+                schoolNameGu: manifest.schoolNameGu,
+                diseCode: manifest.diseCode,
+                keyHex: target.keyHex,
+              });
+            }
+          }
+        } catch {
+          // If check fails, proceed with upload
+        }
+        return this.account.backend.uploadBackup(session, {
           profileId: target.profileId,
           bytes,
           sha256: sha256(bytes),
           appVersion: this.identity.appVersion,
           schemaVersion: target.schemaVersion,
           deviceName: this.identity.deviceName,
-        }),
-      );
+        });
+      });
     } finally {
       rmSync(temporary, { force: true });
     }

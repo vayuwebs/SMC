@@ -73,6 +73,7 @@ const sessionSchema = z.object({
 
 const keyCacheSchema = z.object({
   userId: z.string(),
+  userEmail: z.string().optional(),
   keys: z.record(z.string().regex(/^[0-9a-f]{64}$/)),
 });
 
@@ -93,6 +94,13 @@ export class Account {
     this.sessionFile = new SecretFile(path.join(userDataDir, "session.bin"), sessionSchema, box);
     this.keyFile = new SecretFile(path.join(userDataDir, "keys.bin"), keyCacheSchema, box);
     this.session = this.sessionFile.read();
+
+    // Backward compatibility: If keys.bin was created by an older version without userEmail,
+    // backfill userEmail from the existing session.bin!
+    const cache = this.keyFile.read();
+    if (cache && !cache.userEmail && this.session?.user.email) {
+      this.keyFile.write({ ...cache, userEmail: this.session.user.email });
+    }
   }
 
   /** Who is signed in on this PC, if anybody. Works offline. */
@@ -196,16 +204,26 @@ export class Account {
 
   cachedKey(profileId: string): string | null {
     const user = this.user;
-    if (!user) return null;
     const cache = this.keyFile.read();
-    return cache && cache.userId === user.id ? (cache.keys[profileId] ?? null) : null;
+    if (!cache) return null;
+    if (user) {
+      const isSamePerson =
+        cache.userId === user.id ||
+        (cache.userEmail && cache.userEmail.toLowerCase() === user.email.toLowerCase());
+      if (!isSamePerson) return null;
+    }
+    return cache.keys[profileId] ?? null;
   }
 
   rememberKey(profileId: string, keyHex: string): void {
     const user = this.requireSession().user;
     const cache = this.keyFile.read();
-    const keys = cache && cache.userId === user.id ? cache.keys : {};
-    this.keyFile.write({ userId: user.id, keys: { ...keys, [profileId]: keyHex } });
+    const isSamePerson =
+      cache &&
+      (cache.userId === user.id ||
+        (cache.userEmail && cache.userEmail.toLowerCase() === user.email.toLowerCase()));
+    const keys = isSamePerson ? cache.keys : {};
+    this.keyFile.write({ userId: user.id, userEmail: user.email, keys: { ...keys, [profileId]: keyHex } });
   }
 
   forgetKey(profileId: string): void {
@@ -228,7 +246,10 @@ export class Account {
       this.store(next);
       return next;
     } catch (error) {
-      if (error instanceof CloudError && error.code === "session-expired") this.forgetLocally();
+      if (error instanceof CloudError && error.code === "session-expired") {
+        this.session = null;
+        this.sessionFile.clear();
+      }
       throw error;
     }
   }
@@ -251,7 +272,16 @@ export class Account {
   private adopt(session: CloudSession): CloudUser {
     // A different person on the same PC must not inherit the last one's keys.
     const previous = this.keyFile.read();
-    if (previous && previous.userId !== session.user.id) this.keyFile.clear();
+    const previousEmail = previous?.userEmail ?? this.session?.user.email;
+    const isSamePerson =
+      previous &&
+      (previous.userId === session.user.id ||
+        (previousEmail && previousEmail.toLowerCase() === session.user.email.toLowerCase()));
+    if (previous && !isSamePerson) {
+      this.keyFile.clear();
+    } else if (previous && isSamePerson && (previous.userId !== session.user.id || !previous.userEmail)) {
+      this.keyFile.write({ userId: session.user.id, userEmail: session.user.email, keys: previous.keys });
+    }
     this.store(session);
     return session.user;
   }

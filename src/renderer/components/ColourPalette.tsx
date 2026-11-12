@@ -10,6 +10,7 @@ import {
   themeGrid,
 } from "../../shared/excel-palette.js";
 import { useStrings } from "../i18n/index.js";
+import { Popover } from "./Popover.js";
 
 /**
  * Excel's colour button: the button paints the last colour chosen, the arrow
@@ -57,15 +58,6 @@ export function ColourButton({
   const [last, setLast] = useState<string | undefined>(value && value !== noneValue ? value : undefined);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [open]);
-
   const pick = (colour: ColourValue): void => {
     if (colour && colour !== noneValue) {
       remember(colour);
@@ -98,7 +90,11 @@ export function ColourButton({
       >
         ▾
       </button>
-      {open && <Palette value={value} onPick={pick} noneValue={noneValue} noneLabel={noneLabel} />}
+      {open && (
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="palette-popover" role="dialog">
+          <Palette value={value} onPick={pick} noneValue={noneValue} noneLabel={noneLabel} />
+        </Popover>
+      )}
     </div>
   );
 }
@@ -130,7 +126,7 @@ function Palette({
   );
 
   return (
-    <div className="palette-popover" role="dialog">
+    <>
       <button type="button" className="palette-automatic" onClick={() => onPick(undefined)}>
         <span className="palette-swatch automatic" /> {t.paletteAutomatic}
       </button>
@@ -163,7 +159,7 @@ function Palette({
           onPick={(hex) => onPick(hex)}
         />
       )}
-    </div>
+    </>
   );
 }
 

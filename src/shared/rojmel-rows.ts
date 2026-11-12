@@ -15,7 +15,7 @@ import {
   type RojmelBlock,
   type RojmelLine,
 } from "../engine/rojmel.js";
-import { ROW_KEYS } from "./report-layout.js";
+import { LINE_KEY_PREFIX, ROW_KEYS, uniqueKeys } from "./report-layout.js";
 
 export { isCashInHand };
 
@@ -24,6 +24,22 @@ export interface RojmelTableRow {
   key: string;
   left: RojmelLine | null;
   right: RojmelLine | null;
+  /** The line keys of the two sides: what a cell's own wrap is attached to. */
+  leftKey: string | null;
+  rightKey: string | null;
+}
+
+/**
+ * Each line's key, from the record it prints. A cheque prints several lines in
+ * its block (uniqueKeys tells them apart); a line of no record is its block's.
+ */
+function lineKeys(side: "r" | "p", blockId: string, lines: readonly RojmelLine[]): Map<RojmelLine, string> {
+  const bases = lines.map(({ source }) => {
+    const record = "id" in source ? source.id : "chequeNo" in source ? source.chequeNo : blockId;
+    return `${LINE_KEY_PREFIX}${side}:${source.kind}:${record}`;
+  });
+  const keys = uniqueKeys(bases);
+  return new Map(lines.map((line, index) => [line, keys[index]!]));
 }
 
 /**
@@ -60,9 +76,18 @@ export function rojmelBlockRows(block: RojmelBlock): RojmelTableRow[] {
     return null;
   };
 
-  return Array.from({ length: bodyRows }, (_, index) => ({
-    key: ROW_KEYS.rojmelRow(block.id, index),
-    left: leftAt(index),
-    right: block.paymentLines[index] ?? null,
-  }));
+  const leftKeys = lineKeys("r", block.id, block.receiptLines);
+  const rightKeys = lineKeys("p", block.id, block.paymentLines);
+
+  return Array.from({ length: bodyRows }, (_, index) => {
+    const leftLine = leftAt(index);
+    const rightLine = block.paymentLines[index] ?? null;
+    return {
+      key: ROW_KEYS.rojmelRow(block.id, index),
+      left: leftLine,
+      right: rightLine,
+      leftKey: leftLine ? (leftKeys.get(leftLine) ?? null) : null,
+      rightKey: rightLine ? (rightKeys.get(rightLine) ?? null) : null,
+    };
+  });
 }

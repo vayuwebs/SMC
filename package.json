@@ -1,6 +1,6 @@
 {
   "name": "smc-accounts",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "SMC grant accounts and audit registers",
   "author": "SMC Accounts",
   "private": true,
@@ -22,6 +22,7 @@
     "show:reports": "tsx scripts/show-reports.ts",
     "preview": "electron-vite preview",
     "pack:win": "prisma generate && npm run rebuild:electron && electron-vite build && node scripts/win-native.mjs && electron-builder --win --publish never",
+    "pack:win:safe": "node scripts/pack-win-safe.mjs",
     "pack:linux": "prisma generate && electron-vite build && electron-builder --linux --publish never",
     "rebuild:node": "node scripts/native-abi.mjs node",
     "rebuild:electron": "node scripts/native-abi.mjs electron",

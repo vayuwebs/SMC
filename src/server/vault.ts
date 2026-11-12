@@ -18,11 +18,80 @@
  * settings live in exactly one place.
  */
 import Database from "better-sqlite3";
-import { createHmac, randomBytes } from "node:crypto";
+import { constants, createHmac, privateDecrypt, publicEncrypt, randomBytes } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
 
 /** The cipher scheme. Recorded in each profile's manifest for the future. */
 export const CIPHER = "chacha20";
+
+/**
+ * Developer Support Public Key (RSA-4096).
+ * Used for envelope encryption so that any customer database/backup shared with support
+ * can be decrypted offline using the corresponding Developer Support Private Key.
+ */
+export const DEFAULT_SUPPORT_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA38UtRkxKyfDV1s6Oy251
+DSXhsL01mIflgz540Qty0CMeME82EFeocpX8lPUJhkQaZ0k6pXfujK3mcn7MLalE
+UhDMfIiioUoF6iLC6LgZWHxQbWgjutrQOZv8U+SWYYdxGfFdylozS4qIYelqZP+I
++rDLgVqX6OaQSCGS0CrbX7wwf95dFzjhr07qSWVpNGUe4GO+uR8t0s5w/EGQ2+Sz
+WqUfxM15J6N6kTW5RYkEoK8OAjlV/ymThG2aZi8lseDXKvhv4phSkThZ9H6mI/eL
+4xMfrAqwFOTOH35HWKPndyvVUjYcuqDGswjAs8IjbgtlMPxyoa4dFRWYO8B2hQhd
+/Y2sQdFTPNKMUuCRhFXMpZXQcR3lC/hGHveK/9PaVkNj6plltjkGtF5vEBfHhkd9
+q3ucTWaEByql3wIg8IZlN08ulfxDp7CXF2EKVFQicYLnHwx3itFuvCv1xEkkJxRy
+F7DcMeMxjWI/Wn7Tiwlo2url+vStvlSh9P5Jy+ia1+twIgq8RHRbeu1j8L+dNsHG
+9uuEUiC9hOenP52fHShaS72JEK+caexV9Ugp0DJez40y35zStZvELY53HTy4VOjs
+/XLWdMAByu2G2m7/WQCdCTl+6R9iSAGvtP3fMmxJ5pfncLTeMgNsqlujXFzHjJLB
+HPweirQqSiFzBn3ewRVmDHECAwEAAQ==
+-----END PUBLIC KEY-----`;
+
+/**
+ * Wrap the 256-bit database encryption key (DEK) with the Developer Support Public Key.
+ * Returns Base64-encoded ciphertext.
+ */
+export function wrapKeyForSupport(
+  keyHex: string,
+  publicKeyPem: string = DEFAULT_SUPPORT_PUBLIC_KEY,
+): string {
+  assertKeyHex(keyHex);
+  const encrypted = publicEncrypt(
+    {
+      key: publicKeyPem,
+      padding: constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    Buffer.from(keyHex, "hex"),
+  );
+  return encrypted.toString("base64");
+}
+
+/**
+ * Unwrap a Base64-encoded Support-wrapped key using the Developer Support Private Key.
+ * Returns the original 64-character lowercase hex key.
+ */
+export function unwrapKeyForSupport(
+  wrappedBase64: string,
+  privateKeyPem: string,
+): string {
+  try {
+    const decrypted = privateDecrypt(
+      {
+        key: privateKeyPem,
+        padding: constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: "sha256",
+      },
+      Buffer.from(wrappedBase64, "base64"),
+    );
+    const keyHex = decrypted.toString("hex");
+    assertKeyHex(keyHex);
+    return keyHex;
+  } catch (error) {
+    if (error instanceof VaultError) throw error;
+    throw new VaultError(
+      "bad-key",
+      `Failed to unwrap support key: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 
 const KEY_PATTERN = /^[0-9a-f]{64}$/;
 

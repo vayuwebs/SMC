@@ -33,7 +33,7 @@ export function Dashboard({
             {school.clusterGu} · {school.talukaGu} · {t.diseCode} {school.diseCode}
           </p>
         </div>
-        <p className="num">
+        <p className="num muted">
           {formatDate(year.startDate)} – {formatDate(year.endDate)}
         </p>
       </div>
@@ -45,101 +45,103 @@ export function Dashboard({
         <Tile variant="spent" label={t.totalSpent} paise={annexure10.totals.totalOutPaise} />
       </div>
 
-      <div className="card">
-        <h3>{t.annexure10Title}</h3>
-        <div className="table-wrap" style={{ margin: 0 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>{t.colParticulars}</th>
-                <th className="num">{t.colOpening}</th>
-                <th className="num">{t.colReceived}</th>
-                <th className="num">{t.colTotal}</th>
-                <th className="num">{t.colSpent}</th>
-                <th className="num">{t.colReturned}</th>
-                <th className="num">{t.colTotalOut}</th>
-                <th className="num">{t.colClosing}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {annexure10.rows.map((row) => (
-                <tr key={row.headCode}>
-                  <td style={{ fontWeight: 500 }}>{row.nameGu}</td>
+      <div className="dash-grid">
+        <div className="card">
+          <h3>{t.annexure10Title}</h3>
+          <div className="table-wrap flush">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t.colParticulars}</th>
+                  <th className="num">{t.colOpening}</th>
+                  <th className="num">{t.colReceived}</th>
+                  <th className="num">{t.colTotal}</th>
+                  <th className="num">{t.colSpent}</th>
+                  <th className="num">{t.colReturned}</th>
+                  <th className="num">{t.colTotalOut}</th>
+                  <th className="num">{t.colClosing}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {annexure10.rows.map((row) => (
+                  <tr key={row.headCode}>
+                    <td style={{ fontWeight: 500 }}>{row.nameGu}</td>
+                    <td className="num">
+                      <Money paise={row.openingPaise} />
+                    </td>
+                    <td className="num">
+                      <Money paise={row.receivedPaise} />
+                    </td>
+                    <td className="num">
+                      <Money paise={row.totalPaise} />
+                    </td>
+                    <td className="num">
+                      <Money paise={row.spentPaise} />
+                    </td>
+                    <td className="num">
+                      <Money paise={row.returnedPaise} />
+                    </td>
+                    <td className="num">
+                      <Money paise={row.totalOutPaise} />
+                    </td>
+                    <td className="num" style={{ fontWeight: 600 }}>
+                      <Money paise={row.closingPaise} />
+                    </td>
+                  </tr>
+                ))}
+                <tr className="total-row">
+                  <td>{t.total}</td>
                   <td className="num">
-                    <Money paise={row.openingPaise} />
+                    <Money paise={annexure10.totals.openingPaise} />
                   </td>
                   <td className="num">
-                    <Money paise={row.receivedPaise} />
+                    <Money paise={annexure10.totals.receivedPaise} />
                   </td>
                   <td className="num">
-                    <Money paise={row.totalPaise} />
+                    <Money paise={annexure10.totals.totalPaise} />
                   </td>
                   <td className="num">
-                    <Money paise={row.spentPaise} />
+                    <Money paise={annexure10.totals.spentPaise} />
                   </td>
                   <td className="num">
-                    <Money paise={row.returnedPaise} />
+                    <Money paise={annexure10.totals.returnedPaise} />
                   </td>
                   <td className="num">
-                    <Money paise={row.totalOutPaise} />
+                    <Money paise={annexure10.totals.totalOutPaise} />
                   </td>
-                  <td className="num" style={{ fontWeight: 600 }}>
-                    <Money paise={row.closingPaise} />
+                  <td className="num">
+                    <Money paise={annexure10.totals.closingPaise} />
                   </td>
                 </tr>
-              ))}
-              <tr className="total-row">
-                <td>{t.total}</td>
-                <td className="num">
-                  <Money paise={annexure10.totals.openingPaise} />
-                </td>
-                <td className="num">
-                  <Money paise={annexure10.totals.receivedPaise} />
-                </td>
-                <td className="num">
-                  <Money paise={annexure10.totals.totalPaise} />
-                </td>
-                <td className="num">
-                  <Money paise={annexure10.totals.spentPaise} />
-                </td>
-                <td className="num">
-                  <Money paise={annexure10.totals.returnedPaise} />
-                </td>
-                <td className="num">
-                  <Money paise={annexure10.totals.totalOutPaise} />
-                </td>
-                <td className="num">
-                  <Money paise={annexure10.totals.closingPaise} />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>
-          {t.validation}{" "}
-          {errors.length > 0 && (
-            <span style={{ color: "var(--error-line)" }}>{t.errorCount(errors.length)}</span>
-          )}
-        </h3>
-        {issues.length === 0 ? (
-          <div className="issue success">
-            <span>✓</span>
-            <div>{t.noIssues}</div>
+              </tbody>
+            </table>
           </div>
-        ) : (
-          <IssueList issues={issues} />
-        )}
-        {counts.unpaidBills > 0 && (
-          <p className="muted" style={{ marginTop: 10 }}>
-            {t.unpaidBillsNote(counts.unpaidBills)}{" "}
-            <button className="ghost small" onClick={() => onNavigate("bills")}>
-              {t.viewBills}
-            </button>
-          </p>
-        )}
+        </div>
+
+        <div className="card">
+          <h3>
+            {t.validation}{" "}
+            {errors.length > 0 && (
+              <span style={{ color: "var(--error-line)" }}>{t.errorCount(errors.length)}</span>
+            )}
+          </h3>
+          {issues.length === 0 ? (
+            <div className="issue success">
+              <span>✓</span>
+              <div>{t.noIssues}</div>
+            </div>
+          ) : (
+            <IssueList issues={issues} />
+          )}
+          {counts.unpaidBills > 0 && (
+            <p className="muted" style={{ marginTop: 10 }}>
+              {t.unpaidBillsNote(counts.unpaidBills)}{" "}
+              <button className="ghost small" onClick={() => onNavigate("bills")}>
+                {t.viewBills}
+              </button>
+            </p>
+          )}
+        </div>
       </div>
     </>
   );

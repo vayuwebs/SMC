@@ -16,6 +16,7 @@ import {
   ROWS_PER_PAGE,
   yearEndBalance,
 } from "../../src/engine/index.js";
+import { byVoucherOrder } from "../../src/engine/allocation.js";
 import { expected, sampleBook } from "../fixtures/sample-book.js";
 
 const book = sampleBook();
@@ -164,6 +165,28 @@ describe("pagination", () => {
       rojmel.pages.map((page) => page.blocks.map((block) => block.fromDate)),
     );
   });
+
+  it("dedicates page 1 strictly to the opening block with a single date", () => {
+    const page1 = rojmel.pages[0]!;
+    expect(page1.blocks).toHaveLength(1);
+    expect(page1.blocks[0]!.isNil).toBe(true);
+    expect(page1.blocks[0]!.fromDate).toBe(book.year.startDate);
+    expect(page1.blocks[0]!.toDate).toBe(book.year.startDate);
+    const dateText = page1.blocks[0]!.receiptLines[0]!.dateText;
+    expect(dateText).toBe("01/04/2025");
+    expect(dateText).not.toContain(" થી ");
+  });
+
+  it("dedicates the last page strictly to the year-end closing block with a single date", () => {
+    const lastPage = rojmel.pages[rojmel.pages.length - 1]!;
+    expect(lastPage.blocks).toHaveLength(1);
+    expect(lastPage.blocks[0]!.isNil).toBe(true);
+    expect(lastPage.blocks[0]!.fromDate).toBe(book.year.endDate);
+    expect(lastPage.blocks[0]!.toDate).toBe(book.year.endDate);
+    const dateText = lastPage.blocks[0]!.receiptLines[0]!.dateText;
+    expect(dateText).toBe("31/03/2026");
+    expect(dateText).not.toContain(" થી ");
+  });
 });
 
 describe("page numbers for the ખાતાવહી", () => {
@@ -193,6 +216,16 @@ describe("page numbers for the ખાતાવહી", () => {
     expect([...numbers].sort((a, b) => a - b)).toEqual(numbers);
   });
 
+  it("closes every head on the rojmel's last page, not on its own last entry's", () => {
+    const last = rojmel.pages[rojmel.pages.length - 1]!.pageNo;
+    for (const head of book.heads) {
+      const account = ledger(book, head.code, { pages });
+      expect(account.closingRojmelPage, head.code).toBe(last);
+    }
+    // Without a resolver there is no page to print.
+    expect(ledger(book, "SWACHHATA").closingRojmelPage).toBeNull();
+  });
+
   it("opens on page 1", () => {
     expect(pages.openingPage()).toBe(1);
     expect(pages.chequePage(103)).toBeGreaterThan(1);
@@ -202,7 +235,9 @@ describe("page numbers for the ખાતાવહી", () => {
 describe("the closing sentence", () => {
   it("states the year-end balance", () => {
     expect(rojmel.closingSentenceGu).toContain("31/03/2026");
-    expect(rojmel.closingSentenceGu).toContain("154");
+    // Latin digits throughout, the paise too - never a Gujarati ".૦૦".
+    expect(rojmel.closingSentenceGu).toContain("રૂપિયા 154.00 રહે છે.");
+    expect(rojmel.closingSentenceGu).not.toMatch(/[૦-૯]/);
     expect(rojmel.closingSentenceGu).toContain(book.school.nameGu);
   });
 });
@@ -216,6 +251,44 @@ describe("the nil-block rule is a setting, because SPEC 11.4 is open", () => {
     );
     // The year still ends in the same place.
     expect(bare.blocks[bare.blocks.length - 1]!.closingBankPaise).toBe(rupeesToPaise(154));
+  });
+
+  it("omits intermediate gaps < 15 days, keeps month-end gaps, empty months, and month-starts >= 15 days", () => {
+    const blockKeys = rojmel.blocks.map((b) => `${b.fromDate}->${b.toDate}`);
+
+    // Intermediate gaps < 15 days MUST be omitted:
+    expect(blockKeys).not.toContain("2025-06-10->2025-06-23"); // 14 days
+    expect(blockKeys).not.toContain("2025-07-03->2025-07-15"); // 13 days
+    expect(blockKeys).not.toContain("2025-07-17->2025-07-23"); // 7 days
+    expect(blockKeys).not.toContain("2025-07-25->2025-07-28"); // 4 days
+    expect(blockKeys).not.toContain("2025-08-06->2025-08-12"); // 7 days
+    expect(blockKeys).not.toContain("2026-03-04->2026-03-17"); // 14 days
+    expect(blockKeys).not.toContain("2026-03-19->2026-03-22"); // 4 days
+
+    // Month-end gaps MUST be kept (even if < 15 days):
+    expect(blockKeys).toContain("2025-06-25->2025-06-30"); // 6 days
+    expect(blockKeys).toContain("2025-07-30->2025-07-31"); // 2 days
+    expect(blockKeys).toContain("2025-08-14->2025-08-31"); // 18 days
+    expect(blockKeys).toContain("2025-11-03->2025-11-30"); // 28 days
+    expect(blockKeys).toContain("2025-12-21->2025-12-31"); // 11 days
+    expect(blockKeys).toContain("2026-01-31->2026-01-31"); // 1 day
+    expect(blockKeys).toContain("2026-02-27->2026-02-28"); // 2 days
+
+    // Full empty months MUST be kept:
+    expect(blockKeys).toContain("2025-09-01->2025-09-30");
+    expect(blockKeys).toContain("2025-10-01->2025-10-31");
+
+    // Month-starts >= 15 days MUST be kept:
+    expect(blockKeys).toContain("2025-12-01->2025-12-19"); // 19 days
+    expect(blockKeys).toContain("2026-01-01->2026-01-29"); // 29 days
+
+    // Intermediate gaps >= 15 days MUST be kept:
+    expect(blockKeys).toContain("2026-02-07->2026-02-25"); // 19 days
+
+    // Month-starts < 15 days MUST NOT be present:
+    expect(blockKeys).not.toContain("2025-05-01->2025-05-03"); // 3 days
+    expect(blockKeys).not.toContain("2025-06-01->2025-06-08"); // 8 days
+    expect(blockKeys).not.toContain("2025-07-01->2025-07-01"); // 1 day
   });
 });
 
@@ -286,15 +359,142 @@ describe("order of the cheques", () => {
     expect(order.indexOf(second!.chequeNo)).toBeLessThan(order.indexOf(first!.chequeNo));
   });
 
-  it("on one cash-book date, puts the earlier cheque date first", () => {
+  it("on one cash-book date, follows the voucher numbers, not the cheque dates or numbers", () => {
     const base = sampleBook();
     const [first, second] = base.cheques;
+    // `second` has the earlier cheque date, but `first` has the lower voucher.
     const cheques = [
-      { ...first!, chequeDate: "2025-06-20", cashbookDate: "2025-06-20" },
-      { ...second!, chequeDate: "2025-06-18", cashbookDate: "2025-06-20" },
+      { ...first!, chequeDate: "2025-06-20", cashbookDate: "2025-06-20", voucherNo: 1 },
+      { ...second!, chequeDate: "2025-06-18", cashbookDate: "2025-06-20", voucherNo: 2 },
       ...base.cheques.slice(2),
     ];
     const order = printedOrder(buildRojmel({ ...base, cheques }));
-    expect(order.indexOf(second!.chequeNo)).toBeLessThan(order.indexOf(first!.chequeNo));
+    expect(order.indexOf(first!.chequeNo)).toBeLessThan(order.indexOf(second!.chequeNo));
+
+    // Swap the vouchers and the order swaps, whatever the cheque numbers are.
+    const swapped = [
+      { ...cheques[0]!, voucherNo: 2 },
+      { ...cheques[1]!, voucherNo: 1 },
+      ...base.cheques.slice(2),
+    ];
+    const swappedOrder = printedOrder(buildRojmel({ ...base, cheques: swapped }));
+    expect(swappedOrder.indexOf(second!.chequeNo)).toBeLessThan(swappedOrder.indexOf(first!.chequeNo));
+  });
+});
+
+describe("voucher order", () => {
+  const cheque = (voucherNo: number | null, chequeNo: number, ...billNos: string[]) => ({
+    voucherNo,
+    chequeNo,
+    bills: billNos.map((billNo) => ({ billNo })),
+  });
+
+  it("sorts by voucher, then sub-voucher, then cheque number - with no voucher last", () => {
+    const list = [
+      cheque(null, 101),
+      cheque(2, 102, "2/1"),
+      cheque(1, 110, "1/10"),
+      cheque(1, 105, "1/2"),
+      cheque(1, 103, "1/2"),
+    ];
+    expect([...list].sort(byVoucherOrder).map((each) => each.chequeNo)).toEqual([103, 105, 110, 102, 101]);
+  });
+});
+
+describe("description formatting for persons and shops", () => {
+  it("uses first name with work description for individuals", () => {
+    const block = rojmel.blocks.find((b) => b.paymentLines.some((l) => l.chequeText.startsWith("103")))!;
+    // Bill B2 in sample is "હસમુખભાઈ મંગળભાઈ હરિજન" with description "સફાઈકામ મજૂરી"
+    const hasmukhLine = block.paymentLines.find((l) => l.source.kind === "bill" && l.source.id === "B2")!;
+    expect(hasmukhLine.descriptionGu).toBe("સફાઈકામ પેટે હસમુખભાઈને વા.મુજબ");
+  });
+
+  it("keeps full shop name for shops and includes specific material when present", () => {
+    const block = rojmel.blocks.find((b) => b.paymentLines.some((l) => l.chequeText.startsWith("103")))!;
+    // Bill B1 is "શ્રી વિદ્યાર્થી ટ્રેડર્સ" with description "પ્રવેશોત્સવ કીટ"
+    const b1Line = block.paymentLines.find((l) => l.source.kind === "bill" && l.source.id === "B1")!;
+    expect(b1Line.descriptionGu).toBe("શ્રી વિદ્યાર્થી ટ્રેડર્સને પ્રવેશોત્સવ કીટના બિલ મુજબ");
+
+    // Bill B3 is "BM સુપર બજાર" with description "સ્વચ્છતા સામાન"
+    const b3Line = block.paymentLines.find((l) => l.source.kind === "bill" && l.source.id === "B3")!;
+    expect(b3Line.descriptionGu).toBe("BM સુપર બજારને બિલ મુજબ");
+  });
+});
+
+describe("a reimbursement paid into the member secretary's bank (બેન્ક)", () => {
+  const base = sampleBook();
+  const reimbursement = base.cheques.find((cheque) => cheque.type === "REIMBURSEMENT")!;
+  const book = {
+    ...base,
+    cheques: base.cheques.map((cheque) =>
+      cheque.chequeNo === reimbursement.chequeNo ? { ...cheque, type: "REIMBURSEMENT_BANK" as const } : cheque,
+    ),
+  };
+  const blockOf = (rojmel: ReturnType<typeof buildRojmel>) =>
+    rojmel.blocks.find((block) =>
+      block.paymentLines.some((line) => line.source.kind === "cheque" && line.source.chequeNo === reimbursement.chequeNo),
+    )!;
+
+  it("takes nothing into hand: no હાથ પર લીધા line, its bills in the bank column, no amount on the withdrawal", () => {
+    const block = blockOf(buildRojmel(book));
+    expect(block.receiptLines.some((line) => line.descriptionGu.includes("હાથ પર લીધા"))).toBe(false);
+    const bills = block.paymentLines.filter((line) => line.source.kind === "bill");
+    expect(bills.length).toBe(reimbursement.bills.length);
+    expect(bills.every((line) => line.cashPaise === 0 && line.bankPaise > 0 && !line.headingOnly)).toBe(true);
+    const withdrawal = block.paymentLines.find((line) => line.descriptionGu.includes("ઉપાડ્યા"))!;
+    expect(withdrawal.headingOnly).toBe(true);
+    expect(withdrawal.bankPaise).toBe(0);
+    expect(block.spentCashPaise).toBe(0);
+  });
+
+  it("still pays the same amount out of the bank, so the year closes on the same balances", () => {
+    const cashBlock = blockOf(buildRojmel(base));
+    const bankBlock = blockOf(buildRojmel(book));
+    expect(bankBlock.spentBankPaise).toBe(cashBlock.spentBankPaise);
+    expect(yearEndBalance(book)).toEqual(yearEndBalance(base));
+  });
+
+  it("the cash version keeps its હાથ પર લીધા line", () => {
+    const block = blockOf(buildRojmel(base));
+    expect(block.receiptLines.some((line) => line.descriptionGu.includes("હાથ પર લીધા"))).toBe(true);
+  });
+});
+
+describe("a reimbursement paying some bills in cash and some online", () => {
+  const base = sampleBook();
+  const reimbursement = base.cheques.find((cheque) => cheque.type === "REIMBURSEMENT" && cheque.bills.length >= 2)!;
+  const [online, ...inCash] = reimbursement.bills;
+  const mixed = {
+    ...reimbursement,
+    bills: reimbursement.bills.map((bill) => (bill.id === online!.id ? { ...bill, payMode: "BANK" as const } : bill)),
+  };
+  const book = {
+    ...base,
+    cheques: base.cheques.map((cheque) => (cheque.chequeNo === reimbursement.chequeNo ? mixed : cheque)),
+  };
+  const net = (bill: (typeof inCash)[number]) => bill.amountPaise - bill.deductionPaise;
+  const cashTotal = inCash.reduce((total, bill) => total + net(bill), 0);
+  const block = buildRojmel(book).blocks.find((each) =>
+    each.paymentLines.some((line) => line.source.kind === "cheque" && line.source.chequeNo === reimbursement.chequeNo),
+  )!;
+
+  it("withdraws only the cash part, takes that in hand, and puts each bill in its own column", () => {
+    const withdrawal = block.paymentLines.find((line) => line.descriptionGu.includes("ઉપાડ્યા"))!;
+    expect(withdrawal.bankPaise).toBe(cashTotal);
+    const inHand = block.receiptLines.find((line) => line.descriptionGu.includes("હાથ પર લીધા"))!;
+    expect(inHand.cashPaise).toBe(cashTotal);
+
+    const lineOf = (id: string) => block.paymentLines.find((line) => line.source.kind === "bill" && line.source.id === id)!;
+    expect(lineOf(online!.id).bankPaise).toBe(net(online!));
+    expect(lineOf(online!.id).cashPaise).toBe(0);
+    for (const bill of inCash) {
+      expect(lineOf(bill.id).cashPaise).toBe(net(bill));
+      expect(lineOf(bill.id).bankPaise).toBe(0);
+    }
+  });
+
+  it("still takes the whole cheque out of the bank, and leaves no cash behind", () => {
+    expect(yearEndBalance(book)).toEqual(yearEndBalance(base));
+    expect(balancesByDate(book).every((day) => day.cashPaise >= 0)).toBe(true);
   });
 });

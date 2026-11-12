@@ -9,6 +9,8 @@ import { IssueList } from "../components/IssueList.js";
 import { amountToInput, formatDate, tryParseAmount } from "../format.js";
 import { useStrings, type Strings } from "../i18n/index.js";
 import type { JSX } from "react";
+import { Icon } from "../components/Icon.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /** ગ્રાન્ટ આવક - money into the bank. One row per receipt (SPEC 4.3). */
 export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element {
@@ -45,9 +47,9 @@ export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element 
   }
 
   async function remove(receipt: ReceiptDto): Promise<void> {
-    const confirmed = window.confirm(
+    const confirmed = (await askConfirm(
       t.confirmDeleteReceipt(formatDate(receipt.date), receipt.headNameGu),
-    );
+    ));
     if (!confirmed) return;
     await api.deleteReceipt(receipt.id);
     await reload();
@@ -85,7 +87,7 @@ export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element 
           <p>{t.receiptsSubtitle}</p>
         </div>
         <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-          + {t.newReceipt}
+          {t.newReceipt}
         </button>
       </div>
 
@@ -113,7 +115,9 @@ export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element 
       {receipts.length > 0 && (
         <div className="search-filter-bar">
           <div className="search-input-wrap">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon">
+              <Icon name="search" />
+            </span>
             <input
               type="text"
               placeholder={t.searchPlaceholder}
@@ -227,18 +231,22 @@ export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element 
 
       {receipts.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-state-icon">📥</div>
+          <div className="empty-state-icon">
+            <Icon name="inbox" size={30} />
+          </div>
           <h4>{t.noReceipts}</h4>
           <p>{t.receiptsSubtitle}</p>
           <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-            + {t.newReceipt}
+            {t.newReceipt}
           </button>
         </div>
       )}
 
       {receipts.length > 0 && filteredReceipts.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-state-icon">🔍</div>
+          <div className="empty-state-icon">
+            <Icon name="search" size={30} />
+          </div>
           <h4>{t.noMatchingRecords}</h4>
           <p>શોધ અથવા ફિલ્ટર સાફ કરીને ફરી પ્રયાસ કરો.</p>
           <button
@@ -308,7 +316,6 @@ function ReceiptForm({
     <form className="card form-card" onSubmit={submit}>
       <div className="form-card-header">
         <h3 className="form-card-title">
-          <span>{receipt ? "✏️" : "➕"}</span>
           <span>{receipt ? t.editReceipt : t.newReceipt}</span>
         </h3>
         {amountPaise !== null && amountPaise > 0 && (

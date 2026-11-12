@@ -36,6 +36,9 @@ build/*
 .scratch/
 *.backup
 .package.json.backup
+*.pem
+supabase-dump-*/
+supabase-dump-*.json
 
 # ==========================================
 # Database Lock & Journal Files
@@ -84,3 +87,4 @@ ehthumbs.db
 *.swp
 *.swo
 *~
+.build-tmp/

@@ -28,11 +28,13 @@ export function amountToInput(paise: number): string {
 /** Cheque-type labels come from the dictionary; see useChequeTypeLabels. */
 export function chequeTypeLabels(t: {
   typeReimbursement: string;
+  typeReimbursementBank: string;
   typeDirect: string;
   typeGrantReturn: string;
 }): Record<string, string> {
   return {
     REIMBURSEMENT: t.typeReimbursement,
+    REIMBURSEMENT_BANK: t.typeReimbursementBank,
     DIRECT: t.typeDirect,
     GRANT_RETURN: t.typeGrantReturn,
   };

@@ -7,7 +7,9 @@ import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
 import { Money } from "../components/Money.js";
 import { amountToInput, formatDate, tryParseAmount } from "../format.js";
+import { isEarlierYear } from "../../lib/dates.js";
 import { useStrings } from "../i18n/index.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * Year closing, and switching between years.
@@ -32,10 +34,15 @@ export function YearEnd(): JSX.Element {
   const [failure, setFailure] = useState<string | null>(null);
   // Next year's opening per head, as typed; starts as this year's closing.
   const [openings, setOpenings] = useState<Record<number, string>>({});
+  // An older year's opening per head, as typed; starts empty (zero).
+  const [olderOpenings, setOlderOpenings] = useState<Record<number, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<FinancialYearDto | null>(null);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameLabel, setRenameLabel] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -69,10 +76,19 @@ export function YearEnd(): JSX.Element {
 
   if (loading || !preview) return <div className="state">{t.calculating}</div>;
 
+  // A year older than this one opens with what the school types, not with this
+  // year's બંધ સિલક - that comes after it.
+  const labelValid = /^\d{4}-\d{2}$/.test(nextLabel.trim());
+  const earlier = labelValid && isEarlierYear(nextLabel.trim(), preview.year.label);
+  const typedOpenings = earlier ? olderOpenings : openings;
+  const setTypedOpenings = earlier ? setOlderOpenings : setOpenings;
+  /** What a head opens with when the school types nothing. */
+  const baseOf = (row: YearEndPreviewDto["rows"][number]): number => (earlier ? 0 : row.closingPaise);
+
   // What each head will open with, or null where the typed amount is not one.
   const openingOf = (row: YearEndPreviewDto["rows"][number]): number | null => {
-    const typed = openings[row.grantHeadId];
-    return typed === undefined ? row.closingPaise : tryParseAmount(typed);
+    const typed = typedOpenings[row.grantHeadId];
+    return typed === undefined || (earlier && typed.trim() === "") ? baseOf(row) : tryParseAmount(typed);
   };
   const openingsValid = preview.rows.every((row) => {
     const paise = openingOf(row);
@@ -80,7 +96,6 @@ export function YearEnd(): JSX.Element {
   });
   const totalOpening = preview.rows.reduce((sum, row) => sum + (openingOf(row) ?? 0), 0);
 
-  const labelValid = /^\d{4}-\d{2}$/.test(nextLabel.trim());
   const labelTaken = preview.existingLabels.includes(nextLabel.trim());
   const closed = preview.year.status !== "OPEN";
   const canClose =
@@ -88,19 +103,20 @@ export function YearEnd(): JSX.Element {
     labelValid &&
     !labelTaken &&
     preview.blocking.length === 0 &&
-    preview.cashPaise === 0 &&
+    (earlier || preview.cashPaise === 0) &&
     openingsValid &&
     !busy;
 
   async function closeYear(): Promise<void> {
     if (!canClose) return;
-    if (!window.confirm(t.yearConfirmClose(preview!.year.label, nextLabel.trim()))) return;
+    if (!(await askConfirm(t.yearConfirmClose(preview!.year.label, nextLabel.trim())))) return;
 
     setBusy(true);
-    // Only the heads the school changed; the rest carry their closing over.
+    // Only the heads the school changed; the rest carry their closing over (or,
+    // for an older year, open at zero).
     const changed = Object.fromEntries(
       preview!.rows
-        .filter((row) => openingOf(row) !== row.closingPaise)
+        .filter((row) => openingOf(row) !== baseOf(row))
         .map((row) => [row.grantHeadId, openingOf(row)!]),
     );
     const result = await api.closeYear({ nextLabel: nextLabel.trim(), openings: changed });
@@ -116,7 +132,7 @@ export function YearEnd(): JSX.Element {
 
   async function reopenYear(year: FinancialYearDto): Promise<void> {
     if (busy) return;
-    if (!window.confirm(t.yearConfirmReopen(year.label))) return;
+    if (!(await askConfirm(t.yearConfirmReopen(year.label)))) return;
     setBusy(true);
     const result = await api.openYear(year.id);
     setBusy(false);
@@ -131,6 +147,21 @@ export function YearEnd(): JSX.Element {
     ]);
     setPreview(nextPreview);
     setYears(nextYears);
+  }
+
+  async function confirmRename(): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    setRenameError(null);
+    const result = await api.renameYear(renameLabel.trim());
+    setBusy(false);
+    if (!result.ok) {
+      setRenameError(result.issues[0]?.messageGu ?? result.issues[0]?.messageEn ?? "Error renaming year");
+      return;
+    }
+    // The main process rebinds the year under its new label and reloads the
+    // window, so every screen shows the new label and dates.
+    setRenaming(false);
   }
 
   async function confirmDelete(): Promise<void> {
@@ -180,13 +211,13 @@ export function YearEnd(): JSX.Element {
             <tr>
               <th>{t.grantHead}</th>
               <th className="num">{t.yearEndClosing}</th>
-              <th className="num">{t.yearEndNextOpening}</th>
+              <th className="num">{earlier ? t.yearEndOlderOpening(nextLabel.trim()) : t.yearEndNextOpening}</th>
             </tr>
           </thead>
           <tbody>
             {preview.rows.map((row) => {
               const paise = openingOf(row);
-              const changed = paise !== row.closingPaise;
+              const changed = !earlier && paise !== row.closingPaise;
               return (
                 <tr key={row.headCode}>
                   <td>{row.headNameGu}</td>
@@ -221,9 +252,10 @@ export function YearEnd(): JSX.Element {
                             textAlign: "right",
                             borderColor: paise === null ? "var(--error-line)" : undefined,
                           }}
-                          value={openings[row.grantHeadId] ?? ""}
+                          value={typedOpenings[row.grantHeadId] ?? ""}
+                          placeholder={earlier ? "0.00" : undefined}
                           onChange={(event) =>
-                            setOpenings((current) => ({ ...current, [row.grantHeadId]: event.target.value }))
+                            setTypedOpenings((current) => ({ ...current, [row.grantHeadId]: event.target.value }))
                           }
                         />
                       </div>
@@ -243,7 +275,11 @@ export function YearEnd(): JSX.Element {
             </tr>
           </tbody>
         </table>
-        {!closed && <p className="muted">{t.yearEndNextOpeningHint}</p>}
+        {!closed && (
+          <p className={earlier ? "issue warning" : "muted"}>
+            {earlier ? t.yearEndOlderYearHint(nextLabel.trim(), preview.year.label) : t.yearEndNextOpeningHint}
+          </p>
+        )}
       </section>
 
       <section className="card">
@@ -272,7 +308,7 @@ export function YearEnd(): JSX.Element {
           </>
         )}
 
-        {preview.cashPaise !== 0 && (
+        {preview.cashPaise !== 0 && !earlier && (
           <div className="issue error">
             <div>{t.yearBlockedByCash}</div>
           </div>
@@ -329,7 +365,24 @@ export function YearEnd(): JSX.Element {
                 <td>
                   <div className="row-actions" style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end" }}>
                     {year.id === preview.year.id ? (
-                      <span className="muted">{t.yearCurrent}</span>
+                      <>
+                        <span className="muted">{t.yearCurrent}</span>
+                        {/* Only the open year can be edited, so only it can be renamed. */}
+                        {!closed && (
+                          <button
+                            type="button"
+                            className="ghost small"
+                            disabled={busy}
+                            onClick={() => {
+                              setRenaming(true);
+                              setRenameLabel(year.label);
+                              setRenameError(null);
+                            }}
+                          >
+                            {t.yearRename}
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -362,6 +415,62 @@ export function YearEnd(): JSX.Element {
           </tbody>
         </table>
       </section>
+
+      {renaming &&
+        createPortal(
+          <div className="custom-colour-backdrop" onClick={() => !busy && setRenaming(false)}>
+            <div
+              className="custom-colour"
+              style={{ width: 440, padding: "20px 24px" }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <h3 style={{ margin: "0 0 12px" }}>{t.yearRenamePrompt(preview.year.label)}</h3>
+              <p style={{ margin: "0 0 16px", fontSize: "13px", lineHeight: "1.5", color: "var(--muted)" }}>
+                {t.yearRenameHint}
+              </p>
+
+              {renameError && (
+                <div className="issue error" style={{ marginBottom: "16px" }}>
+                  <div>{renameError}</div>
+                </div>
+              )}
+
+              <div className="field" style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", marginBottom: "6px", fontWeight: 500, fontSize: "13px" }}>
+                  {t.yearRenameNewLabel}
+                </label>
+                <input
+                  className="num-input"
+                  autoFocus
+                  value={renameLabel}
+                  onChange={(e) => setRenameLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && renameLabel.trim()) void confirmRename();
+                  }}
+                  disabled={busy}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                <button type="button" className="ghost small" disabled={busy} onClick={() => setRenaming(false)}>
+                  {t.cancel}
+                </button>
+                <button
+                  type="button"
+                  className="primary small"
+                  disabled={busy || !renameLabel.trim() || renameLabel.trim() === preview.year.label}
+                  onClick={() => void confirmRename()}
+                >
+                  {busy ? "…" : t.yearRenameSubmit}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {deleteTarget &&
         createPortal(

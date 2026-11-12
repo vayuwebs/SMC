@@ -11,25 +11,43 @@ import { z } from "zod";
 
 /**
  * REIMBURSEMENT - to the member secretary for bills he already paid from his own
- *                 pocket. In the rojmel the money goes bank -> cash and each bill
- *                 is then a cash payment, so cash returns to 0 the same day.
+ *                 pocket, taken in cash (રોકડ). In the rojmel the money goes
+ *                 bank -> cash and each bill is then a cash payment, so cash
+ *                 returns to 0 the same day.
+ * REIMBURSEMENT_BANK - the same reimbursement, paid into his bank (બેન્ક): the
+ *                 money never passes through cash, so the rojmel has no "હાથ પર
+ *                 લીધા" line and the bills print without a cash amount.
  * DIRECT        - straight to a supplier or worker. Bank only.
  * GRANT_RETURN  - unspent balance sent back to the CRC coordinator. Bank only,
  *                 and the only type whose per-head split is typed by the user.
  */
-export const CHEQUE_TYPES = ["REIMBURSEMENT", "DIRECT", "GRANT_RETURN"] as const;
+export const CHEQUE_TYPES = ["REIMBURSEMENT", "REIMBURSEMENT_BANK", "DIRECT", "GRANT_RETURN"] as const;
 export type ChequeType = (typeof CHEQUE_TYPES)[number];
 export const chequeTypeSchema = z.enum(CHEQUE_TYPES);
 
 /** True when this cheque's allocation is computed from bills rather than typed. */
 export function isAllocationComputed(type: ChequeType): boolean {
-  return type === "REIMBURSEMENT" || type === "DIRECT";
+  return type !== "GRANT_RETURN";
+}
+
+/** True for a reimbursement to the member secretary, taken in cash or into his bank. */
+export function isReimbursement(type: ChequeType): boolean {
+  return type === "REIMBURSEMENT" || type === "REIMBURSEMENT_BANK";
 }
 
 /** True when this cheque moves money bank -> cash before paying the bills. */
 export function movesMoneyThroughCash(type: ChequeType): boolean {
   return type === "REIMBURSEMENT";
 }
+
+/**
+ * How a reimbursement's bill was paid: from the cash the member secretary took
+ * in hand, or online from the bank. The cheque's type is each bill's default;
+ * one cheque may mix them - some bills in cash, some online.
+ */
+export const PAY_MODES = ["CASH", "BANK"] as const;
+export type PayMode = (typeof PAY_MODES)[number];
+export const payModeSchema = z.enum(PAY_MODES);
 
 // ------------------------------------------------------- financial year status
 

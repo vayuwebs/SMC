@@ -12,6 +12,7 @@ import {
   BORDER_SIDES,
   BORDER_STYLES,
   LAYOUT_FONTS,
+  LINE_WEIGHTS,
   MAX_SCALE_PCT,
   MIN_SCALE_PCT,
   NO_FILL,
@@ -25,6 +26,8 @@ import {
   cssString,
   emptyLayout,
   fitScalePct,
+  isLineKey,
+  layoutHasWrap,
   moveColumnEdge,
   resolvePage,
   setColumnWidth,
@@ -33,6 +36,8 @@ import {
   targetKey,
   withRowGap,
   withStyle,
+  withoutWrap,
+  wrapAt,
   type Alignment,
   type BorderEdge,
   type BorderSide,
@@ -40,6 +45,7 @@ import {
   type CellStyle,
   type LayoutFontId,
   type LayoutTarget,
+  type LineWeight,
   type PageSetup,
   type PaperId,
   type ReportLayout,
@@ -49,8 +55,10 @@ import { useLanguage, useStrings } from "../i18n/index.js";
 import { LAYOUT_ROOT_ID, PrintRoot, type LayoutCheck } from "../print/PrintRoot.js";
 import { sheetZoom } from "../print/PagedSheets.js";
 import { ColourButton } from "../components/ColourPalette.js";
+import { Popover } from "../components/Popover.js";
 import { MarginsMenu } from "../components/PageMargins.js";
 import { cleanPage } from "./PrintDialog.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * The layout editor, shaped like Excel: a ribbon of tabs across the top, the
@@ -68,7 +76,8 @@ import { cleanPage } from "./PrintDialog.js";
  *   - drag the line between two columns to resize them;
  *   - Home: font, size, bold / italic / underline, borders (each side, line
  *     style and colour), fill and text colour from Excel's palette, alignment
- *     both ways, wrap text, inner spacing, sizes, format painter, clear;
+ *     both ways, wrap text (selected cells, whole columns, or every column of
+ *     every block), inner spacing, sizes, format painter, clear;
  *   - Page Layout: paper, orientation, margins, zoom - the print settings;
  *   - Whole report: the report's own font, size, spacing, row height and colours;
  *   - View: how large the sheet is drawn on screen.
@@ -99,6 +108,8 @@ interface CellRef {
   row: string | null;
   group: string | null;
   col: string;
+  /** The rojmel line it prints, which a wrap set on this one cell stays with. */
+  line: string | null;
 }
 
 /** Words of the form under the click, which the school may reword (print/layout-context, Text). */
@@ -261,6 +272,19 @@ function targetsFor(selection: Selection | null, scope: Scope): LayoutTarget[] {
   });
 }
 
+/** The selected cells themselves, for wrapping: a rojmel cell by its line, so it stays on that entry. */
+function wrapCellTargets(selection: Selection | null): LayoutTarget[] {
+  if (selection?.kind !== "cell") return targetsFor(selection, "cell");
+  const byKey = new Map<string, LayoutTarget>();
+  for (const cell of selection.cells) {
+    const row = cell.line ?? cell.row;
+    if (row === null) continue;
+    const target: LayoutTarget = { kind: "cell", row, col: cell.col };
+    byKey.set(targetKey(target), target);
+  }
+  return byKey.size > 0 ? [...byKey.values()] : targetsFor(selection, "col");
+}
+
 export function LayoutEditor({
   report,
   reportLabel,
@@ -353,8 +377,8 @@ export function LayoutEditor({
     }
   }
 
-  function close(): void {
-    if (dirty && !window.confirm(t.layoutDiscardConfirm)) return;
+  async function close(): Promise<void> {
+    if (dirty && !(await askConfirm(t.layoutDiscardConfirm))) return;
     onClose();
   }
 
@@ -371,8 +395,12 @@ export function LayoutEditor({
   const own: CellStyle = draft && first ? (draft.styles[targetKey(first)] ?? {}) : {};
   const shown: CellStyle =
     draft && cellSelection
-      ? styleAt(draft, cellSelection.anchor.row, cellSelection.anchor.col, cellSelection.anchor.group)
+      ? styleAt(draft, cellSelection.anchor.row, cellSelection.anchor.col, cellSelection.anchor.group, cellSelection.anchor.line)
       : own;
+  // A wrap on "this cell" sits on its line, so "one line" has to go there too.
+  const wrapCells = useMemo(() => wrapCellTargets(selection), [selection]);
+  const wrapColumns = useMemo(() => (cellSelection ? targetsFor(selection, "col") : []), [selection, cellSelection]);
+  const oneLineTargets = effectiveScope === "cell" ? wrapCells : targets;
   const reportMode = selection === null;
 
   /** Apply one change to every target - or, with nothing selected, to the whole report. */
@@ -387,6 +415,10 @@ export function LayoutEditor({
       if ("colour" in whole) allowed.colour = whole.colour;
       if ("lineColour" in whole) allowed.lineColour = whole.lineColour;
       if ("align" in whole) allowed.align = whole.align;
+      if ("vAlign" in whole) allowed.vAlign = whole.vAlign;
+      if ("bold" in whole) allowed.bold = whole.bold;
+      if ("italic" in whole) allowed.italic = whole.italic;
+      if ("underline" in whole) allowed.underline = whole.underline;
       if ("paddingXMm" in whole) allowed.paddingXMm = whole.paddingXMm;
       if ("paddingYMm" in whole) allowed.paddingYMm = whole.paddingYMm;
       change(withReport(draft, allowed));
@@ -400,6 +432,15 @@ export function LayoutEditor({
     change(next);
   }
 
+  /** Set or clear wrapping on these targets. */
+  function setWrap(list: LayoutTarget[], wrap: boolean | undefined): void {
+    if (!draft) return;
+    change(list.reduce((next, target) => withStyle(next, target, { wrap }), draft));
+  }
+
+  const allWrap = (list: LayoutTarget[], wrap: boolean): boolean =>
+    draft !== null && list.length > 0 && list.every((target) => draft.styles[targetKey(target)]?.wrap === wrap);
+
   /** The report's own settings, shown when nothing is selected. */
   const reportStyle: CellStyle = draft
     ? {
@@ -408,6 +449,10 @@ export function LayoutEditor({
         ...(draft.colour ? { colour: draft.colour } : {}),
         ...(draft.lineColour ? { lineColour: draft.lineColour } : {}),
         ...(draft.align ? { align: draft.align } : {}),
+        ...(draft.vAlign ? { vAlign: draft.vAlign } : {}),
+        ...(draft.bold !== undefined ? { bold: draft.bold } : {}),
+        ...(draft.italic !== undefined ? { italic: draft.italic } : {}),
+        ...(draft.underline !== undefined ? { underline: draft.underline } : {}),
       }
     : {};
   const current: CellStyle = reportMode ? reportStyle : own;
@@ -461,8 +506,8 @@ export function LayoutEditor({
   // ------------------------------------------------- keyboard shortcuts
 
   function toggle(property: "bold" | "italic" | "underline"): void {
-    if (reportMode) return;
-    const on = (own[property] ?? shown[property]) === true;
+    // With nothing selected, it is the whole report's (as on the આખું પત્રક tab).
+    const on = (reportMode ? current[property] : (own[property] ?? shown[property])) === true;
     apply({ [property]: on ? undefined : true });
   }
 
@@ -571,7 +616,12 @@ export function LayoutEditor({
 
   const refOf = (cell: HTMLElement): CellRef => {
     const tr = cell.closest("tr");
-    return { row: tr?.dataset["row"] ?? null, group: tr?.dataset["rowGroup"] ?? null, col: cell.dataset["col"] ?? "" };
+    return {
+      row: tr?.dataset["row"] ?? null,
+      group: tr?.dataset["rowGroup"] ?? null,
+      col: cell.dataset["col"] ?? "",
+      line: cell.dataset["line"] ?? null,
+    };
   };
 
   /** The cells of one table between two of its cells, inclusive - Excel's Shift+click. */
@@ -592,7 +642,9 @@ export function LayoutEditor({
     for (let index = r1; index <= r2; index += 1) {
       const tr = rows[index]!;
       for (let col = c1; col <= c2; col += 1) {
-        cells.push({ row: tr.dataset["row"] ?? null, group: tr.dataset["rowGroup"] ?? null, col: columns[col]!.id });
+        const id = columns[col]!.id;
+        const line = tr.querySelector<HTMLElement>(`:scope > [data-col=${cssString(id)}]`)?.dataset["line"] ?? null;
+        cells.push({ row: tr.dataset["row"] ?? null, group: tr.dataset["rowGroup"] ?? null, col: id, line });
       }
     }
     return cells;
@@ -783,6 +835,8 @@ export function LayoutEditor({
         }`
       : t.excelWholeReport;
 
+  const formulaValue = selection?.text ? (draft.texts?.[selection.text.id] ?? selection.text.fallback) : "";
+
   const page = resolvePage(report, draft.page);
   const setPage = (patch: PageSetup): void => {
     const next = cleanPage(report, { ...(draft.page ?? {}), ...patch });
@@ -818,8 +872,10 @@ export function LayoutEditor({
           big
           icon="⌫"
           label={t.layoutClearFormat}
-          disabled={reportMode || targets.every((target) => !draft.styles[targetKey(target)])}
-          onClick={() => apply(CLEARED)}
+          disabled={reportMode || [...targets, ...wrapCells].every((target) => !draft.styles[targetKey(target)])}
+          onClick={() =>
+            change([...targets, ...wrapCells].reduce((next, target) => withStyle(next, target, CLEARED), draft))
+          }
         />
       </Group>
 
@@ -836,23 +892,20 @@ export function LayoutEditor({
           <div className="ribbon-row">
             <RibbonButton
               icon={<b>B</b>}
-              title={needsSelection ?? `${t.layoutBold} (Ctrl+B)`}
-              active={(own.bold ?? shown.bold) === true}
-              disabled={reportMode}
+              title={`${t.layoutBold} (Ctrl+B)`}
+              active={(reportMode ? current.bold : (own.bold ?? shown.bold)) === true}
               onClick={() => toggle("bold")}
             />
             <RibbonButton
               icon={<i>I</i>}
-              title={needsSelection ?? `${t.excelItalic} (Ctrl+I)`}
-              active={(own.italic ?? shown.italic) === true}
-              disabled={reportMode}
+              title={`${t.excelItalic} (Ctrl+I)`}
+              active={(reportMode ? current.italic : (own.italic ?? shown.italic)) === true}
               onClick={() => toggle("italic")}
             />
             <RibbonButton
               icon={<u>U</u>}
-              title={needsSelection ?? `${t.excelUnderline} (Ctrl+U)`}
-              active={(own.underline ?? shown.underline) === true}
-              disabled={reportMode}
+              title={`${t.excelUnderline} (Ctrl+U)`}
+              active={(reportMode ? current.underline : (own.underline ?? shown.underline)) === true}
               onClick={() => toggle("underline")}
             />
             <BorderMenu
@@ -889,19 +942,30 @@ export function LayoutEditor({
               <RibbonButton
                 key={value}
                 icon={<span className={`valign-icon ${value}`} />}
-                title={needsSelection ?? t.excelVAlign[value]}
-                active={own.vAlign === value}
-                disabled={reportMode}
-                onClick={() => apply({ vAlign: own.vAlign === value ? undefined : value })}
+                title={t.excelVAlign[value]}
+                active={current.vAlign === value}
+                onClick={() => apply({ vAlign: current.vAlign === value ? undefined : value })}
               />
             ))}
-            <RibbonButton
-              icon="↵"
-              label={t.excelWrap}
-              title={needsSelection}
-              active={own.wrap === true}
-              disabled={reportMode}
-              onClick={() => apply({ wrap: own.wrap === true ? undefined : true })}
+            <WrapMenu
+              active={
+                (cellSelection
+                  ? wrapAt(draft, cellSelection.anchor.row, cellSelection.anchor.col, cellSelection.anchor.group, cellSelection.anchor.line)
+                  : selection?.kind === "part"
+                    ? own.wrap
+                    : draft.wrap) === true
+              }
+              note={report === "rojmel" ? t.excelWrapRojmelNote : undefined}
+              cellsOn={allWrap(wrapCells, true)}
+              columnsOn={allWrap(wrapColumns, true)}
+              allOn={draft.wrap === true}
+              canClear={layoutHasWrap(draft) || Object.values(draft.styles).some((style) => style.wrap === false)}
+              onCells={wrapCells.length > 0 ? () => setWrap(wrapCells, allWrap(wrapCells, true) ? undefined : true) : undefined}
+              onColumns={
+                wrapColumns.length > 0 ? () => setWrap(wrapColumns, allWrap(wrapColumns, true) ? undefined : true) : undefined
+              }
+              onAll={() => change(withReport(draft, { wrap: draft.wrap ? undefined : true }))}
+              onClear={() => change(withoutWrap(draft))}
             />
           </div>
           <div className="ribbon-row">
@@ -918,9 +982,9 @@ export function LayoutEditor({
               icon="⇥"
               label={t.excelOneLine}
               title={needsSelection}
-              active={own.wrap === false}
+              active={allWrap(oneLineTargets, false)}
               disabled={reportMode}
-              onClick={() => apply({ wrap: own.wrap === false ? undefined : false })}
+              onClick={() => setWrap(oneLineTargets, allWrap(oneLineTargets, false) ? undefined : false)}
             />
           </div>
         </div>
@@ -1089,6 +1153,82 @@ export function LayoutEditor({
             onChange={(sizePt) => change(withReport(draft, { sizePt }))}
           />
         </div>
+        <div className="ribbon-row">
+          {(
+            [
+              ["bold", <b key="b">B</b>, t.layoutBold],
+              ["italic", <i key="i">I</i>, t.excelItalic],
+              ["underline", <u key="u">U</u>, t.excelUnderline],
+            ] as const
+          ).map(([property, icon, title]) => (
+            <RibbonButton
+              key={property}
+              icon={icon}
+              title={title}
+              active={draft[property] === true}
+              onClick={() => change(withReport(draft, { [property]: draft[property] === true ? undefined : true }))}
+            />
+          ))}
+          <label className="ribbon-check" title={t.layoutWholeRegularHint}>
+            <input
+              type="checkbox"
+              checked={draft.bold === false}
+              onChange={(event) => change(withReport(draft, { bold: event.target.checked ? false : undefined }))}
+            />
+            {t.layoutWholeRegular}
+          </label>
+        </div>
+      </Group>
+      <Group label={t.excelGroupAlignment}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
+            {(["top", "middle", "bottom"] as VerticalAlignment[]).map((value) => (
+              <RibbonButton
+                key={value}
+                icon={<span className={`valign-icon ${value}`} />}
+                title={t.excelVAlign[value]}
+                active={draft.vAlign === value}
+                onClick={() => change(withReport(draft, { vAlign: draft.vAlign === value ? undefined : value }))}
+              />
+            ))}
+          </div>
+          <div className="ribbon-row">
+            {(["left", "center", "right"] as Alignment[]).map((value) => (
+              <RibbonButton
+                key={value}
+                icon={<span className={`halign-icon ${value}`} />}
+                title={value === "left" ? t.layoutAlignLeft : value === "center" ? t.layoutAlignCenter : t.layoutAlignRight}
+                active={draft.align === value}
+                onClick={() => change(withReport(draft, { align: draft.align === value ? undefined : value }))}
+              />
+            ))}
+          </div>
+        </div>
+      </Group>
+      <Group label={t.layoutGroupLines}>
+        <div className="ribbon-rows">
+          <ColourButton
+            icon="▦"
+            title={t.layoutLineColour}
+            value={draft.lineColour}
+            onChange={(lineColour) => change(withReport(draft, { lineColour }))}
+          />
+          <select
+            className="ribbon-select"
+            title={t.layoutLineWeight}
+            value={draft.lineWeight ?? ""}
+            onChange={(event) =>
+              change(withReport(draft, { lineWeight: (event.target.value || undefined) as LineWeight | undefined }))
+            }
+          >
+            <option value="">{t.layoutLineWeightDefault}</option>
+            {LINE_WEIGHTS.map((weight) => (
+              <option key={weight} value={weight}>
+                {t.layoutLineWeights[weight]}
+              </option>
+            ))}
+          </select>
+        </div>
       </Group>
       <Group label={t.excelGroupColours}>
         <ColourButton
@@ -1096,12 +1236,6 @@ export function LayoutEditor({
           title={t.layoutTextColour}
           value={draft.colour}
           onChange={(colour) => change(withReport(draft, { colour }))}
-        />
-        <ColourButton
-          icon="▦"
-          title={t.layoutLineColour}
-          value={draft.lineColour}
-          onChange={(lineColour) => change(withReport(draft, { lineColour }))}
         />
         <label className="ribbon-check">
           <input
@@ -1177,7 +1311,7 @@ export function LayoutEditor({
           <button className="primary small" disabled={!dirty || saving} onClick={() => void save()}>
             {saving ? t.layoutSaving : t.layoutSave}
           </button>
-          <button className="ghost small" onClick={close}>
+          <button className="ghost small" onClick={() => void close()}>
             {dirty ? t.layoutDiscard : t.layoutDone}
           </button>
         </div>
@@ -1212,9 +1346,11 @@ export function LayoutEditor({
         <span className="excel-namebox">{nameBox}</span>
         <div className="excel-formulabar">
           <span className="fx-label" title={t.excelGroupText}>fx</span>
-          <input
-            type="text"
+          {/* Enter starts a new line inside the same cell (as in Word); Backspace joins it back. */}
+          <textarea
             className="excel-formula-input"
+            rows={Math.min(4, Math.max(1, formulaValue.split("\n").length))}
+            title={t.excelFormulaEnterHint}
             placeholder={
               selection?.text
                 ? selection.text.fallback
@@ -1222,7 +1358,7 @@ export function LayoutEditor({
                   ? t.excelFormulaPlaceholder
                   : ""
             }
-            value={selection?.text ? (draft.texts?.[selection.text.id] ?? selection.text.fallback) : ""}
+            value={formulaValue}
             disabled={!selection?.text}
             onChange={(e) => {
               if (selection?.text) {
@@ -1230,6 +1366,11 @@ export function LayoutEditor({
               }
             }}
           />
+          {selection?.text && selection.text.vars.length > 0 && (
+            <span className="excel-formula-vars">
+              {t.excelTextVars(selection.text.vars.map((name) => `{${name}}`).join(" "))}
+            </span>
+          )}
           {selection?.text && draft.texts?.[selection.text.id] !== undefined && (
             <button
               type="button"
@@ -1511,20 +1652,6 @@ function SizeBox({
   );
 }
 
-/** Close a drop-down when the pointer goes down anywhere outside it. */
-function useOutsideClose(open: boolean, close: () => void): React.RefObject<HTMLDivElement | null> {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(event.target as Node)) close();
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open, close]);
-  return ref;
-}
-
 /** The font box: the face's name in its own face; a gallery of tiles drops down. */
 function FontPicker({
   value,
@@ -1537,7 +1664,7 @@ function FontPicker({
 }): JSX.Element {
   const t = useStrings();
   const [open, setOpen] = useState(false);
-  const ref = useOutsideClose(open, () => setOpen(false));
+  const ref = useRef<HTMLDivElement>(null);
   const chosen = LAYOUT_FONTS.find((font) => font.id === value);
   const pick = (font: LayoutFontId | undefined): void => {
     onChange(font);
@@ -1569,7 +1696,7 @@ function FontPicker({
         <span className="font-picker-arrow">▾</span>
       </button>
       {open && (
-        <div className="font-picker-popover">
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="font-picker-popover">
           <button
             type="button"
             className={`font-tile wide${value === undefined ? " chosen" : ""}`}
@@ -1583,13 +1710,90 @@ function FontPicker({
           <div className="palette-heading">{t.fontGalleryOthers}</div>
           <div className="font-tiles">{LAYOUT_FONTS.filter((font) => !("recommended" in font)).map(tile)}</div>
           <span className="layout-hint">{t.fontGalleryNote}</span>
-        </div>
+        </Popover>
       )}
     </div>
   );
 }
 
 /** Excel's Borders button: which edges, then the line's style and colour. */
+/**
+ * Wrap text, by how far it reaches: the selected cells, their whole columns, or
+ * every column of every block. Each is a switch of its own, and "one line" on a
+ * cell still beats the wider ones.
+ */
+function WrapMenu({
+  active,
+  note,
+  cellsOn,
+  columnsOn,
+  allOn,
+  canClear,
+  onCells,
+  onColumns,
+  onAll,
+  onClear,
+}: {
+  active: boolean;
+  note: string | undefined;
+  cellsOn: boolean;
+  columnsOn: boolean;
+  allOn: boolean;
+  canClear: boolean;
+  /** Left out while nothing is selected that it could apply to. */
+  onCells: (() => void) | undefined;
+  onColumns: (() => void) | undefined;
+  onAll: () => void;
+  onClear: () => void;
+}): JSX.Element {
+  const t = useStrings();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const items: [string, boolean, (() => void) | undefined][] = [
+    [t.excelWrapCells, cellsOn, onCells],
+    [t.excelWrapColumns, columnsOn, onColumns],
+    [t.excelWrapAll, allOn, onAll],
+  ];
+  const run = (action: () => void): void => {
+    action();
+    setOpen(false);
+  };
+  return (
+    <div className="colour-button" ref={ref}>
+      <RibbonButton
+        icon="↵"
+        label={`${t.excelWrap} ▾`}
+        title={t.excelWrapMenu}
+        active={active}
+        onClick={() => setOpen(!open)}
+      />
+      {open && (
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="palette-popover border-menu">
+          <div className="palette-heading">{t.excelWrapMenu}</div>
+          {items.map(([label, on, action]) => (
+            <button
+              key={label}
+              type="button"
+              className="border-menu-item"
+              role="menuitemcheckbox"
+              aria-checked={on}
+              disabled={!action}
+              title={action ? undefined : t.excelNeedsSelection}
+              onClick={() => action && run(action)}
+            >
+              <span className="border-menu-icon">{on ? "✓" : ""}</span> {label}
+            </button>
+          ))}
+          <button type="button" className="border-menu-item" disabled={!canClear} onClick={() => run(onClear)}>
+            <span className="border-menu-icon">⇥</span> {t.excelWrapClear}
+          </button>
+          {note && <p className="layout-hint">{note}</p>}
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 function BorderMenu({
   disabled,
   pen,
@@ -1607,7 +1811,7 @@ function BorderMenu({
 }): JSX.Element {
   const t = useStrings();
   const [open, setOpen] = useState(false);
-  const ref = useOutsideClose(open, () => setOpen(false));
+  const ref = useRef<HTMLDivElement>(null);
   const commands: [BorderCommand, string, string][] = [
     ["bottom", "▁", t.excelBorder.bottom],
     ["top", "▔", t.excelBorder.top],
@@ -1645,7 +1849,7 @@ function BorderMenu({
         ▾
       </button>
       {open && (
-        <div className="palette-popover border-menu">
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="palette-popover border-menu">
           <div className="palette-heading">{t.excelBorders}</div>
           {commands.map(([command, icon, label]) => (
             <button key={command} type="button" className="border-menu-item" onClick={() => run(command)}>
@@ -1680,7 +1884,7 @@ function BorderMenu({
           <div className="ribbon-row">
             <ColourButton icon="▦" title={t.layoutLineColour} value={lineColour} onChange={onLineColour} />
           </div>
-        </div>
+        </Popover>
       )}
     </div>
   );

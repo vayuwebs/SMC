@@ -20,13 +20,22 @@
  * Pagination matters beyond looks: the ખાતાવહી prints the rojmel page number of
  * every entry, so `pageResolver()` here is what fills in those references.
  */
-import { add, paise, sum, type Paise, ZERO } from "../lib/money.js";
-import { paidForGu } from "../lib/gujarati.js";
+import { add, formatAmount, paise, sum, type Paise, ZERO } from "../lib/money.js";
+import { paidForGu, withNa } from "../lib/gujarati.js";
 import { addDays, endOfMonth, formatDate, formatDateShort, startOfMonth } from "../lib/dates.js";
-import { billNet, chequeAllocation, chequeAmount } from "./allocation.js";
+import {
+  billNet,
+  billPaidInCash,
+  byVoucherOrder,
+  cashPart,
+  cashbookCheques,
+  chequeAllocation,
+  chequeAmount,
+} from "./allocation.js";
 import { openingBank, openingCash } from "./balances.js";
-import type { PageResolver } from "./ledger.js";
-import type { BookBankCharge, BookCheque, BookReceipt, YearBook } from "./types.js";
+import { chequeReturnedGu, type PageResolver } from "./ledger.js";
+import { isReimbursement } from "../lib/types.js";
+import type { BookBankCharge, BookCheque, BookReceipt, BookReturnedCheque, YearBook } from "./types.js";
 
 /** Which side of the book a line sits on. */
 export type RojmelSide = "receipt" | "payment";
@@ -53,6 +62,7 @@ export interface RojmelLine {
     | { kind: "cheque"; chequeNo: number }
     | { kind: "bill"; id: string }
     | { kind: "charge"; id: string }
+    | { kind: "chequeReturn"; chequeNo: number }
     | { kind: "none" };
 }
 
@@ -137,27 +147,32 @@ export interface RojmelOptions {
 }
 
 /**
- * The cash book runs in date order, never in cheque-number order: cheques are
- * not always written in the order of their numbers. Cheques entered on the same
- * cash-book date follow their own cheque date; the number only breaks a tie.
+ * The cash book runs date by date; cheques entered on the same cash-book date
+ * follow voucher order (voucher, sub-voucher, then cheque number) - cheques are
+ * not always written in the order of their numbers.
  */
 function byDate(a: BookCheque, b: BookCheque): number {
-  return (
-    a.cashbookDate.localeCompare(b.cashbookDate) ||
-    a.chequeDate.localeCompare(b.chequeDate) ||
-    a.chequeNo - b.chequeNo
-  );
+  return a.cashbookDate.localeCompare(b.cashbookDate) || byVoucherOrder(a, b);
 }
 
 export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel {
   const fillGaps = (options.nilBlocks ?? "fill-gaps") === "fill-gaps";
 
   const receiptsByDate = groupBy(book.receipts, (receipt) => receipt.date);
-  const chequesByDate = groupBy(book.cheques, (cheque) => cheque.cashbookDate);
+  // A cheque the bank later sent back was still written and entered: it prints on
+  // its own date like any other, and its money comes back on the return date.
+  const chequesByDate = groupBy(cashbookCheques(book), (cheque) => cheque.cashbookDate);
+  const returnsByDate = groupBy(book.returnedCheques, (cheque) => cheque.returnedDate);
 
-  // Bank charges are not shown in the cash book (Rojmel).
+  // What the bank took itself goes on its own date, like any other payment.
+  const chargesByDate = groupBy(book.bankCharges, (charge) => charge.date);
   const activeDates = [
-    ...new Set([...receiptsByDate.keys(), ...chequesByDate.keys()]),
+    ...new Set([
+      ...receiptsByDate.keys(),
+      ...chequesByDate.keys(),
+      ...returnsByDate.keys(),
+      ...chargesByDate.keys(),
+    ]),
   ].sort();
 
   const blocks: RojmelBlock[] = [];
@@ -171,14 +186,11 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
   };
 
   /**
-   * The nil-block rule, read off the reference book (SPEC 11.4 is still open).
-   *
-   * The client prints a nil block only AFTER a date that had entries, running
-   * to the end of that month - never before the first transaction of a month.
-   * Their page 2 goes 04/05, then 05/05 TO 31/05, and simply omits 01/05-03/05.
-   * Filling every gap instead produced 26 pages against their 16.
-   *
-   * The range stops early if the next transaction falls inside it.
+   * The nil-block rule:
+   * 1. Intermediate gaps in the same month are kept only when >= 15 days; gaps < 15 days are omitted.
+   * 2. Month-end gaps are always kept (even if < 15 days).
+   * 3. Whole empty months are always kept.
+   * 4. Month-start gaps before the month's first entry are kept only when >= 15 days.
    */
   const emitTailGap = (afterDate: string, nextActive: string | undefined): void => {
     if (!fillGaps) return;
@@ -187,9 +199,34 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
 
     let to: string = endOfMonth(afterDate);
     if (to > book.year.endDate) to = book.year.endDate;
-    if (nextActive !== undefined && nextActive <= to) to = previousDay(nextActive);
+    const isSameMonth = nextActive !== undefined && nextActive <= to;
+    if (isSameMonth) to = previousDay(nextActive);
 
-    if (from <= to) emit(nilBlock(from, to, cash, bank));
+    if (from <= to) {
+      if (isSameMonth) {
+        if (daysInclusive(from, to) >= 15) {
+          emit(nilBlock(from, to, cash, bank));
+        }
+      } else {
+        emit(nilBlock(from, to, cash, bank));
+      }
+    }
+  };
+
+  /**
+   * For the first entry of a calendar month, emits a nil block for the start of the month
+   * if the gap is >= 15 days (e.g. 01/01/2026 to 29/01/2026).
+   */
+  const emitMonthStartGap = (firstActiveInMonth: string): void => {
+    if (!fillGaps) return;
+    const mStart = startOfMonth(firstActiveInMonth);
+    if (mStart < firstActiveInMonth && mStart > firstDate) {
+      const from = mStart;
+      const to = previousDay(firstActiveInMonth);
+      if (daysInclusive(from, to) >= 15) {
+        emit(nilBlock(from, to, cash, bank));
+      }
+    }
   };
 
   /**
@@ -212,19 +249,22 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
   const firstDate = book.year.startDate;
   const startHasEntries = activeDates[0] === firstDate;
   if (fillGaps && !startHasEntries) {
+    emit(nilBlock(firstDate, firstDate, cash, bank));
     if (activeDates.length === 0 || activeDates[0]! > endOfMonth(firstDate)) {
-      emit(nilBlock(firstDate, endOfMonth(firstDate), cash, bank));
+      emit(nilBlock(nextDay(firstDate), endOfMonth(firstDate), cash, bank));
       if (activeDates[0]) {
         emitEmptyMonths(endOfMonth(firstDate), activeDates[0]);
       }
     } else {
-      emit(nilBlock(firstDate, firstDate, cash, bank));
       emitTailGap(firstDate, activeDates[0]);
     }
   }
 
   for (let index = 0; index < activeDates.length; index += 1) {
     const date = activeDates[index]!;
+    if (index === 0 || activeDates[index - 1]!.slice(0, 7) !== date.slice(0, 7)) {
+      emitMonthStartGap(date);
+    }
     // One block per cheque: a date with two cheques prints two blocks, the
     // second opening with the first one's બંધ સિલક - as the client's ROJMED
     // sheet chains them. A cheque's bills (its sub-vouchers) stay in its block.
@@ -238,7 +278,9 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
           book,
           date,
           part === 0 ? (receiptsByDate.get(date) ?? []) : [],
+          part === 0 ? (returnsByDate.get(date) ?? []) : [],
           cheques,
+          part === 0 ? (chargesByDate.get(date) ?? []) : [],
           cash,
           bank,
           part === 0 ? date : `${date}#${part + 1}`,
@@ -246,19 +288,35 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
       );
     });
     const nextDate = activeDates[index + 1];
-    emitTailGap(date, nextDate);
     if (nextDate !== undefined) {
+      emitTailGap(date, nextDate);
       emitEmptyMonths(date, nextDate);
-    } else {
-      emitEmptyMonths(date, addDays(book.year.endDate, 1));
+    } else if (fillGaps) {
+      emitTailGap(date, book.year.endDate);
+      emitEmptyMonths(date, book.year.endDate);
+      const lastBlock = blocks[blocks.length - 1];
+      if (!lastBlock || lastBlock.toDate < book.year.endDate) {
+        if (lastBlock && nextDay(lastBlock.toDate) <= previousDay(book.year.endDate)) {
+          const preEndFrom = nextDay(lastBlock.toDate);
+          const preEndTo = previousDay(book.year.endDate);
+          if (daysInclusive(preEndFrom, preEndTo) >= 15) {
+            emit(nilBlock(preEndFrom, preEndTo, cash, bank));
+          }
+        }
+        emit(nilBlock(book.year.endDate, book.year.endDate, cash, bank));
+      } else if (lastBlock && lastBlock.toDate === book.year.endDate && !lastBlock.isNil) {
+        emit(nilBlock(book.year.endDate, book.year.endDate, cash, bank));
+      }
     }
   }
 
   // A year with no transactions at all still prints a book.
   if (blocks.length === 0) {
-    for (const range of monthRanges(book.year.startDate, book.year.endDate)) {
+    emit(nilBlock(firstDate, firstDate, cash, bank));
+    for (const range of monthRanges(nextDay(firstDate), previousDay(book.year.endDate))) {
       emit(nilBlock(range.from, range.to, cash, bank));
     }
+    emit(nilBlock(book.year.endDate, book.year.endDate, cash, bank));
   }
 
   return {
@@ -309,11 +367,127 @@ function nilBlock(from: string, to: string, cash: Paise, bank: Paise): RojmelBlo
   });
 }
 
+const SHOP_KEYWORDS = [
+  "સ્ટોર્સ",
+  "સ્ટોર",
+  "ટ્રેડર્સ",
+  "ટ્રેડર",
+  "બજાર",
+  "સુપરબજાર",
+  "સુપર બજાર",
+  "મેડીકલ",
+  "મેડિકલ",
+  "એજન્સી",
+  "એન્ટરપ્રાઈઝ",
+  "ડેપો",
+  "સેન્ટર",
+  "ફાર્મસી",
+  "કંપની",
+  "માર્ટ",
+  "હાર્ડવેર",
+  "સ્ટેશનર્સ",
+  "સ્ટેશનરી",
+  "બુક સ્ટોલ",
+  "બુકસ્ટોલ",
+  "નોવેલ્ટી",
+  "ઇલેક્ટ્રિક",
+  "ઈલેક્ટ્રીક",
+  "સાવરણીવાલા",
+  "પ્રેસ",
+  "પ્રિન્ટર્સ",
+  "ઝેરોક્ષ",
+  "ઝેરોક્સ",
+  "સ્ટીલ",
+  "ગૃહ ઉદ્યોગ",
+  "સોસાયટી",
+  "મંડળ",
+  "હોસ્પિટલ",
+  "લેબોરેટરી",
+  "ક્લિનિક",
+];
+
+const SHOP_LATIN_KEYWORDS = [
+  "store",
+  "stores",
+  "trader",
+  "traders",
+  "enterprise",
+  "enterprises",
+  "agency",
+  "agencies",
+  "medical",
+  "mart",
+  "center",
+  "centre",
+  "bazar",
+  "bazaar",
+  "press",
+  "printers",
+  "hardware",
+  "co",
+  "company",
+  "pvt",
+  "ltd",
+  "super",
+  "stationery",
+  "stationers",
+];
+
+export function isShopVendor(vendor: string): boolean {
+  const trimmed = vendor.trim();
+  const lower = trimmed.toLowerCase();
+  for (const kw of SHOP_KEYWORDS) {
+    if (trimmed.includes(kw)) return true;
+  }
+  for (const kw of SHOP_LATIN_KEYWORDS) {
+    if (new RegExp(`\\b${kw}\\b`, "i").test(lower)) return true;
+  }
+  return false;
+}
+
+export function formatRojmelBillDescription(bill: { vendorGu: string; descriptionGu: string }): string {
+  const vendor = bill.vendorGu.trim();
+  const desc = bill.descriptionGu.trim();
+
+  // If the vendor already includes standard register suffixes, keep it as is
+  if (vendor.endsWith("બિલ મુજબ") || vendor.endsWith("વા.મુજબ")) {
+    return vendor;
+  }
+
+  if (isShopVendor(vendor)) {
+    // For shops, keep the full shop name.
+    // If the description specifies materials/goods (e.g. "પ્રવેશોત્સવ મટીરીયલ્સ", "પ્રવેશોત્સવ કીટ"), include it.
+    if (
+      desc &&
+      (desc.includes("મટીરીયલ્સ") || desc.includes("મટરીયલ્સ") || desc.includes("કીટ")) &&
+      !vendor.includes(desc)
+    ) {
+      return `${vendor}ને ${withNa(desc)} બિલ મુજબ`;
+    }
+    return `${vendor}ને બિલ મુજબ`;
+  }
+
+  // Individual person: extract first name only to conserve cell space in rojmel
+  const firstToken = vendor.split(/\s+/)[0] ?? vendor;
+  const firstName = firstToken.endsWith("ને") ? firstToken : `${firstToken}ને`;
+
+  // Work description (e.g. "સફાઈકામ મજૂરી" -> "સફાઈકામ", "વાલીસંમેલન સરભરા ખર્ચ")
+  const work = desc.replace(/\s*મજૂરી$/, "").trim();
+  if (work && work !== "સામાન" && work !== "મજૂરી") {
+    const withPete = work.endsWith("પેટે") ? work : `${work} પેટે`;
+    return `${withPete} ${firstName} વા.મુજબ`;
+  }
+
+  return `${firstName} વા.મુજબ`;
+}
+
 function activeBlock(
   book: YearBook,
   date: string,
   receipts: BookReceipt[],
+  returns: BookReturnedCheque[],
   cheques: BookCheque[],
+  charges: BookBankCharge[],
   cash: Paise,
   bank: Paise,
   id: string,
@@ -352,6 +526,23 @@ function activeBlock(
     });
   }
 
+  // The bank sent a cheque back unpaid: its money is in the account again.
+  for (const cheque of returns) {
+    const amount = chequeAmount(cheque);
+    receiptLines.push({
+      side: "receipt",
+      dateText: "",
+      descriptionGu: chequeReturnedGu(cheque.chequeNo),
+      referenceText: "",
+      chequeText: String(cheque.chequeNo),
+      cashPaise: ZERO,
+      bankPaise: amount,
+      totalPaise: amount,
+      headingOnly: false,
+      source: { kind: "chequeReturn", chequeNo: cheque.chequeNo },
+    });
+  }
+
   const paymentLines: RojmelLine[] = [];
 
   for (const cheque of [...cheques].sort(byDate)) {
@@ -360,7 +551,13 @@ function activeBlock(
     const chequeText = `${cheque.chequeNo}${ownDate}`;
     const voucherText = cheque.voucherNo === null ? "" : `${cheque.voucherNo}${ownDate}`;
 
-    if (cheque.type === "REIMBURSEMENT") {
+    if (isReimbursement(cheque.type)) {
+      // Each bill goes in one column: a bill paid in cash (રોકડ) in the cash
+      // column, from money the member secretary took in hand; a bill paid online
+      // (બેન્ક) in the bank column, straight from the bank. The withdrawal line
+      // carries only what was taken in hand, so the bank still falls by the
+      // whole cheque - withdrawal plus the online bills - and by no more.
+      const inHand = cashPart(cheque);
       // Bank side: the member secretary withdraws for these heads.
       const heads = [...chequeAllocation(cheque).keys()].map(
         (code) => nameByCode.get(code) ?? code,
@@ -372,9 +569,10 @@ function activeBlock(
         referenceText: voucherText,
         chequeText,
         cashPaise: ZERO,
-        bankPaise: amount,
-        totalPaise: amount,
-        headingOnly: false,
+        bankPaise: inHand,
+        totalPaise: inHand,
+        // Nothing taken in hand when every bill went online: no amount here.
+        headingOnly: inHand === ZERO,
         source: { kind: "cheque", chequeNo: cheque.chequeNo },
       });
 
@@ -391,19 +589,20 @@ function activeBlock(
         source: { kind: "cheque", chequeNo: cheque.chequeNo },
       });
 
-      // Cash side: one line per bill the head teacher had already paid.
+      // One line per bill the head teacher had already paid, in its own column.
       for (const bill of cheque.bills) {
         const net = billNet(bill);
+        const inCash = billPaidInCash(cheque, bill);
         paymentLines.push({
           side: "payment",
           dateText: "",
-          descriptionGu: `${bill.vendorGu}ને બિલ મુજબ`,
+          descriptionGu: formatRojmelBillDescription(bill),
           referenceText: bill.billNo
             ? `${bill.billNo} ${formatDateShort(bill.billDate)}`
             : formatDateShort(bill.billDate),
           chequeText: "",
-          cashPaise: net,
-          bankPaise: ZERO,
+          cashPaise: inCash ? net : ZERO,
+          bankPaise: inCash ? ZERO : net,
           totalPaise: net,
           headingOnly: false,
           source: { kind: "bill", id: bill.id },
@@ -411,18 +610,20 @@ function activeBlock(
       }
 
       // And the matching receipt-side line: bank money taken into hand.
-      receiptLines.push({
-        side: "receipt",
-        dateText: "",
-        descriptionGu: CASH_IN_HAND_GU,
-        referenceText: "",
-        chequeText: "",
-        cashPaise: amount,
-        bankPaise: ZERO,
-        totalPaise: amount,
-        headingOnly: false,
-        source: { kind: "cheque", chequeNo: cheque.chequeNo },
-      });
+      if (inHand !== ZERO) {
+        receiptLines.push({
+          side: "receipt",
+          dateText: "",
+          descriptionGu: CASH_IN_HAND_GU,
+          referenceText: "",
+          chequeText: "",
+          cashPaise: inHand,
+          bankPaise: ZERO,
+          totalPaise: inHand,
+          headingOnly: false,
+          source: { kind: "cheque", chequeNo: cheque.chequeNo },
+        });
+      }
     } else if (cheque.type === "DIRECT") {
       const heads = [...chequeAllocation(cheque).keys()].map(
         (code) => nameByCode.get(code) ?? code,
@@ -439,10 +640,14 @@ function activeBlock(
         headingOnly: false,
         source: { kind: "cheque", chequeNo: cheque.chequeNo },
       });
+      const payeeToken = isShopVendor(cheque.payeeGu)
+        ? cheque.payeeGu.trim()
+        : (cheque.payeeGu.trim().split(/\s+/)[0] ?? cheque.payeeGu.trim());
+      const payee = payeeToken.endsWith("ને") ? payeeToken : `${payeeToken}ને`;
       paymentLines.push({
         side: "payment",
         dateText: "",
-        descriptionGu: `${cheque.payeeGu}ને ${paidForGu(cheque.purposeGu)} વા.મુજબ`,
+        descriptionGu: `${payee} ${paidForGu(cheque.purposeGu)} વા.મુજબ`,
         referenceText: "",
         chequeText: "",
         cashPaise: ZERO,
@@ -483,7 +688,23 @@ function activeBlock(
     }
   }
 
-  // Bank charges are not printed in Rojmel (cash book).
+  // What the bank took itself: straight out of the bank, with no voucher and no
+  // cheque to print beside it.
+  for (const charge of charges) {
+    const head = nameByCode.get(charge.headCode) ?? charge.headCode;
+    paymentLines.push({
+      side: "payment",
+      dateText: paymentLines.length === 0 ? formatDate(date) : "",
+      descriptionGu: `${charge.descriptionGu} (${head})`,
+      referenceText: "",
+      chequeText: "",
+      cashPaise: ZERO,
+      bankPaise: charge.amountPaise,
+      totalPaise: charge.amountPaise,
+      headingOnly: false,
+      source: { kind: "charge", id: charge.id },
+    });
+  }
 
   if (paymentLines.length === 0) {
     paymentLines.push({
@@ -584,11 +805,28 @@ const CASH_IN_HAND_GU = "મુખ્ય શિક્ષકે નાણાં �
  * the ledger's page references depend on.
  */
 export function paginate(blocks: RojmelBlock[]): RojmelPage[] {
+  if (blocks.length === 0) return [];
+  if (blocks.length === 1) {
+    return [{ pageNo: 1, blocks: [blocks[0]!] }];
+  }
+
   const pages: RojmelPage[] = [];
+
+  // Page 1 is strictly dedicated to the opening block
+  pages.push({ pageNo: 1, blocks: [blocks[0]!] });
+
+  if (blocks.length === 2) {
+    pages.push({ pageNo: 2, blocks: [blocks[1]!] });
+    return pages;
+  }
+
+  const middleBlocks = blocks.slice(1, blocks.length - 1);
+  const lastBlock = blocks[blocks.length - 1]!;
+
   let current: RojmelBlock[] = [];
   let used = 0;
 
-  for (const block of blocks) {
+  for (const block of middleBlocks) {
     if (current.length > 0 && used + block.rowCount > ROWS_PER_PAGE) {
       pages.push({ pageNo: pages.length + 1, blocks: current });
       current = [];
@@ -598,7 +836,13 @@ export function paginate(blocks: RojmelBlock[]): RojmelPage[] {
     used += block.rowCount;
   }
 
-  if (current.length > 0) pages.push({ pageNo: pages.length + 1, blocks: current });
+  if (current.length > 0) {
+    pages.push({ pageNo: pages.length + 1, blocks: current });
+  }
+
+  // The last page is strictly dedicated to the closing block
+  pages.push({ pageNo: pages.length + 1, blocks: [lastBlock] });
+
   return pages;
 }
 
@@ -611,6 +855,7 @@ export function pageResolver(rojmel: Rojmel): PageResolver {
   const receiptPages = new Map<string, number>();
   const chequePages = new Map<number, number>();
   const chargePages = new Map<string, number>();
+  const returnPages = new Map<number, number>();
 
   for (const page of rojmel.pages) {
     for (const block of page.blocks) {
@@ -624,6 +869,9 @@ export function pageResolver(rojmel: Rojmel): PageResolver {
         if (line.source.kind === "charge" && !chargePages.has(line.source.id)) {
           chargePages.set(line.source.id, page.pageNo);
         }
+        if (line.source.kind === "chequeReturn" && !returnPages.has(line.source.chequeNo)) {
+          returnPages.set(line.source.chequeNo, page.pageNo);
+        }
       }
     }
   }
@@ -634,6 +882,7 @@ export function pageResolver(rojmel: Rojmel): PageResolver {
     receiptPage: (id) => receiptPages.get(id) ?? null,
     chequePage: (chequeNo) => chequePages.get(chequeNo) ?? null,
     chargePage: (id) => chargePages.get(id) ?? null,
+    chequeReturnPage: (chequeNo) => returnPages.get(chequeNo) ?? null,
     openingPage: () => 1,
     closingPage: () => lastPage,
   };
@@ -673,6 +922,12 @@ function previousDay(date: string): string {
   return addDays(date, -1);
 }
 
+function daysInclusive(from: string, to: string): number {
+  const d1 = new Date(`${from}T00:00:00Z`).getTime();
+  const d2 = new Date(`${to}T00:00:00Z`).getTime();
+  return Math.round((d2 - d1) / (24 * 3600 * 1000)) + 1;
+}
+
 /** "01/04/2026" or "01/09/2025 થી 30/09/2025", as requested. */
 function dateRangeText(from: string, to: string): string {
   return from === to ? formatDate(from) : `${formatDate(from)} થી ${formatDate(to)}`;
@@ -692,7 +947,8 @@ function formatAmountPlain(amount: Paise): string {
 }
 
 function closingSentence(book: YearBook, closing: Paise): string {
-  // Printed in Gujarati digits even though the rest of the rojmel is Latin
-  // (SPEC 6.1 note 6). The caller converts; this keeps the wording in one place.
-  return `તારીખ ${formatDate(book.year.endDate)} ના રોજ ${book.school.nameGu} SMCE ની બંધ સિલક રૂપિયા ${formatAmountPlain(closing)}.૦૦ રહે છે.`;
+  // Latin digits like the rest of the book: "154.00", the paise in the same
+  // figures as the rupees (it used to end in a Gujarati ".૦૦" - and in
+  // "154.50.૦૦" when there were paise).
+  return `તારીખ ${formatDate(book.year.endDate)} ના રોજ ${book.school.nameGu} SMCE ની બંધ સિલક રૂપિયા ${formatAmount(closing)} રહે છે.`;
 }

@@ -14,6 +14,7 @@ import { Money } from "../components/Money.js";
 import { amountToInput, formatDate, tryParseAmount } from "../format.js";
 import { useStrings, type Strings } from "../i18n/index.js";
 import { useEffect } from "react";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * Bringing an old Excel workbook in.
@@ -92,6 +93,13 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
         ]),
       ),
     );
+    // The grant returns' vouchers: a bill-register row under one is the return
+    // listed again, whatever its words say.
+    const grantReturnVouchers = new Set(
+      plan.cheques
+        .filter((row) => row.suggestedType === "GRANT_RETURN" && row.voucherNo !== null)
+        .map((row) => row.voucherNo!),
+    );
     setBills(
       Object.fromEntries(
         plan.bills.map((row) => [
@@ -99,7 +107,9 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
           {
             // A "grant returned" line in the bill register is not a bill at all;
             // it is there because the printed form lists it. Left out by default.
-            include: !row.descriptionGu.includes("પરત"),
+            include:
+              !row.descriptionGu.includes("પરત") &&
+              !(row.voucherNo !== null && grantReturnVouchers.has(row.voucherNo)),
             grantHeadId:
               row.suggestedHeadName === null
                 ? null
@@ -150,7 +160,7 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
 
   async function runImport(): Promise<void> {
     if (!preview || !canImport) return;
-    if (!window.confirm(t.importConfirm(chosenReceipts.length, chosenBills.length, chosenCheques.length)))
+    if (!(await askConfirm(t.importConfirm(chosenReceipts.length, chosenBills.length, chosenCheques.length))))
       return;
 
     const selection: LegacyImportSelection = {
@@ -377,6 +387,7 @@ export function Import({ onChanged }: { onChanged: () => void }): JSX.Element {
                           }
                         >
                           <option value="REIMBURSEMENT">{t.typeReimbursement}</option>
+                          <option value="REIMBURSEMENT_BANK">{t.typeReimbursementBank}</option>
                           <option value="DIRECT">{t.typeDirect}</option>
                           <option value="GRANT_RETURN">{t.typeGrantReturn}</option>
                         </select>

@@ -106,7 +106,7 @@ function poolsFor(book: YearBook, headCode: string): Pool[] {
   return pools;
 }
 
-/** This head's share of every cheque, in cash-book date order. */
+/** This head's share of every cheque, in cash-book date order, then voucher order. */
 function outflowsFor(book: YearBook, headCode: string): Outflow[] {
   const outflows: Outflow[] = [];
 
@@ -131,9 +131,18 @@ function outflowsFor(book: YearBook, headCode: string): Outflow[] {
     });
   }
 
-  return outflows.sort((a, b) =>
-    a.date === b.date ? a.chequeNo - b.chequeNo : a.date < b.date ? -1 : 1,
-  );
+  // Date by date; on one date a bank charge first, then the cheques in voucher
+  // order (book.cheques already is) - not by cheque number.
+  return outflows
+    .map((outflow, index) => ({ outflow, index }))
+    .sort((a, b) =>
+      a.outflow.date !== b.outflow.date
+        ? a.outflow.date < b.outflow.date
+          ? -1
+          : 1
+        : Number(a.outflow.chequeNo !== 0) - Number(b.outflow.chequeNo !== 0) || a.index - b.index,
+    )
+    .map(({ outflow }) => outflow);
 }
 
 function byDateThenId(a: BookReceipt, b: BookReceipt): number {

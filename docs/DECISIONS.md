@@ -681,3 +681,36 @@ Three high-severity advisories remain, all one chain: `prisma` → `@prisma/conf
 → `deepmerge-ts`. They affect the Prisma CLI's config loader at development time,
 not anything at runtime. The only published fix is a Prisma 8 release candidate,
 which is a worse trade than the advisory. Revisit when Prisma 8 ships stable.
+
+## Wrap text in three reaches (October 2026)
+
+The client wanted wrapping for the selected cells, for a whole column, or for all
+columns of all blocks, as separate choices. The ribbon's "લખાણ વાળો" is a menu of
+those three (each a switch of its own) and a "turn off everywhere".
+
+**The rojmel's default stays.** A જાવક description with no date beside it still
+runs left into the empty date cell. Wrapped, it is simply not marked to spill
+(`RojmelPage`, `wrapAt`), so it stays in its own cell like any other description.
+A cell set to "one line" beats a column or the whole report.
+
+**A cell's own wrap is kept against its line, not its row.** A rojmel row key is
+a block and a place in it, so a new bill above would slide a setting onto the
+wrong entry. `rojmelBlockRows` gives each line a key from the record it prints
+(`line:p:bill:<id>`), and the print page marks each cell with it (`data-line`).
+Columns and the other reports need nothing new: their keys are already made
+from what the row is about.
+
+**Wrapping never changes the rojmel's pages.** The engine pages the book by rows
+and the ledger prints those page numbers, so a layout must not move an entry
+(`buildRojmel` takes no layout). A wrapped row takes its height from its own
+sheet: first what the other rows can give up, then a zoom of the table. The zoom
+for a wrapped sheet is searched for (`largestFittingScale`), not worked out from
+the height, because zooming widens the cells and the words take fewer lines. It
+stops at 0.7 (0.88 is the plain floor, which is unchanged). A sheet that still
+does not fit is reported in the editor and the print dialog, as any other is.
+The registers already measure their rows, so they page by the real height.
+
+**What does not wrap.** An amount or a date has no place to break, so neither is
+ever broken: amounts keep `overflow-wrap: normal`, and in Excel the whole report's
+wrap reaches words only. An arranged voucher or cheque cell folds between its
+number and its date instead of being set smaller.

@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
-import { CIPHER, keyFingerprint, snapshotInto } from "../vault.js";
+import { CIPHER, keyFingerprint, snapshotInto, wrapKeyForSupport } from "../vault.js";
 import { readJson, writeJsonAtomic } from "./json-file.js";
 
 export const DATA_DIR_NAME = "SMC Accounts";
@@ -37,7 +37,7 @@ export const LOCAL_BACKUPS_KEPT = 10;
 
 export const manifestSchema = z.object({
   format: z.literal("smc-accounts-profile"),
-  formatVersion: z.literal(1),
+  formatVersion: z.union([z.literal(1), z.literal(2)]),
   profileId: z.string().uuid(),
   ownerUserId: z.string().min(1),
   schoolNameGu: z.string(),
@@ -45,6 +45,8 @@ export const manifestSchema = z.object({
   cipher: z.literal(CIPHER),
   /** HMAC of the key: tells a wrong key from a damaged file. Not the key. */
   keyFingerprint: z.string().regex(/^[0-9a-f]{32}$/),
+  /** RSA-4096-OAEP wrapped key for offline developer/support recovery */
+  supportWrappedKey: z.string().optional(),
   createdAt: z.string(),
 });
 export type Manifest = z.infer<typeof manifestSchema>;
@@ -56,17 +58,19 @@ export function newManifest(input: {
   diseCode: string;
   keyHex: string;
   createdAt?: string;
+  supportPublicKeyPem?: string;
 }): Manifest {
   const profileId = input.profileId ?? randomUUID();
   return {
     format: "smc-accounts-profile",
-    formatVersion: 1,
+    formatVersion: 2,
     profileId,
     ownerUserId: input.ownerUserId,
     schoolNameGu: input.schoolNameGu,
     diseCode: input.diseCode,
     cipher: CIPHER,
     keyFingerprint: keyFingerprint(input.keyHex, profileId),
+    supportWrappedKey: wrapKeyForSupport(input.keyHex, input.supportPublicKeyPem),
     createdAt: input.createdAt ?? new Date().toISOString(),
   };
 }

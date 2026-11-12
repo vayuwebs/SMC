@@ -51,7 +51,7 @@
   font-size: var(--report-font);
   /* Gujarati needs a face with real conjunct coverage. Chromium shapes these
      with HarfBuzz, which is why ક્ષ, જ્ઞ, શ્રી and reph come out correct. */
-  font-family: "Noto Sans Gujarati", "Shruti", "Nirmala UI", "Lohit Gujarati", serif;
+  font-family: "Noto Sans Gujarati", "Shruti", "Nirmala UI", "Lohit Gujarati", sans-serif;
   color: #000;
   background: #fff;
 }
@@ -74,11 +74,45 @@
   box-sizing: border-box;
   width: var(--sheet-width, 195mm);
   min-height: var(--sheet-height, 325mm);
+  max-height: var(--sheet-height, 325mm);
+  overflow: hidden;
   zoom: var(--sheet-zoom, 1);
   margin: 0 auto 8mm;
   padding: 0;
   background: #fff;
   position: relative;
+}
+
+.sheet[data-auto-size="12"] {
+  --rojmel-text: 12pt;
+  --rojmel-figure: 11pt;
+  --report-font: 14pt;
+  --rojmel-row-height: 5.4mm;
+}
+
+.sheet[data-auto-size="14"] {
+  --rojmel-text: 12pt;
+  --rojmel-figure: 11pt;
+  --report-font: 14pt;
+  --rojmel-row-height: 6.8mm;
+}
+
+.sheet[data-dense] .rojmel-title {
+  margin-bottom: 1.0mm;
+}
+
+.sheet[data-dense] .rojmel-band {
+  margin-bottom: 1.0mm;
+}
+
+.sheet[data-dense] table.form.rojmel th,
+.sheet[data-dense] table.form.rojmel td {
+  padding: 0.2mm 0.5mm;
+  line-height: 1.05;
+}
+
+.rojmel-table-container {
+  width: 100%;
 }
 
 /* Screen-only chrome: a grey surround so the sheet reads as paper. */
@@ -203,6 +237,18 @@ table.form th {
   background: transparent;
 }
 
+table.form th *,
+table.form td *,
+table.form.rojmel th *,
+table.form.rojmel td *,
+table.banner th *,
+table.banner td *,
+.sheet * {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .print-root table.form tr.total-row td {
   background: transparent;
   font-weight: 700;
@@ -216,6 +262,12 @@ table.form th {
   font-feature-settings: "tnum" 1;
   text-align: center;
   white-space: nowrap;
+}
+
+/* Wrapping never breaks an amount in the middle, even in a narrow column. */
+table.form td.figure,
+table.form.register td.figure {
+  overflow-wrap: normal;
 }
 
 .centre {
@@ -361,7 +413,7 @@ table.form.rojmel td {
      row stays one line: a description too long for its column is made smaller
      until it fits (PrintRoot, fitCells), as the client sets its long ones to 9. */
   padding: 0.3mm 0.6mm;
-  height: 5.4mm;
+  height: var(--rojmel-row-height, 5.4mm);
   font-size: var(--rojmel-figure);
   line-height: 1.1;
 }
@@ -378,8 +430,46 @@ table.form.rojmel th {
 table.form.rojmel td.detail,
 table.form.rojmel td.label {
   font-size: var(--rojmel-text);
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+table.form.rojmel td[data-col="p.detail"][data-spill-left] {
+  white-space: nowrap !important;
+  overflow: visible !important;
+}
+
+/* A description moved left into the empty date cell (PrintRoot, spillCells):
+   the rule between the two cells would cut through its words, so that one
+   rule is not drawn. "hidden" wins over every other border in the collapsed
+   model, the layout editor's included; the date cell's heavy આવક/જાવક rule on
+   its left is a different edge and stays. */
+table.form.rojmel td[data-col="p.detail"][data-spilled] {
+  border-left-style: hidden !important;
+}
+
+table.form.rojmel .detail-spill {
+  display: inline-block;
   white-space: nowrap;
-  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+table.form.rojmel td.figure {
+  font-size: var(--rojmel-figure, 11pt);
+  text-align: right;
+  padding: 0.3mm 0.8mm;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+table.form.rojmel tr.footer-row td.figure {
+  font-size: var(--rojmel-figure, 11pt);
+  text-align: right;
+  padding: 0.3mm 0.8mm;
+  font-weight: 700;
 }
 
 /* The two halves meet here; a heavier rule separates આવક from જાવક. */
@@ -400,26 +490,47 @@ table.form.rojmel td.detail.heading {
 table.form.rojmel td.ref {
   text-align: center;
   font-variant-numeric: tabular-nums;
-  /* A date is never broken in the middle; fitCells shrinks it instead. */
+  /* A date is never broken in the middle */
   white-space: nowrap;
 }
 
-table.form.rojmel td[data-col="p.ref"] {
+table.form.rojmel td[data-col="p.ref"],
+table.form.rojmel td[data-col="p.cheque"] {
   padding: 0.2mm 0.5mm;
   line-height: 1.05;
+  white-space: nowrap;
 }
 
-table.form.rojmel .voucher-cell {
-  display: flex;
+/* Number and date on one line - or one under the other, as the school arranged
+   them in the layout editor (ARRANGEMENTS). A line too wide for its column is
+   set smaller until it fits (PrintRoot, fitCells), never into the next column. */
+table.form.rojmel .voucher-cell,
+table.form.rojmel .cheque-cell {
+  display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.2mm;
   line-height: 1.05;
+  white-space: nowrap;
+}
+
+table.form.rojmel .arranged-line {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2mm;
 }
 
 table.form.rojmel .voucher-date {
-  font-size: 8.5pt;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  white-space: nowrap;
+}
+
+table.form.rojmel .cheque-date {
+  font-size: inherit;
   font-variant-numeric: tabular-nums;
   color: inherit;
   white-space: nowrap;
@@ -429,6 +540,14 @@ table.form.rojmel td[data-col="r.date"],
 table.form.rojmel td[data-col="p.date"] {
   padding: 0.2mm 0.5mm;
   line-height: 1.05;
+  white-space: nowrap;
+}
+
+table.form.rojmel .date-single {
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  white-space: nowrap;
 }
 
 table.form.rojmel .date-range-cell {
@@ -436,12 +555,12 @@ table.form.rojmel .date-range-cell {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 8.5pt;
+  font-size: inherit;
   line-height: 1.05;
 }
 
 table.form.rojmel .date-separator {
-  font-size: 8pt;
+  font-size: inherit;
   font-weight: 700;
   color: inherit;
   margin: 0.1mm 0;

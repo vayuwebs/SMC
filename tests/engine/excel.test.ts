@@ -141,6 +141,18 @@ describe("one report at a time", () => {
     expect(sheet.pageSetup.paperSize).toBe(5);
     const margins = sheet.pageSetup.margins!;
     expect((margins.left + margins.right) * 25.4).toBeGreaterThanOrEqual(355.6 - 345);
+
+    // Number and date are on the same line without newline breaks in voucher column
+    let foundVoucher = false;
+    sheet.eachRow((row) => {
+      const refVal = row.getCell(10).value;
+      if (refVal && typeof refVal === "object" && "richText" in refVal) {
+        foundVoucher = true;
+        const textCombined = refVal.richText.map((t: { text: string }) => t.text).join("");
+        expect(textCombined).not.toContain("\n");
+      }
+    });
+    expect(foundVoucher).toBe(true);
   });
 
   it("keeps the rojmel on Indian Legal even when another paper was saved", async () => {
@@ -162,7 +174,7 @@ describe("one report at a time", () => {
     const setup = workbook.worksheets[0]!.pageSetup;
     // Legal (5), with the 10.6mm US Legal has over Indian Legal kept as margin.
     expect(setup.paperSize).toBe(5);
-    expect(setup.margins!.right).toBeCloseTo((5 + 355.6 - 345) / 25.4, 6);
+    expect(setup.margins!.right).toBeCloseTo((10 + 355.6 - 345) / 25.4, 6);
   });
 
   it("gives every sheet a print setup", async () => {

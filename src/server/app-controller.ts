@@ -61,7 +61,7 @@ import { readJson, writeBytesAtomic, writeJsonAtomic } from "./profiles/json-fil
 import { KnownProfiles } from "./profiles/known-profiles.js";
 import { locateProfile, mountedRoots, type Platform } from "./profiles/locate.js";
 import { SetupService, validateSetupInput } from "./setup-service.js";
-import { encryptCopy, generateKeyHex, isPlainDatabase, openEncrypted, VaultError } from "./vault.js";
+import { encryptCopy, generateKeyHex, isPlainDatabase, openEncrypted, VaultError, wrapKeyForSupport } from "./vault.js";
 import { z } from "zod";
 
 export interface ControllerOptions {
@@ -341,10 +341,18 @@ export class AppController {
     }
 
     const schools: SchoolListItemDto[] = [];
-    for (const known of this.known.list(user.id)) {
+    for (const known of this.known.all()) {
       const found = this.locate(known.profileId);
+      const matchesUser = known.ownerUserId === user.id;
+      const cached = this.account?.cachedKey(known.profileId);
+      const isOwnedLocally = Boolean(found && cached && keyMatches(found.manifest, cached));
+      if (!matchesUser && !isOwnedLocally) continue;
+
+      if (!matchesUser && isOwnedLocally) {
+        this.known.remember({ ...known, ownerUserId: user.id });
+      }
       if (found && found.folder !== known.folder) {
-        this.known.remember({ ...known, folder: found.folder });
+        this.known.remember({ ...known, folder: found.folder, ownerUserId: user.id });
       }
       schools.push({
         profileId: known.profileId,
@@ -388,13 +396,17 @@ export class AppController {
       ok: true,
       data: {
         folder,
-        schools: found.map(({ folder: at, manifest }) => ({
-          profileId: manifest.profileId,
-          schoolNameGu: manifest.schoolNameGu,
-          diseCode: manifest.diseCode,
-          folder: at,
-          ownedByMe: manifest.ownerUserId === user.id,
-        })),
+        schools: found.map(({ folder: at, manifest }) => {
+          const cached = this.account?.cachedKey(manifest.profileId);
+          const hasKey = Boolean(cached && keyMatches(manifest, cached));
+          return {
+            profileId: manifest.profileId,
+            schoolNameGu: manifest.schoolNameGu,
+            diseCode: manifest.diseCode,
+            folder: at,
+            ownedByMe: manifest.ownerUserId === user.id || hasKey,
+          };
+        }),
       },
     };
   }
@@ -497,13 +509,43 @@ export class AppController {
 
     const found = options.folder ? profileAt(options.folder, profileId) : this.locate(profileId);
     if (!found) return failure(ISSUES.notConnected());
-    if (found.manifest.ownerUserId !== user.id) return failure(ISSUES.otherAccount());
 
     let keyHex: string;
     try {
       keyHex = await this.keyFor(found.manifest);
     } catch (error) {
+      if (found.manifest.ownerUserId !== user.id) {
+        return failure(ISSUES.otherAccount());
+      }
       return failure(this.errorIssue(error, "openSchool"));
+    }
+
+    // Ownership reconciliation: if the user holds the matching encryption key,
+    // they are the legitimate owner. Update ownerUserId if it was created under an old backend user ID.
+    if (found.manifest.ownerUserId !== user.id) {
+      found.manifest = {
+        ...found.manifest,
+        ownerUserId: user.id,
+      };
+      writeManifest(found.folder, found.manifest);
+      this.known.remember({
+        profileId: found.manifest.profileId,
+        ownerUserId: user.id,
+        schoolNameGu: found.manifest.schoolNameGu,
+        diseCode: found.manifest.diseCode,
+        folder: found.folder,
+        lastOpenedAt: new Date(this.now()).toISOString(),
+      });
+    }
+
+    // Envelope encryption upgrade: ensure supportWrappedKey is present and formatVersion is 2
+    if (!found.manifest.supportWrappedKey || found.manifest.formatVersion < 2) {
+      found.manifest = {
+        ...found.manifest,
+        formatVersion: 2,
+        supportWrappedKey: wrapKeyForSupport(keyHex),
+      };
+      writeManifest(found.folder, found.manifest);
     }
 
     const lock = acquireLock(found.folder, this.device, { force: options.force });
@@ -520,6 +562,25 @@ export class AppController {
       releaseLock(found.folder, this.device);
       return failure(this.errorIssue(error, "openSchool"));
     }
+
+    // Re-sync to cloud if missing in current backend (e.g. after backend migration)
+    try {
+      const inCloud = await account.withSession((session) => account.backend.listProfiles(session));
+      if (!inCloud.some((p) => p.id === found.manifest.profileId)) {
+        await account.withSession((session) =>
+          account.backend.createProfile(session, {
+            id: found.manifest.profileId,
+            schoolNameGu: found.manifest.schoolNameGu,
+            diseCode: found.manifest.diseCode,
+            keyHex,
+          }),
+        );
+        this.backups?.markChanged();
+      }
+    } catch {
+      // Offline or network error: ignore, offline opening still succeeds!
+    }
+
     return { ok: true, data: { opened: true, state: this.getAppState() } };
   }
 

@@ -175,7 +175,8 @@ describe("bank charges", () => {
     const ledgers = await accounts.getLedgers();
     const row = ledgers.find((each) => each.headCode === "SWACHHATA")!.rows.find((each) => each.descriptionGu === "બેન્ક ચાર્જ");
     expect(row?.debitPaise).toBe(1770);
-    expect(row?.rojmelPage).toBeNull();
+    // It prints in the rojmel, so the ledger names the page it is on.
+    expect(row?.rojmelPage).not.toBeNull();
     const a10After = await accounts.getAnnexure10();
     expect(a10After.totals.spentPaise).toBe(annexureBefore.totals.spentPaise + 1770);
     expect(a10After.totals.closingPaise).toBe(annexureBefore.totals.closingPaise - 1770);
@@ -415,5 +416,34 @@ describe("deleting a financial year", () => {
     const failDelete = await accounts.deleteYear({ yearId: lastYear[0]!.id });
     expect(failDelete.ok).toBe(false);
     if (!failDelete.ok) expect(failDelete.issues[0]!.code).toBe("cannot_delete_only_year");
+  });
+});
+
+describe("starting a year older than the current one", () => {
+  it("opens with what the school typed and zero elsewhere - never this year's બંધ સિલક", async () => {
+    // Whichever year the tests above left, the latest one.
+    const year = await prisma.financialYear.findFirstOrThrow({ orderBy: { label: "desc" } });
+    const books = new AccountsService(prisma, year.id);
+    const reopened = await books.openYear(year.id);
+    expect(reopened.ok, JSON.stringify(reopened)).toBe(true);
+
+    const preview = await books.getYearEndPreview();
+    const swachhata = preview.rows.find((row) => row.headCode === "SWACHHATA")!;
+    expect(preview.rows.some((row) => row.closingPaise !== 0)).toBe(true);
+
+    const result = await books.closeYear({
+      nextLabel: "2020-21",
+      openings: { [swachhata.grantHeadId]: rupeesToPaise(750) },
+    });
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.startDate).toBe("2020-04-01");
+
+    const openings = await new AccountsService(prisma, result.data.id).listOpeningBalances();
+    expect(openings.length).toBeGreaterThan(0);
+    for (const opening of openings) {
+      expect(opening.bankPaise, opening.headCode).toBe(opening.headCode === "SWACHHATA" ? rupeesToPaise(750) : 0);
+      expect(opening.cashPaise, opening.headCode).toBe(0);
+    }
   });
 });

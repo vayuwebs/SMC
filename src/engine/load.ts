@@ -7,8 +7,9 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { paise } from "../lib/money.js";
-import type { ChequeType } from "../lib/types.js";
-import type { BookBill, BookCheque, YearBook } from "./types.js";
+import { payModeSchema, type ChequeType, type PayMode } from "../lib/types.js";
+import { byVoucherOrder } from "./allocation.js";
+import type { BookBill, BookCheque, BookReturnedCheque, YearBook } from "./types.js";
 
 /** Load one financial year by id. Throws if it does not exist. */
 export async function loadYearBook(prisma: PrismaClient, financialYearId: number): Promise<YearBook> {
@@ -49,6 +50,7 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
     quantityGu: string | null;
     remarksGu: string | null;
     chequeId: number | null;
+    payMode: string | null;
     grantHead: { code: string };
   }): BookBill => ({
     id: String(bill.id),
@@ -63,29 +65,85 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
     quantityGu: bill.quantityGu,
     remarksGu: bill.remarksGu,
     chequeNo: null, // filled in below, once the cheque numbers are known
+    payMode: payModeSchema.safeParse(bill.payMode).success ? (bill.payMode as PayMode) : null,
   });
 
-  const chequeNoById = new Map(year.cheques.map((cheque) => [cheque.id, cheque.chequeNo]));
+  const rowById = new Map(year.cheques.map((cheque) => [cheque.id, cheque]));
+  const replacementOf = new Map(
+    year.cheques.filter((cheque) => cheque.replacesChequeId !== null).map((cheque) => [cheque.replacesChequeId!, cheque]),
+  );
 
-  const cheques: BookCheque[] = year.cheques.map((cheque) => ({
-    chequeNo: cheque.chequeNo,
-    chequeDate: cheque.chequeDate,
-    cashbookDate: cheque.cashbookDate,
-    cashedDate: cheque.cashedDate,
-    voucherNo: cheque.voucherNo,
-    payeeGu: cheque.payeeGu,
-    purposeGu: cheque.purposeGu,
-    type: cheque.type as ChequeType,
-    remarksGu: cheque.remarksGu,
-    bills: cheque.bills
-      .map(toBill)
-      .map((bill) => ({ ...bill, chequeNo: cheque.chequeNo }))
-      .sort(byBillOrder),
-    typedAllocation: cheque.allocations.map((allocation) => ({
-      headCode: allocation.grantHead.code,
-      amountPaise: paise(allocation.amountPaise),
-    })),
-  }));
+  // A cheque written for a returned one carries nothing of its own but its
+  // number and dates: voucher number, type, bills and allocation stay stored on
+  // the cheque it replaces, so they are read from there - through every earlier
+  // cheque, should the replacement itself have come back too.
+  const firstOf = (cheque: (typeof year.cheques)[number]): (typeof year.cheques)[number] => {
+    const seen = new Set<number>();
+    let current = cheque;
+    while (current.replacesChequeId !== null && !seen.has(current.id)) {
+      seen.add(current.id);
+      const earlier = rowById.get(current.replacesChequeId);
+      if (!earlier) break;
+      current = earlier;
+    }
+    return current;
+  };
+
+  // The cheque that finally pays: the last in its line of replacements. A bill
+  // whose last cheque came back unreplaced is unpaid again.
+  const lastOf = (cheque: (typeof year.cheques)[number]): (typeof year.cheques)[number] => {
+    const seen = new Set<number>();
+    let current = cheque;
+    for (let next = replacementOf.get(current.id); next && !seen.has(next.id); next = replacementOf.get(current.id)) {
+      seen.add(current.id);
+      current = next;
+    }
+    return current;
+  };
+
+  const toCheque = (cheque: (typeof year.cheques)[number]): BookCheque => {
+    const first = firstOf(cheque);
+    return {
+      chequeNo: cheque.chequeNo,
+      chequeDate: cheque.chequeDate,
+      cashbookDate: cheque.cashbookDate,
+      cashedDate: cheque.cashedDate,
+      voucherNo: first.voucherNo,
+      payeeGu: cheque.payeeGu,
+      purposeGu: cheque.purposeGu,
+      type: first.type as ChequeType,
+      remarksGu: cheque.remarksGu,
+      bills: first.bills
+        .map(toBill)
+        .map((bill) => ({ ...bill, chequeNo: cheque.chequeNo }))
+        .sort(byBillOrder),
+      typedAllocation: first.allocations.map((allocation) => ({
+        headCode: allocation.grantHead.code,
+        amountPaise: paise(allocation.amountPaise),
+      })),
+    };
+  };
+
+  const cheques: BookCheque[] = year.cheques
+    .filter((cheque) => cheque.returnedDate === null)
+    .map(toCheque)
+    .sort(byVoucherOrder);
+
+  const returnedCheques: BookReturnedCheque[] = year.cheques
+    .filter((cheque) => cheque.returnedDate !== null)
+    .map((cheque) => ({
+      ...toCheque(cheque),
+      returnedDate: cheque.returnedDate!,
+      replacedByChequeNo: replacementOf.get(cheque.id)?.chequeNo ?? null,
+    }));
+
+  /** The cheque number a bill is paid by, as every report but the cash book sees it. */
+  const payingChequeNo = (chequeId: number | null): number | null => {
+    const row = chequeId === null ? undefined : rowById.get(chequeId);
+    if (!row) return null;
+    const last = lastOf(row);
+    return last.returnedDate === null ? last.chequeNo : null;
+  };
 
   return {
     school: {
@@ -147,11 +205,13 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
       .map(toBill)
       .map((bill, index) => ({
         ...bill,
-        chequeNo: year.bills[index]?.chequeId ? (chequeNoById.get(year.bills[index]!.chequeId!) ?? null) : null,
+        chequeNo: payingChequeNo(year.bills[index]?.chequeId ?? null),
       }))
       .sort(byBillOrder),
 
     cheques,
+
+    returnedCheques,
 
     bankCharges: year.bankCharges.map((charge) => ({
       id: String(charge.id),

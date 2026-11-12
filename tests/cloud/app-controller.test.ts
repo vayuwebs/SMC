@@ -83,7 +83,7 @@ describe("the contract", () => {
 
   it("marks every write to the books as needing a backup", () => {
     const writes = API_METHODS.filter((method) =>
-      /^(create|update|delete|save|close|apply|complete|reopen|open)/.test(method),
+      /^(create|update|delete|save|close|apply|complete|reopen|open|rename)/.test(method),
     ).filter((method) => !(SESSION_METHODS as readonly string[]).includes(method));
     expect([...MUTATING_METHODS].sort()).toEqual([...writes].sort());
   });

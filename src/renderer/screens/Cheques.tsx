@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import type { BillDto, ChequeDto, ChequeInput, GrantHeadDto } from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
-import type { ChequeType } from "../../lib/types.js";
+import { isReimbursement, type ChequeType } from "../../lib/types.js";
 import { Money } from "../components/Money.js";
 import { DateInput } from "../components/DateInput.js";
 import { IssueList } from "../components/IssueList.js";
 import { chequeTypeLabels, amountToInput, formatDate, tryParseAmount } from "../format.js";
 import { useStrings, type Strings } from "../i18n/index.js";
 import type { JSX } from "react";
+import { Icon } from "../components/Icon.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * ચેક - the only way money leaves the bank (SPEC 4.5).
@@ -18,6 +20,10 @@ import type { JSX } from "react";
  * shown read-only. Only a grant return offers typed amounts, because it has no
  * bills to compute from. There is no way to type an allocation that disagrees
  * with the bills, which is the class of error SPEC section 9 is full of.
+ *
+ * A cheque the bank sent back gets its return date here; the cheque written in
+ * its place picks it from a list and takes its voucher number, type, bills and
+ * split from it - nothing of those is typed twice.
  */
 export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
   const t = useStrings();
@@ -60,15 +66,22 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
   }
 
   async function remove(cheque: ChequeDto): Promise<void> {
-    if (!window.confirm(t.confirmDeleteCheque(cheque.chequeNo))) return;
-    await api.deleteCheque(cheque.id);
+    if (!(await askConfirm(t.confirmDeleteCheque(cheque.chequeNo)))) return;
+    const result = await api.deleteCheque(cheque.id);
+    if (!result.ok) {
+      setIssues(result.issues);
+      return;
+    }
     await reload();
     onChanged();
   }
 
   if (loading) return <div className="state">{t.loading}</div>;
 
-  const total = cheques.reduce((sum, cheque) => sum + cheque.amountPaise, 0);
+  // A returned cheque paid nothing: the one written in its place did.
+  const standing = (cheque: ChequeDto): number => (cheque.returnedDate === null ? cheque.amountPaise : 0);
+  const total = cheques.reduce((sum, cheque) => sum + standing(cheque), 0);
+  const anyReturned = cheques.some((cheque) => cheque.returnedDate !== null);
 
   const filteredCheques = cheques.filter((cheque) => {
     if (typeFilter !== "all" && cheque.type !== typeFilter) return false;
@@ -82,7 +95,7 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
     );
   });
 
-  const filteredTotal = filteredCheques.reduce((sum, cheque) => sum + cheque.amountPaise, 0);
+  const filteredTotal = filteredCheques.reduce((sum, cheque) => sum + standing(cheque), 0);
   const isFiltered = query.trim() !== "" || typeFilter !== "all";
 
   return (
@@ -94,9 +107,10 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
             <span className="page-head-badge">{cheques.length}</span>
           </h2>
           <p>{t.chequesSubtitle}</p>
+          {anyReturned && <p className="muted">{t.returnedNotInTotal}</p>}
         </div>
         <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-          + {t.newCheque}
+          {t.newCheque}
         </button>
       </div>
 
@@ -108,9 +122,13 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
 
       {editing !== null && (
         <ChequeForm
+          // A fresh form for each cheque: its fields start from that cheque,
+          // not from whichever form was open before.
+          key={editing === "new" ? "new" : editing.id}
           t={t}
           heads={heads}
           bills={bills}
+          cheques={cheques}
           cheque={editing === "new" ? null : editing}
           nextChequeNo={Math.max(0, ...cheques.map((cheque) => cheque.chequeNo)) + 1}
           onCancel={() => { setEditing(null); setIssues([]); }}
@@ -121,7 +139,9 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
       {cheques.length > 0 && (
         <div className="search-filter-bar">
           <div className="search-input-wrap">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon">
+              <Icon name="search" />
+            </span>
             <input
               type="text"
               placeholder={t.searchPlaceholder}
@@ -201,7 +221,20 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
               <tbody>
                 {filteredCheques.map((cheque) => (
                   <tr key={cheque.id}>
-                    <td className="num" style={{ fontWeight: 600 }}>{cheque.chequeNo}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>
+                      {cheque.chequeNo}
+                      {cheque.returnedDate !== null && (
+                        <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>
+                          {t.returnedBadge(formatDate(cheque.returnedDate))}
+                          {cheque.replacedByChequeNo !== null && <> · {t.replacedByBadge(cheque.replacedByChequeNo)}</>}
+                        </div>
+                      )}
+                      {cheque.replacesChequeNo !== null && (
+                        <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>
+                          {t.replacesBadge(cheque.replacesChequeNo)}
+                        </div>
+                      )}
+                    </td>
                     <td className="num">{formatDate(cheque.chequeDate)}</td>
                     <td className="num">{formatDate(cheque.cashbookDate)}</td>
                     <td>{typeLabels[cheque.type] ?? cheque.type}</td>
@@ -213,7 +246,10 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
                         </div>
                       ))}
                     </td>
-                    <td className="num" style={{ fontWeight: 600 }}>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 600, textDecoration: cheque.returnedDate !== null ? "line-through" : undefined }}
+                    >
                       <Money paise={cheque.amountPaise} />
                     </td>
                     <td>
@@ -243,18 +279,22 @@ export function Cheques({ onChanged }: { onChanged: () => void }): JSX.Element {
 
       {cheques.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-state-icon">💳</div>
+          <div className="empty-state-icon">
+            <Icon name="cheque" size={30} />
+          </div>
           <h4>{t.noCheques}</h4>
           <p>{t.chequesSubtitle}</p>
           <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-            + {t.newCheque}
+            {t.newCheque}
           </button>
         </div>
       )}
 
       {cheques.length > 0 && filteredCheques.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-state-icon">🔍</div>
+          <div className="empty-state-icon">
+            <Icon name="search" size={30} />
+          </div>
           <h4>{t.noMatchingRecords}</h4>
           <p>શોધ અથવા ફિલ્ટર સાફ કરીને ફરી પ્રયાસ કરો.</p>
           <button
@@ -276,6 +316,7 @@ function ChequeForm({
   t,
   heads,
   bills,
+  cheques,
   cheque,
   nextChequeNo,
   onCancel,
@@ -284,6 +325,7 @@ function ChequeForm({
   t: Strings;
   heads: GrantHeadDto[];
   bills: BillDto[];
+  cheques: ChequeDto[];
   cheque: ChequeDto | null;
   nextChequeNo: number;
   onCancel: () => void;
@@ -297,10 +339,51 @@ function ChequeForm({
   const [payee, setPayee] = useState(cheque?.payeeGu ?? "");
   const [purpose, setPurpose] = useState(cheque?.purposeGu ?? "");
   const [type, setType] = useState<ChequeType>(cheque?.type ?? "REIMBURSEMENT");
+  const [returnedDate, setReturnedDate] = useState(cheque?.returnedDate ?? "");
+  const [replacesId, setReplacesId] = useState<number | null>(cheque?.replacesChequeId ?? null);
+
+  // Returned cheques still waiting for one in their place - and the one this
+  // cheque already stands for.
+  const replaceable = cheques.filter(
+    (candidate) =>
+      candidate.returnedDate !== null &&
+      candidate.id !== cheque?.id &&
+      (candidate.replacedByChequeNo === null || candidate.id === cheque?.replacesChequeId),
+  );
+  const replaced = cheques.find((candidate) => candidate.id === replacesId) ?? null;
+
+  function chooseReplaced(id: number | null): void {
+    setReplacesId(id);
+    const chosen = cheques.find((candidate) => candidate.id === id);
+    if (!chosen) return;
+    // The voucher number and type are the returned cheque's; payee and purpose
+    // start from it and may be changed.
+    setVoucherNo(chosen.voucherNo?.toString() ?? "");
+    setType(chosen.type);
+    if (payee === "") setPayee(chosen.payeeGu);
+    if (purpose === "") setPurpose(chosen.purposeGu);
+  }
 
   const [billIds, setBillIds] = useState<number[]>(
     cheque === null ? [] : bills.filter((bill) => bill.chequeId === cheque.id).map((bill) => bill.id),
   );
+  // A reimbursement's bills paid online from the bank; the rest were paid in
+  // cash. The cheque's type is the starting choice for every bill: its બેન્ક kind
+  // ticks them all as bank, its રોકડ kind as cash - and one cheque may mix them.
+  const [bankBillIds, setBankBillIds] = useState<number[]>(() =>
+    cheque === null
+      ? []
+      : bills
+          .filter((bill) => bill.chequeId === cheque.id)
+          .filter((bill) => (bill.payMode ?? (cheque.type === "REIMBURSEMENT_BANK" ? "BANK" : "CASH")) === "BANK")
+          .map((bill) => bill.id),
+  );
+  const reimbursement = isReimbursement(type);
+  function chooseType(next: ChequeType): void {
+    setType(next);
+    // A new kind of reimbursement starts every ticked bill on its own column.
+    if (next !== type && isReimbursement(next)) setBankBillIds(next === "REIMBURSEMENT_BANK" ? billIds : []);
+  }
   const [typed, setTyped] = useState<Record<number, string>>(() => {
     if (cheque === null || cheque.type !== "GRANT_RETURN") return {};
     return Object.fromEntries(
@@ -329,6 +412,11 @@ function ChequeForm({
       if (paise !== null && paise > 0) allocation.set(Number(headId), paise);
     }
   }
+  // A replacement's split is its returned cheque's, as the engine reads it.
+  if (replaced) {
+    allocation.clear();
+    for (const row of replaced.allocation) allocation.set(row.grantHeadId, row.amountPaise);
+  }
   const amountPaise = [...allocation.values()].reduce((sum, value) => sum + value, 0);
 
   const valid =
@@ -338,7 +426,7 @@ function ChequeForm({
     purpose !== "" &&
     Number(chequeNo) > 0 &&
     amountPaise > 0 &&
-    (computed ? selected.length > 0 : allocation.size > 0);
+    (replaced !== null || (computed ? selected.length > 0 : allocation.size > 0));
 
   function submit(event: React.FormEvent): void {
     event.preventDefault();
@@ -353,8 +441,13 @@ function ChequeForm({
         payeeGu: payee,
         purposeGu: purpose,
         type,
-        billIds: computed ? billIds : [],
-        typedAllocation: computed
+        returnedDate: returnedDate === "" ? null : returnedDate,
+        replacesChequeId: replacesId,
+        billIds: computed && replaced === null ? billIds : [],
+        ...(reimbursement && replaced === null
+          ? { bankBillIds: bankBillIds.filter((id) => billIds.includes(id)) }
+          : {}),
+        typedAllocation: computed || replaced !== null
           ? []
           : [...allocation.entries()].map(([grantHeadId, paise]) => ({
               grantHeadId,
@@ -369,7 +462,6 @@ function ChequeForm({
     <form className="card form-card" onSubmit={submit}>
       <div className="form-card-header">
         <h3 className="form-card-title">
-          <span>{cheque ? "✏️" : "➕"}</span>
           <span>{cheque ? t.editCheque(cheque.chequeNo) : t.newCheque}</span>
         </h3>
         {amountPaise > 0 && (
@@ -380,13 +472,35 @@ function ChequeForm({
         )}
       </div>
 
+      {(replaceable.length > 0 || replacesId !== null) && (
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="replaces">{t.replacesCheque}</label>
+            <select
+              id="replaces"
+              value={replacesId ?? ""}
+              onChange={(e) => chooseReplaced(e.target.value === "" ? null : Number(e.target.value))}
+            >
+              <option value="">{t.replacesNone}</option>
+              {replaceable.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {t.replacesOption(candidate.chequeNo, formatDate(candidate.returnedDate ?? ""))}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+      {replaced !== null && <p className="muted">{t.replacementNote(replaced.chequeNo)}</p>}
+
       <div className="form-grid">
         <div className="field">
           <label htmlFor="type">{t.chequeType}</label>
           <select
             id="type"
             value={type}
-            onChange={(e) => setType(e.target.value as ChequeType)}
+            disabled={replaced !== null}
+            onChange={(e) => chooseType(e.target.value as ChequeType)}
           >
             {(Object.keys(chequeTypeLabels(t)) as ChequeType[]).map((value) => (
               <option key={value} value={value}>
@@ -415,6 +529,7 @@ function ChequeForm({
             className="num-input"
             inputMode="numeric"
             value={voucherNo}
+            disabled={replaced !== null}
             onChange={(e) => setVoucherNo(e.target.value)}
           />
         </div>
@@ -431,6 +546,10 @@ function ChequeForm({
           <DateInput id="cashed" value={cashedDate} onChange={setCashedDate} />
         </div>
         <div className="field">
+          <label htmlFor="returned">{t.returnedDate}</label>
+          <DateInput id="returned" value={returnedDate} onChange={setReturnedDate} />
+        </div>
+        <div className="field">
           <label htmlFor="payee">{t.payee}</label>
           <input id="payee" data-suggest="vendor.name" value={payee} onChange={(e) => setPayee(e.target.value)} required />
         </div>
@@ -440,7 +559,7 @@ function ChequeForm({
         </div>
       </div>
 
-      {computed ? (
+      {replaced !== null ? null : computed ? (
         <>
           <h3 style={{ marginTop: 14 }}>{t.whichBillsPaid}</h3>
           {available.length === 0 ? (
@@ -455,6 +574,7 @@ function ChequeForm({
                   <th>{t.billDescription}</th>
                   <th>{t.grantHead}</th>
                   <th className="num">{t.netAmount}</th>
+                  {reimbursement && <th>{t.billPaidHow}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -464,13 +584,18 @@ function ChequeForm({
                       <input
                         type="checkbox"
                         checked={billIds.includes(bill.id)}
-                        onChange={(e) =>
+                        onChange={(e) => {
                           setBillIds((current) =>
                             e.target.checked
                               ? [...current, bill.id]
                               : current.filter((id) => id !== bill.id),
-                          )
-                        }
+                          );
+                          // A newly ticked bill starts on the cheque's own column.
+                          setBankBillIds((current) => {
+                            const rest = current.filter((id) => id !== bill.id);
+                            return e.target.checked && type === "REIMBURSEMENT_BANK" ? [...rest, bill.id] : rest;
+                          });
+                        }}
                       />
                     </td>
                     <td className="num">{bill.billNo ?? "—"}</td>
@@ -480,6 +605,35 @@ function ChequeForm({
                     <td className="num">
                       <Money paise={bill.netPaise} />
                     </td>
+                    {reimbursement && (
+                      <td>
+                        {billIds.includes(bill.id) && (
+                          <div className="segmented" role="radiogroup" aria-label={t.billPaidHow}>
+                            {(["CASH", "BANK"] as const).map((mode) => {
+                              const chosen = bankBillIds.includes(bill.id) ? "BANK" : "CASH";
+                              return (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={chosen === mode}
+                                  className={`filter-segment-btn ${chosen === mode ? "active" : ""}`}
+                                  onClick={() =>
+                                    setBankBillIds((current) =>
+                                      mode === "BANK"
+                                        ? [...current.filter((id) => id !== bill.id), bill.id]
+                                        : current.filter((id) => id !== bill.id),
+                                    )
+                                  }
+                                >
+                                  {mode === "CASH" ? t.paidCash : t.paidBank}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

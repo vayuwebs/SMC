@@ -23,7 +23,7 @@ The user interface and all printed reports are in Gujarati.
 - Money: integer paise or a decimal type, never floats. Dates: ISO in storage, DD/MM/YYYY when printed.
 - Bill numbers such as `1/2` are text. Never parse them as dates.
 - All Gujarati text is Unicode. PDFs must embed a Unicode Gujarati font with proper conjunct shaping.
-- Rojmel prints Latin digits; the other reports print Gujarati digits (SPEC §6).
+- Every report prints Latin (English) digits in dates, amounts and numbers - the client changed this from SPEC §6.
 - Do not copy the mistakes listed in SPEC §9. The sample JSON already has corrected values.
 - Reports are pure functions of stored data. Automated tests must reproduce every number in
   `expected_results` of the sample JSON (SPEC §8) before a report is considered done.

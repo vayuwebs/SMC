@@ -9,6 +9,7 @@ import { backupLabel, useBackupStatus } from "../components/BackupBadge.js";
 import { IssueList } from "../components/IssueList.js";
 import { BackupPicker } from "./Schools.js";
 import { formatDateTime } from "../format.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * Application preferences, and the open school's account and backups.
@@ -166,7 +167,7 @@ function AccountAndBackup({
     work(async () => {
       const backup = backups?.find((item) => item.id === chosen);
       if (!backup) return;
-      if (!window.confirm(t.backupRestoreConfirm(formatDateTime(backup.createdAt)))) return;
+      if (!(await askConfirm(t.backupRestoreConfirm(formatDateTime(backup.createdAt))))) return;
       const result = await api.restoreBackup(backup.id);
       if (!result.ok) {
         setIssues(result.issues);
@@ -179,7 +180,7 @@ function AccountAndBackup({
 
   const signOut = () =>
     work(async () => {
-      if (!window.confirm(t.signOutHint)) return;
+      if (!(await askConfirm(t.signOutHint))) return;
       await endSuggestionSession();
       await api.signOut();
       onSignedOut();

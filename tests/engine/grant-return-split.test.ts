@@ -58,6 +58,7 @@ function book(): YearBook {
         ],
       },
     ],
+    returnedCheques: [],
     bankCharges: [],
   };
 }

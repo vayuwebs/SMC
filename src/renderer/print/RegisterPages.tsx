@@ -9,17 +9,17 @@ import type {
 import type { GrantRegisterRowDto, SchoolDto, FinancialYearDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
 import { formatDate } from "../../lib/dates.js";
-import { formatSchoolTitle, toGujaratiDigits } from "../../lib/gujarati.js";
+import { isReimbursement } from "../../lib/types.js";
+import { formatSchoolTitle, toLatinDigits } from "../../lib/gujarati.js";
 import { PagedSheets } from "./PagedSheets.js";
 import { ROW_KEYS, billRowKeys, ROW_GROUPS } from "../../shared/report-layout.js";
 
 /**
  * The four register forms and પત્રક-D (SPEC 6.3 to 6.7).
  *
- * All of these print GUJARATI DIGITS - only the rojmel uses Latin (SPEC §6).
- * `gu()` below is applied to every figure and date for that reason; identifiers
- * such as the DISE code and the bank account number stay Latin, as they do on
- * the originals.
+ * All of these print LATIN DIGITS, as the rojmel does - the client asked for
+ * English figures on every report. `latin()` below is applied to every figure,
+ * date and bill number, so even digits typed in Gujarati print in English.
  *
  * Every form runs over as many sheets as its rows need at 14pt, each sheet
  * repeating the title and the column headings (PagedSheets measures the rows;
@@ -31,10 +31,10 @@ import { ROW_KEYS, billRowKeys, ROW_GROUPS } from "../../shared/report-layout.js
  * font the school chose finds the cell it belongs to.
  */
 
-/** Gujarati digits for anything numeric the form prints. */
-const gu = (text: string): string => toGujaratiDigits(text);
-const money = (paise: number): string => gu(formatAmount(paise));
-const date = (iso: string): string => gu(formatDate(iso));
+/** Latin digits for anything numeric the form prints. */
+const latin = (text: string): string => toLatinDigits(text);
+const money = (paise: number): string => latin(formatAmount(paise));
+const date = (iso: string): string => latin(formatDate(iso));
 
 function RegisterTitle({
   school,
@@ -51,7 +51,7 @@ function RegisterTitle({
         <Text id="part:titleSchool">{formatSchoolTitle(school.smcLabelGu)}</Text>
       </span>
       <span className="what" data-part="titleReport">
-        <Text id="part:titleReport">{`${titleGu} ÷ ${gu(`${year.startDate.slice(0, 4)}-${year.endDate.slice(0, 4)}`)}`}</Text>
+        <Text id="part:titleReport">{`${titleGu} ÷ ${latin(`${year.startDate.slice(0, 4)}-${year.endDate.slice(0, 4)}`)}`}</Text>
       </span>
     </div>
   );
@@ -93,11 +93,11 @@ export function ChequeRegisterPages({
         key: ROW_KEYS.cheque(row.chequeNo),
         cells: (
           <>
-            <td data-col="serial" className="centre">{gu(String(row.serial))}</td>
-            <td data-col="chequeNo" className="centre">{gu(String(row.chequeNo))}</td>
+            <td data-col="serial" className="centre">{latin(String(row.serial))}</td>
+            <td data-col="chequeNo" className="centre">{latin(String(row.chequeNo))}</td>
             <td data-col="chequeDate" className="centre">{date(row.chequeDate)}</td>
-            <td data-col="voucherNo" className="centre">{row.voucherNo === null ? "" : gu(String(row.voucherNo))}</td>
-            <td data-col="billRange" className="centre">{gu(row.billRangeText)}</td>
+            <td data-col="voucherNo" className="centre">{row.voucherNo === null ? "" : latin(String(row.voucherNo))}</td>
+            <td data-col="billRange" className="centre">{latin(row.billRangeText)}</td>
             <td data-col="amount" className="figure">{money(row.amountPaise)}</td>
             <td data-col="payee">{row.payeeGu}</td>
             <td data-col="chequeAmount" className="figure">{money(row.amountPaise)}</td>
@@ -133,7 +133,7 @@ export function BillRegisterPages({
           <span className="what">બિલ રજીસ્ટર</span>
           <span className="smc">એસ.એમ.સી.ઈ {school.nameGu}</span>
           <span className="what">
-            વર્ષ÷ {gu(`${year.startDate.slice(0, 4)}/${year.endDate.slice(0, 4)}`)}
+            વર્ષ÷ {latin(`${year.startDate.slice(0, 4)}/${year.endDate.slice(0, 4)}`)}
           </span>
         </div>
       )}
@@ -158,9 +158,9 @@ export function BillRegisterPages({
         key: keys[index]!,
         cells: (
           <>
-            <td data-col="serial" className="centre">{gu(String(row.serial))}</td>
-            <td data-col="voucherNo" className="centre">{row.showVoucherNo ? gu(String(row.voucherNo)) : ""}</td>
-            <td data-col="billNo" className="centre">{row.billNo ? gu(row.billNo) : ""}</td>
+            <td data-col="serial" className="centre">{latin(String(row.serial))}</td>
+            <td data-col="voucherNo" className="centre">{row.showVoucherNo ? latin(String(row.voucherNo)) : ""}</td>
+            <td data-col="billNo" className="centre">{row.billNo ? latin(row.billNo) : ""}</td>
             <td data-col="billDate" className="centre">{date(row.billDate)}</td>
             <td data-col="description">{row.descriptionGu}</td>
             <td data-col="vendor">{row.vendorGu}</td>
@@ -278,7 +278,7 @@ export function VoucherPages({
                     <td className="label" data-part="metaSchoolLabel"><Text id="voucher.school">શાળાનું નામ –:</Text></td>
                     <td data-part="metaSchool">{formatSchoolTitle(school.nameGu)}</td>
                     <td className="label" data-part="metaNumberLabel"><Text id="voucher.number">વાઉચર નંબર –:</Text></td>
-                    <td className="centre voucher-no" data-part="metaNumber">{gu(String(voucher.voucherNo))}</td>
+                    <td className="centre voucher-no" data-part="metaNumber">{latin(String(voucher.voucherNo))}</td>
                   </tr>
                   <tr>
                     <td className="label" data-part="metaPrincipalLabel"><Text id="voucher.principal">આચાર્યશ્રીનું નામ –:</Text></td>
@@ -315,8 +315,8 @@ export function VoucherPages({
             group: ROW_GROUPS.voucherLine(index),
             cells: (
               <>
-                <td data-col="serial" className="centre">{gu(String(line.serial))}</td>
-                <td data-col="billNo" className="centre">{line.billNo ? gu(line.billNo) : ""}</td>
+                <td data-col="serial" className="centre">{latin(String(line.serial))}</td>
+                <td data-col="billNo" className="centre">{line.billNo ? latin(line.billNo) : ""}</td>
                 <td data-col="billDate" className="centre">{date(line.billDate)}</td>
                 <td data-col="description">{line.descriptionGu}</td>
                 <td data-col="vendor">{line.vendorGu}</td>
@@ -351,10 +351,10 @@ export function VoucherPages({
  */
 function VoucherNote({ voucher }: { voucher: Voucher }): JSX.Element | null {
   if (voucher.chequeNo === null) return null;
-  const vars = { "ચેક નંબર": gu(String(voucher.chequeNo)), "રકમ": rupeesGu(voucher.totalPaise) };
+  const vars = { "ચેક નંબર": latin(String(voucher.chequeNo)), "રકમ": rupeesText(voucher.totalPaise) };
   return (
     <div className="voucher-note" data-part="closingNote">
-      {voucher.chequeType === "REIMBURSEMENT" ? (
+      {voucher.chequeType !== null && isReimbursement(voucher.chequeType) ? (
         <Text id="voucher.noteReimbursement" vars={vars}>
           {"ઉપરોક્ત બિલ મુજબનો ખર્ચ મુખ્ય શિક્ષક દ્વારા પદરનો કરવામાં આવેલ હતો તે મુ.શિ દ્વારા ચેકનંબર –: {ચેક નંબર} થી રૂ. {રકમ} પરત લીધા."}
         </Text>
@@ -367,10 +367,10 @@ function VoucherNote({ voucher }: { voucher: Voucher }): JSX.Element | null {
   );
 }
 
-/** "૧૦૫૦૦", or "૧૦૫૦૦.૫૦" when there are paise - as the sentence writes a sum. */
-function rupeesGu(paise: number): string {
+/** "10500", or "10500.50" when there are paise - as the sentence writes a sum. */
+function rupeesText(paise: number): string {
   const text = formatAmount(paise);
-  return gu(text.endsWith(".00") ? text.slice(0, -3) : text);
+  return latin(text.endsWith(".00") ? text.slice(0, -3) : text);
 }
 
 // ---------------------------------------------------------------- પત્રક-D
@@ -394,7 +394,7 @@ export function PatrakDPages({
           <div className="register-title" data-part="title">
             <span className="what" data-part="titleReport">
               SMCE એજ્યુકેશન {school.bankNameGu} બેંકના ખર્ચની વિગત દર્શાવતું પત્રક ( એપ્રિલ{" "}
-              {gu(year.startDate.slice(0, 4))} થી માર્ચ {gu(year.endDate.slice(0, 4))} ) પત્રક – D
+              {latin(year.startDate.slice(0, 4))} થી માર્ચ {latin(year.endDate.slice(0, 4))} ) પત્રક – D
             </span>
           </div>
 
@@ -444,9 +444,9 @@ export function PatrakDPages({
         key: ROW_KEYS.patrakD(row.chequeNo, row.headNameGu),
         cells: (
           <>
-            <td data-col="serial" className="centre">{gu(String(row.serial))}</td>
+            <td data-col="serial" className="centre">{latin(String(row.serial))}</td>
             <td data-col="chequeDate" className="centre">{date(row.chequeDate)}</td>
-            <td data-col="chequeNo" className="centre">{gu(String(row.chequeNo))}</td>
+            <td data-col="chequeNo" className="centre">{latin(String(row.chequeNo))}</td>
             <td data-col="payee">{row.payeeGu}</td>
             <td data-col="parties">{row.partiesGu}</td>
             <td data-col="head">{row.headNameGu}</td>

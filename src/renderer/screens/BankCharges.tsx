@@ -9,6 +9,8 @@ import { GrantHeadSelect } from "../components/GrantHeadSelect.js";
 import { IssueList } from "../components/IssueList.js";
 import { amountToInput, formatDate, tryParseAmount } from "../format.js";
 import { useStrings, type Strings } from "../i18n/index.js";
+import { Icon } from "../components/Icon.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * બેન્ક ચાર્જ - money the bank took out of the account itself.
@@ -49,7 +51,7 @@ export function BankCharges({ onChanged }: { onChanged: () => void }): JSX.Eleme
   }
 
   async function remove(charge: BankChargeDto): Promise<void> {
-    if (!window.confirm(t.confirmDeleteBankCharge(formatDate(charge.date), charge.headNameGu))) return;
+    if (!(await askConfirm(t.confirmDeleteBankCharge(formatDate(charge.date), charge.headNameGu)))) return;
     await api.deleteBankCharge(charge.id);
     await reload();
     onChanged();
@@ -161,7 +163,9 @@ export function BankCharges({ onChanged }: { onChanged: () => void }): JSX.Eleme
       ) : (
         editing === null && (
           <div className="card empty-state">
-            <div className="empty-state-icon">🏦</div>
+            <div className="empty-state-icon">
+            <Icon name="bank" size={30} />
+          </div>
             <h4>{t.noBankCharges}</h4>
             <p>{t.bankChargesSubtitle}</p>
             <button className="primary" onClick={startNew}>
@@ -218,7 +222,6 @@ function BankChargeForm({
     <form className="card form-card" onSubmit={submit}>
       <div className="form-card-header">
         <h3 className="form-card-title">
-          <span>{charge ? "✏️" : "➕"}</span>
           <span>{charge ? t.editBankCharge : t.newBankCharge}</span>
         </h3>
         {amountPaise !== null && amountPaise > 0 && (

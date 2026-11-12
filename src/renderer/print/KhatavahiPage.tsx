@@ -4,7 +4,7 @@ import type { Ledger } from "../../engine/types.js";
 import type { FinancialYearDto, SchoolDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
 import { formatDate } from "../../lib/dates.js";
-import { formatSchoolTitle, toGujaratiDigits } from "../../lib/gujarati.js";
+import { formatSchoolTitle, toLatinDigits } from "../../lib/gujarati.js";
 import { PrintLayoutGate } from "./PagedSheets.js";
 import { GapRow, LayoutColGroup, layoutFontsReady, useReportLayout, Text } from "./layout-context.js";
 import { ROW_GROUPS, ROW_KEYS, ledgerRowKeys } from "../../shared/report-layout.js";
@@ -32,7 +32,7 @@ import { arrangeLedgers, ledgerFill, ledgerRowHeights } from "../../shared/ledge
  * The રોજમેળ પાનું column is the reason the cash book had to be paginated
  * first: it prints the rojmel page each entry appears on.
  *
- * Gujarati digits throughout (SPEC §6).
+ * Latin digits throughout, as on every report.
  */
 
 /** Blank rows under the entries, room to write in by hand as the book allows. */
@@ -293,13 +293,14 @@ function Account({
   /** Blank rows beyond the book's minimum, to make the account as tall as its row. */
   extraRows: number;
 }): JSX.Element {
-  const money = (paise: number): string => toGujaratiDigits(formatAmount(paise));
-  const date = (iso: string): string => toGujaratiDigits(formatDate(iso));
-  const gu = (text: string): string => toGujaratiDigits(text);
+  const money = (paise: number): string => toLatinDigits(formatAmount(paise));
+  const date = (iso: string): string => toLatinDigits(formatDate(iso));
+  const latin = (text: string): string => toLatinDigits(text);
 
-  const yearLabel = gu(`${year.startDate.slice(0, 4)} – ${year.endDate.slice(0, 4)}`);
+  const yearLabel = latin(`${year.startDate.slice(0, 4)} – ${year.endDate.slice(0, 4)}`);
   const blanks = Math.max(0, MINIMUM_BODY_ROWS - account.rows.length) + extraRows;
-  const lastPage = account.rows.at(-1)?.rojmelPage ?? null;
+  // The rojmel's own last page, where the year closes - not this head's last entry.
+  const lastPage = account.closingRojmelPage;
   const keys = ledgerRowKeys(account.headCode, account.rows);
   const closingKey = ROW_KEYS.ledgerClosing(account.headCode);
 
@@ -343,7 +344,7 @@ function Account({
               <tr data-row={keys[index]} data-row-group={ROW_GROUPS.ledgerRow(index)}>
                 <td data-col="date" className="centre">{date(row.date)}</td>
                 <td data-col="page" className="centre">
-                  {row.rojmelPage === null ? "" : gu(String(row.rojmelPage))}
+                  {row.rojmelPage === null ? "" : latin(String(row.rojmelPage))}
                 </td>
                 <td data-col="detail" className="detail">
                   <Text id={`cell:${keys[index]}:detail`}>{row.descriptionGu}</Text>
@@ -377,7 +378,7 @@ function Account({
           {/* The closing row carries the column totals, as the form does. */}
           <tr className="closing-row" data-row={closingKey} data-row-group={ROW_GROUPS.ledgerClosing}>
             <td data-col="date" className="centre">{date(year.endDate)}</td>
-            <td data-col="page" className="centre">{lastPage === null ? "" : gu(String(lastPage))}</td>
+            <td data-col="page" className="centre">{lastPage === null ? "" : latin(String(lastPage))}</td>
             <td data-col="detail" className="detail centre">
               <strong><Text id="khatavahi.closing">બંધ સિલક</Text></strong>
             </td>

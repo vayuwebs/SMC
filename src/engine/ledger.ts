@@ -3,7 +3,8 @@
  *
  * Rows in date order: the opening balance as a credit, each receipt of the head
  * as a credit, each cheque's share of the head as a debit, each bank charge laid
- * on the head as a debit, then a closing row
+ * on the head as a debit, each returned cheque's share as a credit on the day
+ * the bank sent it back, then a closing row
  * carrying Σ credits, Σ debits and the balance.
  *
  * The running balance prints in જમા બાકી while it is positive and in ઉધાર બાકી
@@ -14,9 +15,9 @@
  * appears on, which only exists once the rojmel is paginated; pass a `pageOf`
  * resolver then and the rows fill in.
  */
-import { paidForGu } from "../lib/gujarati.js";
+import { inDigits, paidForGu, type DigitStyle } from "../lib/gujarati.js";
 import { add, paise, type Paise, ZERO } from "../lib/money.js";
-import { chequeAllocation } from "./allocation.js";
+import { cashbookCheques, chequeAllocation } from "./allocation.js";
 import type { Ledger, LedgerRow, YearBook } from "./types.js";
 
 /** Resolves the rojmel page an entry lands on, once the cash book is paginated. */
@@ -24,6 +25,8 @@ export interface PageResolver {
   receiptPage(receiptId: string): number | null;
   chequePage(chequeNo: number): number | null;
   chargePage(chargeId: string): number | null;
+  /** The page of the આવક line that brings a returned cheque's money back. */
+  chequeReturnPage(chequeNo: number): number | null;
   openingPage(): number | null;
   closingPage(): number | null;
 }
@@ -61,8 +64,9 @@ export function ledger(book: YearBook, headCode: string, options: LedgerOptions 
     });
   }
 
-  // 3. Each cheque's share of this head, dated by the cheque's cash-book date.
-  for (const cheque of book.cheques) {
+  // 3. Each cheque's share of this head, dated by the cheque's cash-book date -
+  //    a cheque the bank later sent back included: it was written and entered.
+  for (const cheque of cashbookCheques(book)) {
     const share = chequeAllocation(cheque).get(headCode);
     if (share === undefined || share === ZERO) continue;
     entries.push({
@@ -82,6 +86,19 @@ export function ledger(book: YearBook, headCode: string, options: LedgerOptions 
       descriptionGu: charge.descriptionGu,
       creditPaise: ZERO,
       debitPaise: charge.amountPaise,
+    });
+  }
+
+  // 5. The share of a returned cheque coming back, on the day the bank sent it.
+  for (const cheque of book.returnedCheques) {
+    const share = chequeAllocation(cheque).get(headCode);
+    if (share === undefined || share === ZERO) continue;
+    entries.push({
+      date: cheque.returnedDate,
+      rojmelPage: pages?.chequeReturnPage(cheque.chequeNo) ?? null,
+      descriptionGu: chequeReturnedGu(cheque.chequeNo),
+      creditPaise: share,
+      debitPaise: ZERO,
     });
   }
 
@@ -114,12 +131,22 @@ export function ledger(book: YearBook, headCode: string, options: LedgerOptions 
     totalCreditPaise,
     totalDebitPaise,
     closingPaise: paise(totalCreditPaise - totalDebitPaise),
+    closingRojmelPage: pages?.closingPage() ?? null,
   };
 }
 
 /** Every head's ledger, in print order. */
 export function allLedgers(book: YearBook, options: LedgerOptions = {}): Ledger[] {
   return book.heads.map((head) => ledger(book, head.code, options));
+}
+
+/**
+ * The આવક line for a cheque the bank sent back, the same words in the rojmel
+ * and the ledger - each in its own digits (SPEC 6): Latin in the rojmel,
+ * Gujarati in the ledger.
+ */
+export function chequeReturnedGu(chequeNo: number, digits: DigitStyle = "latin"): string {
+  return inDigits(`ચેક નં. ${chequeNo} રિટર્ન થયાના નાણાં જમા`, digits);
 }
 
 /** Interest is credited by the bank, so it reads differently from a grant. */

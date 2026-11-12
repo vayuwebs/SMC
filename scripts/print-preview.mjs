@@ -63,6 +63,10 @@ const ledgers = await service.getLedgers();
 const annexure9 = await service.getAnnexure9();
 const balances = await service.getBalances();
 const school = await service.getSchool();
+// Read-only, so the cheque screen can be looked at; nothing here saves.
+const chequeList = await service.listCheques();
+const billList = await service.listBills();
+const headList = await service.listGrantHeads();
 const layouts = Object.fromEntries(
   await Promise.all(
     ["rojmel", "khatavahi", "grantRegister", "chequeRegister", "billRegister", "vouchers", "patrakD", "annexure9", "annexure10"].map(
@@ -107,6 +111,9 @@ html = html.replace(
     `exportPdf:()=>Promise.resolve({ok:true,data:null}),` +
     `printReport:()=>Promise.resolve({ok:true,data:false}),` +
     `listBankCharges:()=>Promise.resolve([]),` +
+    `listCheques:()=>Promise.resolve(${JSON.stringify(chequeList)}),` +
+    `listBills:()=>Promise.resolve(${JSON.stringify(billList)}),` +
+    `listGrantHeads:()=>Promise.resolve(${JSON.stringify(headList)}),` +
     `exportExcel:()=>Promise.resolve({ok:true,data:null})` +
     `};</script></head>`,
 );

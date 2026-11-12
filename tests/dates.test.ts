@@ -9,6 +9,7 @@ import {
   formatDateShort,
   isoDate,
   isWithin,
+  shiftYears,
 } from "../src/lib/dates.js";
 
 describe("ISO date storage", () => {
@@ -117,5 +118,14 @@ describe("payment wording", async () => {
     expect(paidForGu("વાલી સંમેલન સરભરા ખર્ચ")).toBe("વાલી સંમેલન સરભરા ખર્ચના નાણાં ચુકવ્યા");
     expect(paidForGu("બાળમેળો મટરીયલ્સના")).toBe("બાળમેળો મટરીયલ્સના નાણાં ચુકવ્યા");
     expect(paidForGu("સરભરા ખર્ચના નાણાં ")).toBe("સરભરા ખર્ચના નાણાં ચુકવ્યા");
+  });
+});
+
+describe("moving a date to another year", () => {
+  it("keeps the day and month, and lands 29 February on the 28th when there is none", () => {
+    expect(shiftYears("2027-06-10", -2)).toBe("2025-06-10");
+    expect(shiftYears("2024-03-31", 1)).toBe("2025-03-31");
+    expect(shiftYears("2028-02-29", -2)).toBe("2026-02-28");
+    expect(shiftYears("2024-02-29", 4)).toBe("2028-02-29");
   });
 });

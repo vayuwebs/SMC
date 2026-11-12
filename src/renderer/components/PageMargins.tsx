@@ -15,6 +15,7 @@ import {
   type PageSetup,
 } from "../../shared/report-layout.js";
 import { useStrings, type Strings } from "../i18n/index.js";
+import { Popover } from "./Popover.js";
 
 /**
  * Excel's margins, for the layout editor's Page Layout tab and the print
@@ -114,20 +115,6 @@ export function chosenMargins(report: PrintableReportId, setup: PageSetup | unde
   return marginChoices(report, t).find((choice) => sameMargins(choice.margins, now))?.id ?? null;
 }
 
-/** Close a drop-down when the pointer goes down anywhere outside it. */
-function useOutsideClose(open: boolean, close: () => void): React.RefObject<HTMLDivElement | null> {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(event.target as Node)) close();
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open, close]);
-  return ref;
-}
-
 /** The ribbon's "Margins" button and its gallery, as in Excel. */
 export function MarginsMenu({
   report,
@@ -142,7 +129,7 @@ export function MarginsMenu({
   const [unit] = useMarginUnit();
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState(false);
-  const ref = useOutsideClose(open, () => setOpen(false));
+  const ref = useRef<HTMLDivElement>(null);
   const chosen = chosenMargins(report, setup, t);
   const u = unitLabel(unit, t);
 
@@ -161,7 +148,7 @@ export function MarginsMenu({
         <span className="ribbon-button-label">{t.marginsButton} ▾</span>
       </button>
       {open && (
-        <div className="palette-popover margins-menu">
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="palette-popover margins-menu">
           {marginChoices(report, t).map((choice) => (
             <button
               key={choice.id}
@@ -208,7 +195,7 @@ export function MarginsMenu({
           >
             {t.marginsCustom}
           </button>
-        </div>
+        </Popover>
       )}
       {dialog && (
         <CustomMarginsDialog report={report} setup={setup} onApply={onChange} onClose={() => setDialog(false)} />

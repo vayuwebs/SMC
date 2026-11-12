@@ -51,7 +51,7 @@ export class KnownProfiles {
     });
   }
 
-  private all(): KnownProfile[] {
+  all(): KnownProfile[] {
     return readJson(this.file, fileSchema)?.profiles ?? [];
   }
 }

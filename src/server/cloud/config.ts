@@ -34,7 +34,8 @@ export function resolveCloudConfig(input: {
   }
 
   if (url && publishableKey) {
-    if (!/^https:\/\/[^/\s]+$/.test(url.replace(/\/$/, ""))) {
+    const normalizedUrl = url.replace(/\/rest\/v1\/?$/i, "").replace(/\/$/, "");
+    if (!/^https:\/\/[^/\s]+$/.test(normalizedUrl)) {
       return { kind: "missing", reason: `the Supabase URL "${url}" is not an https:// address` };
     }
     if (/^sb_secret_|service_role/i.test(publishableKey) || looksLikeServiceRoleJwt(publishableKey)) {
@@ -45,7 +46,7 @@ export function resolveCloudConfig(input: {
         reason: "the configured key is the project's SECRET key; use the publishable key",
       };
     }
-    return { kind: "supabase", url: url.replace(/\/$/, ""), publishableKey };
+    return { kind: "supabase", url: normalizedUrl, publishableKey };
   }
 
   if (!input.isPackaged) {

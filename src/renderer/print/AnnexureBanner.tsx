@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import type { FinancialYearDto, SchoolDto } from "../../shared/api.js";
-import { formatSchoolTitle, toGujaratiDigits } from "../../lib/gujarati.js";
+import { formatSchoolTitle } from "../../lib/gujarati.js";
 import { Text } from "./layout-context.js";
 
 /**
@@ -17,12 +17,10 @@ export function AnnexureBanner({
 }: {
   school: SchoolDto;
   year: FinancialYearDto;
-  /** "૯" or "૧૦". */
+  /** "9" or "10". */
   numberGu: string;
 }): JSX.Element {
-  const yearLabel = toGujaratiDigits(
-    `${year.startDate.slice(0, 4)} / ${year.endDate.slice(0, 4)}`,
-  );
+  const yearLabel = `${year.startDate.slice(0, 4)} / ${year.endDate.slice(0, 4)}`;
   const [line1 = "", line2 = ""] = school.programmeGu.split(/\s*\/\s*|\n/);
 
   return (

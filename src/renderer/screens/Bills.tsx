@@ -9,6 +9,8 @@ import { IssueList } from "../components/IssueList.js";
 import { amountToInput, formatDate, tryParseAmount } from "../format.js";
 import { useStrings, type Strings } from "../i18n/index.js";
 import type { JSX } from "react";
+import { Icon } from "../components/Icon.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * બિલ - the expense documents (SPEC 4.4).
@@ -27,11 +29,27 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
   const [query, setQuery] = useState("");
   const [headFilter, setHeadFilter] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "unpaid">("all");
+  // Voucher number -> the cheque, for every voucher a cheque already uses; a
+  // grant return's voucher takes no bill (the bill register lists it by itself).
+  const [chequeVouchers, setChequeVouchers] = useState<Map<number, { chequeNo: number; grantReturn: boolean }>>(
+    new Map(),
+  );
 
   async function reload(): Promise<void> {
-    const [nextBills, nextHeads] = await Promise.all([api.listBills(), api.listGrantHeads()]);
+    const [nextBills, nextHeads, cheques] = await Promise.all([
+      api.listBills(),
+      api.listGrantHeads(),
+      api.listCheques(),
+    ]);
     setBills(nextBills);
     setHeads(nextHeads);
+    setChequeVouchers(
+      new Map(
+        cheques
+          .filter((cheque) => cheque.voucherNo !== null)
+          .map((cheque) => [cheque.voucherNo!, { chequeNo: cheque.chequeNo, grantReturn: cheque.type === "GRANT_RETURN" }]),
+      ),
+    );
     setLoading(false);
   }
 
@@ -52,7 +70,7 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
   }
 
   async function remove(bill: BillDto): Promise<void> {
-    if (!window.confirm(t.confirmDeleteBill(bill.billNo ?? bill.descriptionGu))) return;
+    if (!(await askConfirm(t.confirmDeleteBill(bill.billNo ?? bill.descriptionGu)))) return;
     await api.deleteBill(bill.id);
     await reload();
     onChanged();
@@ -61,6 +79,14 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
   if (loading) return <div className="state">{t.loading}</div>;
 
   const allVouchers = [...new Set(bills.map((bill) => bill.voucherNo))].sort((a, b) => a - b);
+  // The next free voucher number, past the grant returns' too - a grant return
+  // holds a voucher number of its own with no bill under it.
+  const lastVoucher = Math.max(0, ...allVouchers, ...chequeVouchers.keys());
+  const grantReturnVoucher = (voucherNo: number): number | null => {
+    const cheque = chequeVouchers.get(voucherNo);
+    return cheque?.grantReturn ? cheque.chequeNo : null;
+  };
+  const misplaced = bills.filter((bill) => grantReturnVoucher(bill.voucherNo) !== null);
   const total = bills.reduce((sum, bill) => sum + bill.netPaise, 0);
 
   const filteredBills = bills.filter((bill) => {
@@ -95,7 +121,7 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
           <p>{t.billsSubtitle}</p>
         </div>
         <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-          + {t.newBill}
+          {t.newBill}
         </button>
       </div>
 
@@ -105,12 +131,19 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
         </div>
       )}
 
+      {misplaced.length > 0 && (
+        <div className="issue error">
+          <div>{t.billsOnGrantReturn(misplaced.length)}</div>
+        </div>
+      )}
+
       {editing !== null && (
         <BillForm
           t={t}
           heads={heads}
           bill={editing === "new" ? null : editing}
-          nextVoucher={(allVouchers[allVouchers.length - 1] ?? 0) + 1}
+          nextVoucher={lastVoucher + 1}
+          grantReturnVoucher={grantReturnVoucher}
           onCancel={() => { setEditing(null); setIssues([]); }}
           onSave={save}
           onHeadCreated={(head) => {
@@ -124,7 +157,9 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
       {bills.length > 0 && (
         <div className="search-filter-bar">
           <div className="search-input-wrap">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon">
+              <Icon name="search" />
+            </span>
             <input
               type="text"
               placeholder={t.searchPlaceholder}
@@ -214,6 +249,7 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
         const rows = filteredBills.filter((bill) => bill.voucherNo === voucherNo);
         const voucherTotal = rows.reduce((sum, bill) => sum + bill.netPaise, 0);
         const paidBy = rows.find((bill) => bill.chequeNo !== null)?.chequeNo ?? null;
+        const returnedBy = grantReturnVoucher(voucherNo);
 
         return (
           <div className="card" key={voucherNo}>
@@ -221,7 +257,9 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
               <h3 style={{ margin: 0 }}>
                 {t.voucher} {voucherNo}{" "}
                 <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>
-                  {paidBy === null ? (
+                  {returnedBy !== null ? (
+                    <span style={{ color: "var(--error-line)", marginLeft: 6 }}>● {t.voucherIsGrantReturn(returnedBy)}</span>
+                  ) : paidBy === null ? (
                     <span style={{ color: "var(--warn-line)", marginLeft: 6 }}>● {t.notLinkedToCheque}</span>
                   ) : (
                     <span style={{ color: "var(--credit)", marginLeft: 6 }}>● {t.linkedToCheque(paidBy)}</span>
@@ -289,18 +327,22 @@ export function Bills({ onChanged }: { onChanged: () => void }): JSX.Element {
 
       {bills.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-state-icon">📄</div>
+          <div className="empty-state-icon">
+            <Icon name="file" size={30} />
+          </div>
           <h4>{t.noBills}</h4>
           <p>{t.billsSubtitle}</p>
           <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-            + {t.newBill}
+            {t.newBill}
           </button>
         </div>
       )}
 
       {bills.length > 0 && filteredBills.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-state-icon">🔍</div>
+          <div className="empty-state-icon">
+            <Icon name="search" size={30} />
+          </div>
           <h4>{t.noMatchingRecords}</h4>
           <p>શોધ અથવા ફિલ્ટર સાફ કરીને ફરી પ્રયાસ કરો.</p>
           <button
@@ -324,6 +366,7 @@ function BillForm({
   heads,
   bill,
   nextVoucher,
+  grantReturnVoucher,
   onCancel,
   onSave,
   onHeadCreated,
@@ -332,6 +375,8 @@ function BillForm({
   heads: GrantHeadDto[];
   bill: BillDto | null;
   nextVoucher: number;
+  /** The grant-return cheque on this voucher, if it is one - it takes no bill. */
+  grantReturnVoucher: (voucherNo: number) => number | null;
   onCancel: () => void;
   onSave: (input: BillInput, id: number | null) => Promise<void>;
   onHeadCreated: (head: GrantHeadDto) => void;
@@ -348,8 +393,10 @@ function BillForm({
   const amountPaise = tryParseAmount(amount);
   const deductionPaise = tryParseAmount(deduction) ?? 0;
   const netPaise = amountPaise === null ? null : amountPaise - deductionPaise;
+  const onGrantReturn = Number.isInteger(Number(voucherNo)) ? grantReturnVoucher(Number(voucherNo)) : null;
 
   const valid =
+    onGrantReturn === null &&
     billDate !== "" &&
     description !== "" &&
     vendor !== "" &&
@@ -383,7 +430,6 @@ function BillForm({
     <form className="card form-card" onSubmit={submit}>
       <div className="form-card-header">
         <h3 className="form-card-title">
-          <span>{bill ? "✏️" : "➕"}</span>
           <span>{bill ? t.editBill : t.newBill}</span>
         </h3>
         {netPaise !== null && (
@@ -405,6 +451,11 @@ function BillForm({
             onChange={(e) => setVoucherNo(e.target.value)}
             required
           />
+          {onGrantReturn !== null && (
+            <span className="muted" style={{ fontSize: 12, color: "var(--error-line)" }}>
+              {t.voucherIsGrantReturnHint(onGrantReturn)}
+            </span>
+          )}
         </div>
         <div className="field">
           <label htmlFor="billno">{t.billNo}</label>

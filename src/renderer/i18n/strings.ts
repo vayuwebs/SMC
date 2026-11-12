@@ -1,3 +1,5 @@
+import type { PrintableReportId } from "../../shared/api.js";
+
 /**
  * Interface strings, in Gujarati and English.
  *
@@ -55,6 +57,7 @@ export interface Strings {
   couldNotLoad: string;
   save: string;
   cancel: string;
+  confirmOk: string;
   edit: string;
   delete: string;
   total: string;
@@ -133,6 +136,9 @@ export interface Strings {
   voucherTotal: (voucherNo: number) => string;
   linkedToCheque: (chequeNo: number) => string;
   notLinkedToCheque: string;
+  voucherIsGrantReturn: (chequeNo: number) => string;
+  voucherIsGrantReturnHint: (chequeNo: number) => string;
+  billsOnGrantReturn: (count: number) => string;
   billsSummary: (count: number) => string;
   deductionTooLarge: string;
   confirmDeleteBill: (label: string) => string;
@@ -146,6 +152,15 @@ export interface Strings {
   chequeNo: string;
   chequeDate: string;
   cashedDate: string;
+  returnedDate: string;
+  replacesCheque: string;
+  replacesNone: string;
+  replacesOption: (chequeNo: number, returnedOn: string) => string;
+  replacementNote: (chequeNo: number) => string;
+  returnedBadge: (returnedOn: string) => string;
+  replacedByBadge: (chequeNo: number) => string;
+  replacesBadge: (chequeNo: number) => string;
+  returnedNotInTotal: string;
   chequeType: string;
   payee: string;
   chequePurpose: string;
@@ -157,6 +172,10 @@ export interface Strings {
   totalChequeAmount: string;
   confirmDeleteCheque: (chequeNo: number) => string;
   typeReimbursement: string;
+  typeReimbursementBank: string;
+  billPaidHow: string;
+  paidCash: string;
+  paidBank: string;
   typeDirect: string;
   typeGrantReturn: string;
 
@@ -301,6 +320,12 @@ export interface Strings {
   excelShrink: string;
   excelVAlign: { top: string; middle: string; bottom: string };
   excelWrap: string;
+  excelWrapMenu: string;
+  excelWrapCells: string;
+  excelWrapColumns: string;
+  excelWrapAll: string;
+  excelWrapClear: string;
+  excelWrapRojmelNote: string;
   excelOneLine: string;
   excelPaddingX: string;
   excelPaddingY: string;
@@ -342,6 +367,13 @@ export interface Strings {
   fontGalleryNote: string;
   layoutGroupNote: string;
   layoutLineColour: string;
+  excelFormulaEnterHint: string;
+  layoutGroupLines: string;
+  layoutLineWeight: string;
+  layoutLineWeightDefault: string;
+  layoutLineWeights: { thin: string; medium: string; thick: string };
+  layoutWholeRegular: string;
+  layoutWholeRegularHint: string;
   layoutColourDefault: string;
   layoutColourHelp: string;
   printOpen: string;
@@ -465,6 +497,8 @@ export interface Strings {
   yearEndClosing: string;
   yearEndNextOpening: string;
   yearEndNextOpeningHint: string;
+  yearEndOlderOpening: (label: string) => string;
+  yearEndOlderYearHint: (label: string, current: string) => string;
   yearEndOpeningChanged: string;
   yearEndOpeningReset: string;
   yearEndCloseSection: string;
@@ -492,6 +526,11 @@ export interface Strings {
   yearDeletePasswordPlaceholder: string;
   yearDeleteOnlyYearError: string;
   yearDeleteSubmit: string;
+  yearRename: string;
+  yearRenamePrompt: (label: string) => string;
+  yearRenameHint: string;
+  yearRenameNewLabel: string;
+  yearRenameSubmit: string;
 
   // -------------------------------------------------------------- settings
   settingsTitle: string;
@@ -628,6 +667,12 @@ export interface Strings {
   viewPreview: string;
   hidePreview: string;
   previewPrompt: string;
+  allReports: string;
+  reportsGridNote: string;
+  previewShort: string;
+  openFigures: string;
+  /** One line under each report's name on the Reports screen. */
+  reportBlurbs: Record<PrintableReportId | "balances" | "ledgers", string>;
 }
 
 export const gu: Strings = {
@@ -664,6 +709,7 @@ export const gu: Strings = {
   couldNotLoad: "માહિતી વાંચી શકાઈ નહીં.",
   save: "સાચવો",
   cancel: "રદ કરો",
+  confirmOk: "હા",
   edit: "ફેરફાર",
   delete: "કાઢો",
   total: "કુલ",
@@ -738,6 +784,11 @@ export const gu: Strings = {
   voucherTotal: (voucherNo) => `વાઉચર ${voucherNo} કુલ`,
   linkedToCheque: (chequeNo) => `— ચેક ${chequeNo}`,
   notLinkedToCheque: "— ચેક સાથે જોડાયેલ નથી",
+  voucherIsGrantReturn: (chequeNo) => `— આ વાઉચર બચત ગ્રાન્ટ પરતનો છે (ચેક નં. ${chequeNo}); તેનું બિલ ન હોય, આ બિલ કાઢી નાખો`,
+  voucherIsGrantReturnHint: (chequeNo) =>
+    `આ વાઉચર બચત ગ્રાન્ટ પરતનો છે (ચેક નં. ${chequeNo}). ગ્રાન્ટ પરતનું બિલ નોંધવાનું નથી – બિલ રજીસ્ટરમાં તે આપોઆપ આવે છે. બીજો વાઉચર નંબર લો.`,
+  billsOnGrantReturn: (count) =>
+    `${count} બિલ બચત ગ્રાન્ટ પરતના વાઉચરમાં છે. ગ્રાન્ટ પરતનું બિલ હોતું નથી (બિલ રજીસ્ટરમાં તે આપોઆપ આવે છે), નહીંતર તે બે વાર છપાય છે. નીચે લાલ નિશાનવાળા બિલ કાઢી નાખો.`,
   billsSummary: (count) => `કુલ ${count} બિલ, ચોખ્ખી રકમ`,
   deductionTooLarge: "કપાત બિલની રકમ કરતાં વધારે ન હોઈ શકે.",
   confirmDeleteBill: (label) => `બિલ ${label} કાઢી નાખવું છે?`,
@@ -750,6 +801,16 @@ export const gu: Strings = {
   chequeNo: "ચેક નં",
   chequeDate: "ચેકની તારીખ",
   cashedDate: "ચેક વટાવ્યાં તારીખ",
+  returnedDate: "બેંકે ચેક રિટર્ન કર્યા તારીખ",
+  replacesCheque: "રિટર્ન થયેલ કયા ચેકના બદલે?",
+  replacesNone: "— નવો ચેક (કોઈના બદલે નહીં) —",
+  replacesOption: (chequeNo, returnedOn) => `ચેક નં. ${chequeNo} (રિટર્ન ${returnedOn})`,
+  replacementNote: (chequeNo) =>
+    `આ ચેક, રિટર્ન થયેલ ચેક નં. ${chequeNo} ના બદલે છે: વાઉચર નંબર, પ્રકાર, બિલ અને ગ્રાન્ટ હેડની રકમ તે જ રહેશે.`,
+  returnedBadge: (returnedOn) => `રિટર્ન ${returnedOn}`,
+  replacedByBadge: (chequeNo) => `બદલે ચેક નં. ${chequeNo}`,
+  replacesBadge: (chequeNo) => `ચેક નં. ${chequeNo} ના બદલે`,
+  returnedNotInTotal: "રિટર્ન થયેલ ચેક કુલ રકમમાં ગણાતા નથી.",
   chequeType: "પ્રકાર",
   payee: "જેના તરફેણમાં ચેક લખ્યો",
   chequePurpose: "બિલની વિગત",
@@ -760,7 +821,11 @@ export const gu: Strings = {
   computedChequeAmount: "ચેકની રકમ (ગણતરી પ્રમાણે)",
   totalChequeAmount: "કુલ ચેકની રકમ",
   confirmDeleteCheque: (chequeNo) => `ચેક ${chequeNo} કાઢી નાખવો છે? તેના બિલ છૂટા થઈ જશે.`,
-  typeReimbursement: "પદર ખર્ચ પરત (સભ્ય સચિવને)",
+  typeReimbursement: "પરત ખર્ચ સભ્ય સચિવને (રોકડ)",
+  typeReimbursementBank: "પરત ખર્ચ સભ્ય સચિવને (બેન્ક)",
+  billPaidHow: "કેવી રીતે ચૂકવ્યું",
+  paidCash: "રોકડ",
+  paidBank: "બેન્ક",
   typeDirect: "સીધું ચુકવણું",
   typeGrantReturn: "બચત ગ્રાન્ટ પરત",
 
@@ -905,6 +970,12 @@ export const gu: Strings = {
   excelShrink: "અક્ષર નાના",
   excelVAlign: { top: "ઉપર", middle: "વચ્ચે (ઉપર-નીચે)", bottom: "નીચે" },
   excelWrap: "લખાણ વાળો",
+  excelWrapMenu: "લખાણ ક્યાં વાળવું?",
+  excelWrapCells: "ફક્ત પસંદ કરેલાં ખાનાં",
+  excelWrapColumns: "આખી કોલમ",
+  excelWrapAll: "બધી કોલમ, બધા બ્લોક",
+  excelWrapClear: "બધે વાળવાનું બંધ કરો",
+  excelWrapRojmelNote: "જાવકની વિગત તારીખના ખાનામાં ગયા વગર પોતાના ખાનામાં જ વળશે, અને લાઈન ઊંચી થશે. પાના નંબર બદલાતા નથી.",
   excelOneLine: "એક લાઈનમાં",
   excelPaddingX: "↔ અંદરની જગ્યા",
   excelPaddingY: "↕ અંદરની જગ્યા",
@@ -948,6 +1019,13 @@ export const gu: Strings = {
     "ઉપરના પાંચ ફોન્ટ ભલામણ કરેલ છે: PDF, પ્રિન્ટ અને Excel માં સ્પષ્ટ. Excel ફાઈલમાં ફોન્ટ ત્યારે જ દેખાય જ્યારે તે કમ્પ્યુટરમાં ઇન્સ્ટોલ હોય; Shruti અને Nirmala UI દરેક Windows માં હોય છે.",
   layoutGroupNote: "આખી લાઈનનો ફેરફાર (ઊંચાઈ, રંગ, અક્ષર, પછીની જગ્યા) દરેક બ્લોક અને દરેક પાનાની આ જ લાઈનમાં લાગશે.",
   layoutLineColour: "લાઈનનો રંગ (ખાનાંની કિનારી)",
+  excelFormulaEnterHint: "Enter દબાવો તો એ જ ખાનામાં નવી લાઈન; Backspace થી પાછું એક લાઈનમાં",
+  layoutGroupLines: "લાઈન (કિનારી)",
+  layoutLineWeight: "આખા પત્રકની લાઈનની જાડાઈ",
+  layoutLineWeightDefault: "જાડાઈ: પત્રક પ્રમાણે",
+  layoutLineWeights: { thin: "પાતળી", medium: "મધ્યમ", thick: "જાડી" },
+  layoutWholeRegular: "બધું સાદું (બોલ્ડ નહીં)",
+  layoutWholeRegularHint: "પત્રકના પોતાના બોલ્ડ લખાણ પણ સાદા છપાશે",
   layoutColourDefault: "મૂળ પ્રમાણે (કાળો)",
   layoutColourHelp: "↺ = મૂળ રંગ. આ ફેરફાર PDF, પ્રિન્ટ અને Excel ત્રણેયમાં આવશે.",
   printOpen: "પ્રિન્ટ",
@@ -1077,6 +1155,9 @@ export const gu: Strings = {
   yearEndNextOpening: "આવતા વર્ષની ઉઘડતી સિલક",
   yearEndNextOpeningHint:
     "બંધ સિલક આપોઆપ આવતા વર્ષની શરૂ સિલક બને છે. જરૂર હોય તો અહીં રકમ બદલી શકો છો; વર્ષ બંધ થયા પછી પણ \"ઉઘડતી સિલક\" પાના પર બદલી શકાશે.",
+  yearEndOlderOpening: (label) => `${label} ની ઉઘડતી સિલક`,
+  yearEndOlderYearHint: (label, current) =>
+    `${label} એ ${current} કરતાં જૂનું વર્ષ છે, તેથી ${current} ની બંધ સિલક તેની ઉઘડતી સિલક તરીકે લખાશે નહીં. દરેક ગ્રાન્ટ હેડની ઉઘડતી સિલક અહીં ભરો (ખાલી રાખો તો 0); પછી "ઉઘડતી સિલક" પાના પર પણ બદલી શકાશે.`,
   yearEndOpeningChanged: "બદલેલ",
   yearEndOpeningReset: "બંધ સિલક પ્રમાણે કરો",
   yearEndCloseSection: "નવું વર્ષ શરૂ કરો",
@@ -1107,6 +1188,12 @@ export const gu: Strings = {
   yearDeletePasswordPlaceholder: "ખાતાનો પાસવર્ડ",
   yearDeleteOnlyYearError: "શાળાનું એકમાત્ર નાણાકીય વર્ષ કાઢી શકાતું નથી.",
   yearDeleteSubmit: "ખાતરીપૂર્વક કાઢી નાખો",
+  yearRename: "વર્ષનું નામ બદલો",
+  yearRenamePrompt: (label) => `નાણાકીય વર્ષ ${label}નું નામ બદલો`,
+  yearRenameHint:
+    "વર્ષ ભૂલથી ખોટું લખાયું હોય તો અહીં સાચું વર્ષ લખો. વર્ષની ૧ એપ્રિલ – ૩૧ માર્ચ અને તેમાં દાખલ કરેલી તમામ તારીખો (પહોંચ, બિલ, ચેક, બેન્ક ચાર્જ) એટલાં જ વર્ષ ખસી જશે; દિવસ અને મહિનો એ જ રહેશે. કોઈ વિગત કાઢી નાખવામાં આવશે નહીં.",
+  yearRenameNewLabel: "સાચું નાણાકીય વર્ષ (જેમ કે 2024-25)",
+  yearRenameSubmit: "નામ બદલો",
 
   settingsTitle: "સેટિંગ",
   settingsSubtitle: "સોફ્ટવેરની પસંદગીઓ",
@@ -1244,6 +1331,23 @@ export const gu: Strings = {
   viewPreview: "પ્રિવ્યૂ જુઓ",
   hidePreview: "પ્રિવ્યૂ છુપાવો",
   previewPrompt: "દસ્તાવેજ પ્રિન્ટમાં કેવો દેખાશે તે જોવા માટે 'પ્રિવ્યૂ જુઓ' બટન પર ક્લિક કરો. અથવા સીધું PDF / Excel ડાઉનલોડ કરો.",
+  allReports: "બધા રિપોર્ટ",
+  reportsGridNote: "બધા રિપોર્ટ દાખલ કરેલી માહિતી પરથી આપોઆપ બને છે.",
+  previewShort: "પ્રિવ્યૂ",
+  openFigures: "જુઓ",
+  reportBlurbs: {
+    rojmel: "રોકડ અને બેન્કના તમામ આવક-જાવક વ્યવહારોની તારીખ મુજબ નોંધ.",
+    khatavahi: "ગ્રાન્ટ હેડ મુજબ ખાતાઓ — જમા, ઉધાર અને સિલક.",
+    annexure10: "ગ્રાન્ટ મુજબ વાર્ષિક પત્રક — ઉઘડતી સિલક, મળેલ ગ્રાન્ટ, ખર્ચ અને બંધ સિલક.",
+    annexure9: "બેંક સાથે મેળવણું (બેંક રિકન્સીલિએશન સ્ટેટમેન્ટ).",
+    patrakD: "ઓડિટ અને વાર્ષિક તપાસ માટેનું વિગતવાર પત્રક.",
+    grantRegister: "વર્ષ દરમિયાન મળેલ તમામ ગ્રાન્ટ અને તેના ખર્ચની વિગતો.",
+    chequeRegister: "લખાયેલા તમામ ચેક, જેના નામે લખ્યા અને વટાવ્યાની તારીખો.",
+    billRegister: "વાઉચર મુજબના તમામ બિલ, વેપારી અને રકમની નોંધ.",
+    vouchers: "ચુકવણીના છાપવાના વાઉચર ફોર્મ.",
+    balances: "દરેક દિવસની રોકડ અને બેન્ક સિલક.",
+    ledgers: "ગ્રાન્ટ હેડ મુજબ ખાતાવહીના આંકડા, સ્ક્રીન પર જોવા માટે.",
+  },
 };
 
 export const en: Strings = {
@@ -1280,6 +1384,7 @@ export const en: Strings = {
   couldNotLoad: "Could not read the data.",
   save: "Save",
   cancel: "Cancel",
+  confirmOk: "OK",
   edit: "Edit",
   delete: "Delete",
   total: "Total",
@@ -1355,6 +1460,11 @@ export const en: Strings = {
   voucherTotal: (voucherNo) => `Voucher ${voucherNo} total`,
   linkedToCheque: (chequeNo) => `— cheque ${chequeNo}`,
   notLinkedToCheque: "— not linked to a cheque",
+  voucherIsGrantReturn: (chequeNo) => `— this voucher is the grant return (cheque ${chequeNo}); it has no bill, delete this one`,
+  voucherIsGrantReturnHint: (chequeNo) =>
+    `This voucher is the grant return (cheque ${chequeNo}). A grant return needs no bill - the bill register lists it by itself. Use another voucher number.`,
+  billsOnGrantReturn: (count) =>
+    `${count} bill(s) sit in a grant return's voucher. A grant return has no bill (the bill register lists it by itself), so it prints twice. Delete the bills marked in red below.`,
   billsSummary: (count) => `${count} bills, net amount`,
   deductionTooLarge: "The deduction cannot exceed the bill amount.",
   confirmDeleteBill: (label) => `Delete bill ${label}?`,
@@ -1367,6 +1477,16 @@ export const en: Strings = {
   chequeNo: "Cheque no",
   chequeDate: "Cheque date",
   cashedDate: "Encashed on",
+  returnedDate: "Returned by the bank on",
+  replacesCheque: "In place of which returned cheque?",
+  replacesNone: "— a new cheque (replaces none) —",
+  replacesOption: (chequeNo, returnedOn) => `Cheque ${chequeNo} (returned ${returnedOn})`,
+  replacementNote: (chequeNo) =>
+    `This cheque replaces returned cheque ${chequeNo}: its voucher number, type, bills and grant-head amounts stay the same.`,
+  returnedBadge: (returnedOn) => `Returned ${returnedOn}`,
+  replacedByBadge: (chequeNo) => `Replaced by ${chequeNo}`,
+  replacesBadge: (chequeNo) => `In place of ${chequeNo}`,
+  returnedNotInTotal: "Returned cheques are not counted in the total.",
   chequeType: "Type",
   payee: "Payee",
   chequePurpose: "Purpose",
@@ -1378,7 +1498,11 @@ export const en: Strings = {
   totalChequeAmount: "Total cheque amount",
   confirmDeleteCheque: (chequeNo) =>
     `Delete cheque ${chequeNo}? Its bills will be released.`,
-  typeReimbursement: "Reimbursement (to the member secretary)",
+  typeReimbursement: "Reimbursement to the member secretary (cash)",
+  typeReimbursementBank: "Reimbursement to the member secretary (bank)",
+  billPaidHow: "Paid how",
+  paidCash: "Cash",
+  paidBank: "Bank",
   typeDirect: "Direct payment",
   typeGrantReturn: "Grant return",
 
@@ -1523,6 +1647,12 @@ export const en: Strings = {
   excelShrink: "Decrease font size",
   excelVAlign: { top: "Top", middle: "Middle", bottom: "Bottom" },
   excelWrap: "Wrap Text",
+  excelWrapMenu: "Wrap text where?",
+  excelWrapCells: "Selected cells only",
+  excelWrapColumns: "Whole column",
+  excelWrapAll: "All columns, all blocks",
+  excelWrapClear: "Turn wrapping off everywhere",
+  excelWrapRojmelNote: "A payment description stays inside its own cell instead of running into the date cell, and its row grows. Page numbers do not change.",
   excelOneLine: "One line",
   excelPaddingX: "↔ Inner space",
   excelPaddingY: "↕ Inner space",
@@ -1566,6 +1696,13 @@ export const en: Strings = {
     "The five above are recommended: clear in the PDF, the print and Excel. An Excel file shows a font only when it is installed on that PC; Shruti and Nirmala UI are on every Windows PC.",
   layoutGroupNote: "A change to the whole row (height, colour, font, space after) applies to this same row in every block, on every page.",
   layoutLineColour: "Line colour (cell borders)",
+  excelFormulaEnterHint: "Enter starts a new line inside the same cell; Backspace joins it back",
+  layoutGroupLines: "Lines (borders)",
+  layoutLineWeight: "Thickness of every line in the report",
+  layoutLineWeightDefault: "Thickness: as the form",
+  layoutLineWeights: { thin: "Thin", medium: "Medium", thick: "Thick" },
+  layoutWholeRegular: "All regular (no bold)",
+  layoutWholeRegularHint: "Even the form's own bold text prints regular",
   layoutColourDefault: "Default (black)",
   layoutColourHelp: "↺ = the default colour. The change goes into the PDF, the print and Excel.",
   printOpen: "Print",
@@ -1694,6 +1831,9 @@ export const en: Strings = {
   yearEndNextOpening: "Next year's opening",
   yearEndNextOpeningHint:
     "Each closing balance becomes next year's opening balance by itself. Change an amount here if you need to; it can still be changed on the Opening balances screen after the year is closed.",
+  yearEndOlderOpening: (label) => `Opening balance of ${label}`,
+  yearEndOlderYearHint: (label, current) =>
+    `${label} is older than ${current}, so ${current}'s closing balances are not written as its opening balances. Type each grant head's opening balance here (blank is 0); it can still be changed on the Opening balances screen later.`,
   yearEndOpeningChanged: "changed",
   yearEndOpeningReset: "Use the closing balance",
   yearEndCloseSection: "Start the next year",
@@ -1724,6 +1864,12 @@ export const en: Strings = {
   yearDeletePasswordPlaceholder: "Account password",
   yearDeleteOnlyYearError: "Cannot delete the school's only financial year.",
   yearDeleteSubmit: "Confirm Delete",
+  yearRename: "Rename year",
+  yearRenamePrompt: (label) => `Rename financial year ${label}`,
+  yearRenameHint:
+    "If the year was typed wrong, write the right one here. The year's 1 April – 31 March and every date entered in it (receipts, bills, cheques, bank charges) move by the same number of years; the day and month stay the same. Nothing is deleted.",
+  yearRenameNewLabel: "Correct financial year (e.g. 2024-25)",
+  yearRenameSubmit: "Rename",
 
   settingsTitle: "Settings",
   settingsSubtitle: "Application preferences",
@@ -1861,4 +2007,21 @@ export const en: Strings = {
   viewPreview: "View Preview",
   hidePreview: "Hide Preview",
   previewPrompt: "Click 'View Preview' to see how this document prints, or download PDF / Excel directly.",
+  allReports: "All reports",
+  reportsGridNote: "Every report is made from the data you entered.",
+  previewShort: "Preview",
+  openFigures: "Open",
+  reportBlurbs: {
+    rojmel: "Every cash and bank receipt and payment, in date order.",
+    khatavahi: "An account per grant head: credits, debits and balance.",
+    annexure10: "The year by grant: opening balance, grants received, spending and closing balance.",
+    annexure9: "Reconciliation with the bank statement.",
+    patrakD: "The detailed statement for audit and the annual inspection.",
+    grantRegister: "Every grant received in the year and what was spent from it.",
+    chequeRegister: "Every cheque written: payee, cheque date and date cashed.",
+    billRegister: "Every bill by voucher: vendor and amount.",
+    vouchers: "Printed payment vouchers.",
+    balances: "Cash and bank balance at the end of each day.",
+    ledgers: "The ledger figures per grant head, to read on screen.",
+  },
 };

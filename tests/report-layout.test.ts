@@ -10,6 +10,12 @@
 import { describe, expect, it } from "vitest";
 import { PRINTABLE_REPORTS } from "../src/shared/api.js";
 import {
+  ARRANGEMENTS,
+  ROW_GROUPS,
+  arrangeLines,
+  layoutHasWrap,
+  withoutWrap,
+  wrapAt,
   MIN_COLUMN_PCT,
   NO_FILL,
   REPORT_PARTS,
@@ -70,7 +76,7 @@ describe("default widths", () => {
     expect(widths("annexure10").slice(0, 2)).toEqual([5, 17]);
     // Fourteen: 7 columns on આવક side and 7 columns on જાવક side.
     expect(widths("rojmel")).toHaveLength(14);
-    expect(widths("rojmel").at(-1)).toBeCloseTo(6.1, 9);
+    expect(widths("rojmel").at(-1)).toBeCloseTo(6.0, 9);
   });
 
   it("resolve unchanged for an empty layout", () => {
@@ -286,7 +292,7 @@ describe("the schema", () => {
 
 describe("paper", () => {
   it("knows each form's printed table width", () => {
-    expect(tableWidthMm("rojmel")).toBeCloseTo(335, 6);
+    expect(tableWidthMm("rojmel")).toBeCloseTo(325, 6);
     expect(tableWidthMm("chequeRegister")).toBeCloseTo(325, 6);
     expect(tableWidthMm("annexure10")).toBeCloseTo(205, 6);
     // The voucher is on A4 by default: 210mm less two 10mm margins.
@@ -304,7 +310,7 @@ describe("paper", () => {
       paper: "legal-in",
       paperWidthMm: 345,
       paperHeightMm: 215,
-      margins: { top: 5, right: 5, bottom: 5, left: 5 },
+      margins: { top: 10, right: 10, bottom: 10, left: 10 },
       headerMm: 0,
       footerMm: 0,
       centerHorizontally: false,
@@ -339,13 +345,13 @@ describe("paper", () => {
   });
 
   it("stores only what differs from the form's default, four equal margins as one", () => {
-    expect(cleanPageSetup("rojmel", { ...uniformMarginPatch(5) })).toEqual({});
+    expect(cleanPageSetup("rojmel", { ...uniformMarginPatch(10) })).toEqual({});
     expect(cleanPageSetup("rojmel", { ...uniformMarginPatch(12), marginMm: 3 })).toEqual({ marginMm: 12 });
-    expect(cleanPageSetup("rojmel", { marginMm: 5, marginTopMm: 20 })).toEqual({
+    expect(cleanPageSetup("rojmel", { marginMm: 10, marginTopMm: 20 })).toEqual({
       marginTopMm: 20,
-      marginRightMm: 5,
-      marginBottomMm: 5,
-      marginLeftMm: 5,
+      marginRightMm: 10,
+      marginBottomMm: 10,
+      marginLeftMm: 10,
     });
     expect(
       cleanPageSetup("rojmel", { headerMm: 0, footerMm: 4, centerHorizontally: true, centerVertically: false }),
@@ -522,5 +528,132 @@ describe("the rojmel's paper", () => {
 
   it("does not hold any other report to it", () => {
     expect(resolvePage("khatavahi", { paper: "a4" }).paper).toBe("a4");
+  });
+});
+
+describe("arranged cells (a number and its date)", () => {
+  const parts = { "નંબર": "1/3", "તારીખ": "11/07/24" };
+  const lines = (texts: Record<string, string>) =>
+    arrangeLines({ ...emptyLayout(), texts }, ARRANGEMENTS.rojmelRef.id, ARRANGEMENTS.rojmelRef.template, parts).map(
+      (line) => line.map((segment) => segment.text).join(" "),
+    );
+
+  it("prints on one line by default", () => {
+    expect(lines({})).toEqual(["1/3 11/07/24"]);
+  });
+
+  it("puts the date under the number after an Enter, and swaps them when the school does", () => {
+    expect(lines({ [ARRANGEMENTS.rojmelRef.id]: "{નંબર}\n{તારીખ}" })).toEqual(["1/3", "11/07/24"]);
+    expect(lines({ [ARRANGEMENTS.rojmelRef.id]: "{તારીખ}\n{નંબર}" })).toEqual(["11/07/24", "1/3"]);
+  });
+
+  it("never hides a figure left out of the arrangement", () => {
+    expect(lines({ [ARRANGEMENTS.rojmelRef.id]: "{તારીખ}" })).toEqual(["11/07/24 1/3"]);
+  });
+
+  it("drops a line whose figure is empty", () => {
+    const noDate = arrangeLines(
+      { ...emptyLayout(), texts: { [ARRANGEMENTS.rojmelRef.id]: "{નંબર}\n{તારીખ}" } },
+      ARRANGEMENTS.rojmelRef.id,
+      ARRANGEMENTS.rojmelRef.template,
+      { "નંબર": "4", "તારીખ": "" },
+    );
+    expect(noDate).toEqual([[{ text: "4", part: "નંબર" }]]);
+  });
+});
+
+describe("the whole report's look (આખું પત્રક)", () => {
+  it("writes weight, slant, underline, vertical alignment and line weight for every cell", () => {
+    const css = layoutCss(
+      "billRegister",
+      { ...emptyLayout(), bold: true, italic: true, underline: false, vAlign: "top", lineWeight: "thick" },
+      "#r",
+    );
+    expect(css).toContain("#r .sheet * { font-weight: 700; font-style: italic; text-decoration: none; }");
+    expect(css).toContain("border-width: 2.2pt");
+    expect(css).toContain("vertical-align: top");
+  });
+
+  it("is still an empty layout when none of them is set", () => {
+    expect(isEmptyLayout(emptyLayout())).toBe(true);
+    expect(isEmptyLayout({ ...emptyLayout(), lineWeight: "thin" })).toBe(false);
+  });
+});
+
+describe("wrap text", () => {
+  const row = "2025-06-09:3";
+  const group = ROW_GROUPS.rojmelRow(3);
+  const line = "line:p:bill:b1";
+
+  it("prints as it always did when nobody chose wrapping", () => {
+    expect(wrapAt(emptyLayout(), row, "p.detail", group, line)).toBeUndefined();
+    expect(layoutHasWrap(emptyLayout())).toBe(false);
+    expect(layoutCss("rojmel", emptyLayout(), "#r")).not.toContain("white-space");
+  });
+
+  it("loads a layout saved before the whole-report switch existed", () => {
+    const old = { version: 1, widths: {}, rowGapsMm: {}, styles: { "col:p.detail": { bold: true } }, texts: {} };
+    const parsed = reportLayoutSchema.parse(old);
+    expect(parsed.wrap).toBeUndefined();
+    expect(wrapAt(parsed, row, "p.detail")).toBeUndefined();
+  });
+
+  it("keeps the whole-report switch in the saved layout, and counts it as a change", () => {
+    const layout = reportLayoutSchema.parse({ ...emptyLayout(), wrap: true });
+    expect(layout.wrap).toBe(true);
+    expect(isEmptyLayout(layout)).toBe(false);
+    expect(layoutHasWrap(layout)).toBe(true);
+  });
+
+  it("gives a cell's own choice over its column's over the whole report's", () => {
+    const all: ReportLayout = { ...emptyLayout(), wrap: true };
+    expect(wrapAt(all, row, "p.detail", group, line)).toBe(true);
+
+    const column = withStyle(all, { kind: "col", col: "p.detail" }, { wrap: false });
+    expect(wrapAt(column, row, "p.detail", group, line)).toBe(false);
+    expect(wrapAt(column, row, "r.detail", group, line)).toBe(true);
+
+    const cell = withStyle(column, { kind: "cell", row: line, col: "p.detail" }, { wrap: true });
+    expect(wrapAt(cell, row, "p.detail", group, line)).toBe(true);
+    expect(wrapAt(cell, "2025-06-09:4", "p.detail", group, "line:p:bill:b2")).toBe(false);
+  });
+
+  it("follows a line wherever its row moves to", () => {
+    const layout = withStyle(emptyLayout(), { kind: "cell", row: line, col: "p.detail" }, { wrap: true });
+    expect(wrapAt(layout, "2025-06-09:3", "p.detail", null, line)).toBe(true);
+    expect(wrapAt(layout, "2025-07-01:8", "p.detail", null, line)).toBe(true);
+    expect(wrapAt(layout, "2025-06-09:3", "p.detail", null, "line:p:bill:b2")).toBeUndefined();
+  });
+
+  it("writes a line's cell by data-line, after a row's, and lets its numbers and dates fold", () => {
+    const layout = withStyle(
+      withStyle(emptyLayout(), { kind: "cell", row, col: "p.ref" }, { wrap: false }),
+      { kind: "cell", row: line, col: "p.ref" },
+      { wrap: true },
+    );
+    const css = layoutCss("rojmel", layout, "#r");
+    const lineRule = css.indexOf(`[data-line="${line}"] { white-space: normal`);
+    expect(lineRule).toBeGreaterThan(-1);
+    expect(lineRule).toBeGreaterThan(css.indexOf(`[data-row="${row}"]`));
+    expect(css).toContain(`[data-line="${line}"] .arranged-line { flex-wrap: wrap; }`);
+  });
+
+  it("reaches every cell for the whole report, weaker than a column's own one-line", () => {
+    const layout = withStyle({ ...emptyLayout(), wrap: true }, { kind: "col", col: "p.ref" }, { wrap: false });
+    const css = layoutCss("rojmel", layout, "#r");
+    const whole = css.indexOf("table[data-layout] > * > tr > :is(td, th) { white-space: normal; }");
+    const column = css.indexOf(`[data-col="p.ref"] { white-space: nowrap`);
+    expect(whole).toBeGreaterThan(-1);
+    expect(column).toBeGreaterThan(whole);
+    expect(css).toContain(`[data-col="p.ref"] { --one-line: 1; }`);
+  });
+
+  it("takes every wrap away at once, and nothing else", () => {
+    let layout: ReportLayout = { ...emptyLayout(), wrap: true };
+    layout = withStyle(layout, { kind: "col", col: "p.detail" }, { wrap: true, bold: true });
+    layout = withStyle(layout, { kind: "cell", row: line, col: "p.ref" }, { wrap: false });
+    const clean = withoutWrap(layout);
+    expect(clean.wrap).toBeUndefined();
+    expect(clean.styles).toEqual({ "col:p.detail": { bold: true } });
   });
 });

@@ -124,6 +124,8 @@ export interface BillDto {
   remarksGu: string | null;
   chequeId: number | null;
   chequeNo: number | null;
+  /** How a reimbursement paid it; null follows the cheque's type. */
+  payMode: "CASH" | "BANK" | null;
 }
 
 export interface ChequeAllocationDto {
@@ -149,6 +151,13 @@ export interface ChequeDto {
   /** Computed: the total of the allocation. Never stored. */
   amountPaise: number;
   billCount: number;
+  /** The day the bank sent this cheque back unpaid; null when it was not. */
+  returnedDate: string | null;
+  /** The returned cheque this one was written in place of, if any. */
+  replacesChequeId: number | null;
+  replacesChequeNo: number | null;
+  /** The cheque written in place of this one, once it is. */
+  replacedByChequeNo: number | null;
 }
 
 export interface ReconciliationDto {
@@ -323,10 +332,23 @@ export interface ChequeInput {
   /** Bills this cheque pays. Must be empty for a grant return. */
   billIds: number[];
   /**
+   * For a reimbursement: which of billIds were paid online from the bank; the
+   * rest were paid in cash. Absent: every bill follows the cheque's type.
+   */
+  bankBillIds?: number[];
+  /**
    * The per-head split. Only read for a grant return - for the other two types
    * it is computed from the bills and anything passed here is ignored.
    */
   typedAllocation?: { grantHeadId: number; amountPaise: number }[];
+  /** The day the bank sent this cheque back unpaid; null or absent when it was not. */
+  returnedDate?: string | null;
+  /**
+   * The returned cheque this one is written in place of. It then takes that
+   * cheque's voucher number, type, bills and allocation: voucherNo, type,
+   * billIds and typedAllocation passed here are ignored.
+   */
+  replacesChequeId?: number | null;
 }
 
 /**
@@ -605,6 +627,11 @@ export interface BooksApi {
   openYear(id: number): Promise<ApiResult<FinancialYearDto>>;
   /** Reopen a closed financial year so entries can be edited again. */
   reopenYear(id: number): Promise<ApiResult<FinancialYearDto>>;
+  /**
+   * Correct the open year's label when it was typed wrong. Its 1 April / 31 March
+   * and every date entered in it move by the same number of years.
+   */
+  renameYear(newLabel: string): Promise<ApiResult<FinancialYearDto>>;
   /** Delete a financial year, permanently removing all its entries. Requires account password. */
   deleteYear(input: { yearId: number; password?: string }): Promise<ApiResult<{ deletedYearId: number; switchedToYearId?: number }>>;
 
@@ -738,6 +765,7 @@ export const MUTATING_METHODS = [
   "closeYear",
   "openYear",
   "reopenYear",
+  "renameYear",
   "deleteYear",
   "applyLegacyImport",
   "saveReportLayout",
@@ -780,6 +808,7 @@ export const API_METHODS = [
   "closeYear",
   "openYear",
   "reopenYear",
+  "renameYear",
   "deleteYear",
   "getReconciliation",
   "saveReconciliation",

@@ -63,6 +63,25 @@ export function validate(book: YearBook): ValidationResult {
 
   // ------------------------------------------------------------- errors
 
+  // A grant return has no bill: the bill register prints its own row for it, so
+  // a bill under its voucher prints the same money twice - and can never be
+  // paid, because a grant return takes no bills.
+  const grantReturnVouchers = new Map<number, number>();
+  for (const cheque of [...book.cheques, ...book.returnedCheques]) {
+    if (cheque.type === "GRANT_RETURN" && cheque.voucherNo !== null) {
+      grantReturnVouchers.set(cheque.voucherNo, cheque.chequeNo);
+    }
+  }
+  for (const bill of book.bills) {
+    const chequeNo = grantReturnVouchers.get(bill.voucherNo);
+    if (chequeNo === undefined) continue;
+    error(
+      "bill_on_grant_return_voucher",
+      `વાઉચર ${bill.voucherNo} બચત ગ્રાન્ટ પરતનો છે (ચેક નં. ${chequeNo}). ગ્રાન્ટ પરતનું બિલ હોતું નથી – બિલ રજીસ્ટરમાં તે આપોઆપ આવે છે. બિલ "${bill.descriptionGu}" કાઢી નાખો.`,
+      `voucher ${bill.voucherNo} is the grant return of cheque ${chequeNo}, which needs no bill - the bill register lists it by itself; delete bill "${bill.descriptionGu}"`,
+    );
+  }
+
   for (const bill of book.bills) {
     if (bill.deductionPaise > bill.amountPaise) {
       error(
@@ -128,6 +147,10 @@ export function validate(book: YearBook): ValidationResult {
       if (receipt.headCode === head.code) dates.add(receipt.date);
     }
     for (const cheque of book.cheques) dates.add(cheque.cashbookDate);
+    for (const cheque of book.returnedCheques) {
+      dates.add(cheque.cashbookDate);
+      dates.add(cheque.returnedDate);
+    }
     for (const charge of book.bankCharges) {
       if (charge.headCode === head.code) dates.add(charge.date);
     }
@@ -145,8 +168,9 @@ export function validate(book: YearBook): ValidationResult {
     }
   }
 
+  // A returned cheque still used up its number.
   gapsIn(
-    book.cheques.map((cheque) => cheque.chequeNo),
+    [...book.cheques, ...book.returnedCheques].map((cheque) => cheque.chequeNo),
     (from, to) =>
       warn(
         "cheque_no_gap",
@@ -164,6 +188,25 @@ export function validate(book: YearBook): ValidationResult {
         `voucher numbers jump from ${from} to ${to}`,
       ),
   );
+
+  // One voucher, one standing cheque. A cheque written for a returned one shares
+  // its voucher number by design - the returned cheque is not in book.cheques -
+  // so two here means the same payment entered twice, or a bounced cheque
+  // entered again without being marked returned: both count it twice.
+  const chequesByVoucher = new Map<number, number[]>();
+  for (const cheque of book.cheques) {
+    if (cheque.voucherNo === null) continue;
+    chequesByVoucher.set(cheque.voucherNo, [...(chequesByVoucher.get(cheque.voucherNo) ?? []), cheque.chequeNo]);
+  }
+  for (const [voucherNo, chequeNos] of chequesByVoucher) {
+    if (chequeNos.length < 2) continue;
+    const list = [...chequeNos].sort((a, b) => a - b).join(", ");
+    warn(
+      "duplicate_voucher_no",
+      `વાઉચર નંબર ${voucherNo} બે ચેકમાં છે (ચેક નં. ${list}). એક જ ચુકવણી બે વાર નોંધાઈ હોય તો એક ચેક કાઢો; ચેક રિટર્ન થયો હોય તો જૂના ચેકમાં રિટર્ન તારીખ ભરો અને નવા ચેકમાં તે પસંદ કરો.`,
+      `voucher ${voucherNo} is used by cheques ${list}; delete the duplicate, or mark the bounced one returned and link the new one to it`,
+    );
+  }
 
   for (const bill of book.bills) {
     if (!isWithin(bill.billDate, book.year.startDate, book.year.endDate)) {
@@ -188,6 +231,33 @@ export function validate(book: YearBook): ValidationResult {
         "cashed_before_cheque_date",
         `ચેક ${cheque.chequeNo}: વટાવ્યાં તારીખ ચેકની તારીખ પહેલાંની છે`,
         `cheque ${cheque.chequeNo}: encashed ${cheque.cashedDate} precedes cheque date ${cheque.chequeDate}`,
+      );
+    }
+  }
+
+  for (const cheque of book.returnedCheques) {
+    if (cheque.returnedDate < cheque.cashbookDate) {
+      warn(
+        "returned_before_cashbook_date",
+        `ચેક ${cheque.chequeNo}: રિટર્ન તારીખ રોજમેળ તારીખ પહેલાંની છે`,
+        `cheque ${cheque.chequeNo}: returned ${cheque.returnedDate} before its cash-book date ${cheque.cashbookDate}`,
+      );
+    }
+    if (!isWithin(cheque.returnedDate, book.year.startDate, book.year.endDate)) {
+      warn(
+        "returned_outside_year",
+        `ચેક ${cheque.chequeNo} ની રિટર્ન તારીખ ${formatDate(cheque.returnedDate)} આ વર્ષની બહાર છે`,
+        `cheque ${cheque.chequeNo} returned on ${cheque.returnedDate}, outside ${book.year.label}`,
+      );
+    }
+    const replacement = [...book.cheques, ...book.returnedCheques].find(
+      (candidate) => candidate.chequeNo === cheque.replacedByChequeNo,
+    );
+    if (replacement && replacement.cashbookDate < cheque.returnedDate) {
+      warn(
+        "replacement_before_return",
+        `ચેક ${replacement.chequeNo}: ચેક ${cheque.chequeNo} રિટર્ન થયા પહેલાંની તારીખે લખેલ છે`,
+        `cheque ${replacement.chequeNo} replaces cheque ${cheque.chequeNo} but is entered on ${replacement.cashbookDate}, before the return on ${cheque.returnedDate}`,
       );
     }
   }

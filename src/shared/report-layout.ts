@@ -106,6 +106,14 @@ export type VerticalAlignment = (typeof V_ALIGNMENTS)[number];
 export const BORDER_STYLES = ["thin", "medium", "thick", "dashed", "dotted", "double", "none"] as const;
 export type BorderStyle = (typeof BORDER_STYLES)[number];
 
+/**
+ * How heavy every ruled line of a report is, set for the whole report at once
+ * (આખું પત્રક). Only the weight: a line the form leaves out stays out.
+ */
+export const LINE_WEIGHTS = ["thin", "medium", "thick"] as const;
+export type LineWeight = (typeof LINE_WEIGHTS)[number];
+export const LINE_WEIGHT_PT: Record<LineWeight, number> = { thin: 0.7, medium: 1.4, thick: 2.2 };
+
 export const BORDER_CSS: Record<BorderStyle, string> = {
   thin: "0.7pt solid",
   medium: "1.4pt solid",
@@ -248,6 +256,19 @@ export const reportLayoutSchema = z
     colour: hexColour.optional(),
     /** The whole report's ruled lines. */
     lineColour: hexColour.optional(),
+    /** How heavy the whole report's ruled lines are. */
+    lineWeight: z.enum(LINE_WEIGHTS).optional(),
+    /** The whole report's weight, slant and underline: true on, false off even where the form has it. */
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    /** Where the text sits between the top and the bottom of every cell. */
+    vAlign: z.enum(V_ALIGNMENTS).optional(),
+    /**
+     * Every column of every block wraps inside its own cell. A column, row or
+     * cell can still say otherwise (CellStyle.wrap). Left out, the form decides.
+     */
+    wrap: z.literal(true).optional(),
     /** Paper, orientation, margin and zoom. */
     page: pageSetupSchema.optional(),
     /** Column id -> share of the table's width. Normalised when used. */
@@ -283,6 +304,12 @@ export function isEmptyLayout(layout: ReportLayout): boolean {
     layout.plain === undefined &&
     layout.colour === undefined &&
     layout.lineColour === undefined &&
+    layout.lineWeight === undefined &&
+    layout.bold === undefined &&
+    layout.italic === undefined &&
+    layout.underline === undefined &&
+    layout.vAlign === undefined &&
+    layout.wrap === undefined &&
     (layout.page === undefined || Object.keys(layout.page).length === 0) &&
     Object.keys(layout.widths).length === 0 &&
     Object.keys(layout.rowGapsMm).length === 0 &&
@@ -337,12 +364,10 @@ function rojmelSide(
  */
 export const REPORT_COLUMNS: Record<PrintableReportId, ReportColumn[]> = {
   rojmel: columns([
-    // The date column holds "02/04/2025 થી" on one line, so a month's range
-    // prints cleanly on both the આવક and જાવક sides.
-    ...rojmelSide("r", "આવક", [8.4, 11.6, 6.6, 3.4, 5.7, 5.7, 5.7]),
-    // The cheque column holds the cheque number - its date only when it is not
-    // the block's own - so it is as wide as "103" and its heading, no wider.
-    ...rojmelSide("p", "જાવક", [8.4, 13.8, 8.6, 4.6, 5.7, 5.7, null]),
+    // Receipt side: 8.4 + 9.5 + 5.0 + 5.0 + 6.0 + 6.0 + 6.0 = 45.9%
+    ...rojmelSide("r", "આવક", [8.4, 9.5, 5.0, 5.0, 6.0, 6.0, 6.0]),
+    // Payment side: 8.4 + 14.5 + 7.0 + 6.2 + 6.0 + 6.0 + null (6.0) = 54.1%
+    ...rojmelSide("p", "જાવક", [8.4, 14.5, 7.0, 6.2, 6.0, 6.0, null]),
   ]),
   khatavahi: columns([
     ["date", "તારીખ", 12],
@@ -614,7 +639,7 @@ export const DEFAULT_PAGE: Record<
   PrintableReportId,
   Required<Pick<PageSetup, "paper" | "orientation" | "marginMm">>
 > = {
-  rojmel: { paper: "legal-in", orientation: "landscape", marginMm: 5 },
+  rojmel: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   khatavahi: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   grantRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   chequeRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
@@ -863,6 +888,21 @@ export const ROW_KEYS = {
 } as const;
 
 /**
+ * A rojmel LINE, as opposed to the row it happens to print on. A row key is a
+ * block and a place in it, so a bill added above moves what sits at that place;
+ * a line key is made from the record the line prints (rojmel-rows.ts), so a
+ * cell's own wrap stays on "this bill" through new entries and new pages.
+ *
+ * It takes a row key's place in a cell target. The two sides of a rojmel row
+ * are different lines, so the print page marks each cell with data-line.
+ */
+export const LINE_KEY_PREFIX = "line:";
+
+export function isLineKey(row: string): boolean {
+  return row.startsWith(LINE_KEY_PREFIX);
+}
+
+/**
  * Row GROUPS: the same row of every block. A report made of blocks - the
  * rojmel's, the ledger's accounts, the vouchers - repeats the same rows in each,
  * and a school changing "the row" means that row everywhere, as a column change
@@ -902,6 +942,67 @@ export function textOf(
   const own = layout?.texts?.[id];
   const template = own?.trim() ? own : fallback;
   return template.replace(/\{([^{}]+)\}/g, (whole, name: string) => vars[name] ?? whole);
+}
+
+/**
+ * The cells that join a number and its date - the rojmel's voucher (or bill)
+ * number with its date, the cheque number with its date - and how they print
+ * unless a school arranges them: on one line. In the layout editor the school
+ * edits the arrangement as words: Enter between {નંબર} and {તારીખ} puts the date
+ * under the number, Backspace brings it back up, and the two can swap places.
+ * One arrangement per column, so every row of it reads the same.
+ */
+export const ARRANGEMENTS = {
+  rojmelRef: { id: "arrange:p.ref", template: "{નંબર} {તારીખ}" },
+  rojmelCheque: { id: "arrange:p.cheque", template: "{નંબર} {તારીખ}" },
+} as const;
+
+/** One piece of an arranged line: a figure (`part` names it) or words of the school's own. */
+export interface ArrangedSegment {
+  text: string;
+  part: string | null;
+}
+
+/**
+ * The lines an arranged cell prints, top to bottom. A figure left out of the
+ * arrangement still prints, at the end of the last line: a layout never hides a
+ * number. Empty pieces and empty lines are dropped.
+ */
+export function arrangeLines(
+  layout: ReportLayout | undefined,
+  id: string,
+  fallback: string,
+  parts: Record<string, string>,
+): ArrangedSegment[][] {
+  const own = layout?.texts?.[id];
+  const template = own?.trim() ? own : fallback;
+  const used = new Set<string>();
+  const lines = template.split(/\r?\n/).map((line) => {
+    const segments: ArrangedSegment[] = [];
+    let last = 0;
+    for (const match of line.matchAll(/\{([^{}]+)\}/g)) {
+      segments.push({ text: line.slice(last, match.index), part: null });
+      const name = match[1]!;
+      if (name in parts) {
+        used.add(name);
+        segments.push({ text: parts[name]!, part: name });
+      } else {
+        segments.push({ text: match[0], part: null });
+      }
+      last = match.index + match[0].length;
+    }
+    segments.push({ text: line.slice(last), part: null });
+    return segments.map((segment) => ({ ...segment, text: segment.text.trim() }));
+  });
+  const missing = Object.keys(parts).filter((name) => !used.has(name));
+  if (missing.length > 0) {
+    const tail = lines.at(-1) ?? [];
+    tail.push(...missing.map((name) => ({ text: parts[name]!, part: name })));
+    if (lines.length === 0) lines.push(tail);
+  }
+  return lines
+    .map((line) => line.filter((segment) => segment.text !== ""))
+    .filter((line) => line.length > 0);
 }
 
 export function isGroupKey(row: string): boolean {
@@ -978,13 +1079,15 @@ export function parseTargetKey(key: string): LayoutTarget | null {
 
 /**
  * How one cell looks: its column's style, then its row group's (the same row
- * in every block), then its own row's, then its own.
+ * in every block), then its own row's, then its own - by its row, then by the
+ * line it prints.
  */
 export function styleAt(
   layout: ReportLayout,
   row: string | null,
   col: string | null,
   group: string | null = null,
+  line: string | null = null,
 ): CellStyle {
   const pick = (key: string): CellStyle => layout.styles[key] ?? {};
   return {
@@ -993,7 +1096,37 @@ export function styleAt(
     ...(group !== null && col !== null ? pick(targetKey({ kind: "cell", row: group, col })) : {}),
     ...(row !== null ? pick(targetKey({ kind: "row", row })) : {}),
     ...(row !== null && col !== null ? pick(targetKey({ kind: "cell", row, col })) : {}),
+    ...(line !== null && col !== null ? pick(targetKey({ kind: "cell", row: line, col })) : {}),
   };
+}
+
+/**
+ * Whether one cell wraps: its own choice, else the whole report's. Undefined
+ * means nobody chose, and the form does what it always did.
+ */
+export function wrapAt(
+  layout: ReportLayout,
+  row: string | null,
+  col: string | null,
+  group: string | null = null,
+  line: string | null = null,
+): boolean | undefined {
+  return styleAt(layout, row, col, group, line).wrap ?? layout.wrap;
+}
+
+/** True when anything in the layout asks for wrapping. */
+export function layoutHasWrap(layout: ReportLayout): boolean {
+  return layout.wrap === true || Object.values(layout.styles).some((style) => style.wrap === true);
+}
+
+/** Every wrap and one-line choice taken away: the form's own behaviour again. */
+export function withoutWrap(layout: ReportLayout): ReportLayout {
+  const styles: ReportLayout["styles"] = {};
+  for (const [key, { wrap: _wrap, ...rest }] of Object.entries(layout.styles)) {
+    if (Object.keys(rest).length > 0) styles[key] = rest;
+  }
+  const { wrap: _wrap, ...next } = layout;
+  return { ...next, styles };
 }
 
 /** The blank space after a row: its own, else its group's. */
@@ -1116,7 +1249,7 @@ export function cssString(value: string): string {
 /** The font stack for a layout font, falling back to what the app always used. */
 export function fontStack(id: LayoutFontId | undefined): string {
   const primary = fontFamily(id);
-  const rest = ['"Noto Sans Gujarati"', '"Shruti"', '"Nirmala UI"', '"Lohit Gujarati"', "serif"];
+  const rest = ['"Noto Sans Gujarati"', '"Shruti"', '"Nirmala UI"', '"Lohit Gujarati"', "sans-serif"];
   return [cssString(primary), ...rest.filter((entry) => entry !== cssString(primary))].join(", ");
 }
 
@@ -1163,6 +1296,20 @@ function declarations(style: CellStyle, report?: PrintableReportId): string[] {
     }
   }
   return [...out, ...textDeclarations(style), ...boxDeclarations(style)];
+}
+
+/**
+ * Wrapping reaches a cell's arranged number and date too: they keep one line
+ * each, so a date is never broken, and the date drops under the number when
+ * the two do not fit side by side. `--one-line` tells fitCells to leave a cell
+ * the school wants on one line.
+ */
+function wrapRules(selector: string, wrap: boolean): string[] {
+  return [
+    `${selector} .arranged { white-space: ${wrap ? "normal" : "nowrap"}; max-width: ${wrap ? "100%" : "none"}; }`,
+    `${selector} .arranged-line { flex-wrap: ${wrap ? "wrap" : "nowrap"}; }`,
+    ...(wrap ? [] : [`${selector} { --one-line: 1; }`]),
+  ];
 }
 
 const FLEX_ALIGN: Record<Alignment, string> = { left: "flex-start", center: "center", right: "flex-end" };
@@ -1232,6 +1379,17 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   // colour every rule of every table and heading box.
   if (layout.colour) rules.push(`${root} .sheet * { color: ${layout.colour}; }`);
   if (layout.lineColour) rules.push(`${root} .sheet * { border-color: ${layout.lineColour}; }`);
+  // Only the width: a line the form leaves out (border-style none) stays out.
+  if (layout.lineWeight) {
+    rules.push(`${root} .sheet, ${root} .sheet * { border-width: ${LINE_WEIGHT_PT[layout.lineWeight]}pt; }`);
+  }
+  // Weight, slant and underline reach every piece of the sheet, the form's own
+  // bold labels and totals too; a column's, row's or cell's own choice still wins.
+  const text: string[] = [];
+  if (layout.bold !== undefined) text.push(`font-weight: ${layout.bold ? 700 : 400}`);
+  if (layout.italic !== undefined) text.push(`font-style: ${layout.italic ? "italic" : "normal"}`);
+  if (layout.underline !== undefined) text.push(`text-decoration: ${layout.underline ? "underline" : "none"}`);
+  if (text.length > 0) rules.push(`${root} .sheet * { ${text.join("; ")}; }`);
 
   // No colours of the form's own. A school's highlights still apply: they come
   // later, with selectors at least as specific.
@@ -1262,11 +1420,26 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   if (layout.align) {
     rules.push(`${table} > * > tr > :is(td, th) { text-align: ${layout.align}; }`);
   }
+  if (layout.vAlign) {
+    rules.push(`${table} > * > tr > :is(td, th) { vertical-align: ${layout.vAlign}; }`);
+  }
+  if (layout.wrap) {
+    // Weaker than a column's, a row's or a cell's own choice, as `align` is.
+    const cells = `${table} > * > tr > :is(td, th)`;
+    rules.push(`${cells} { white-space: normal; }`, ...wrapRules(cells, true));
+  }
 
   const order = { part: 0, col: 1, row: 2, cell: 3 } as const;
-  // A row group before a single row, so the row's own choice wins.
+  // A row group before a single row, so the row's own choice wins - and a
+  // line's after both, as in styleAt.
   const groupFirst = (target: LayoutTarget): number =>
-    (target.kind === "row" || target.kind === "cell") && !isGroupKey(target.row) ? 1 : 0;
+    target.kind !== "row" && target.kind !== "cell"
+      ? 0
+      : isGroupKey(target.row)
+        ? 0
+        : isLineKey(target.row)
+          ? 2
+          : 1;
   // REPORT_PARTS lists a heading before the pieces inside it, and its rules
   // reach those pieces too: in that order a piece's own choice comes later and wins.
   const partOrder = (target: LayoutTarget): number =>
@@ -1299,8 +1472,11 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
         ? `${table} :is(td, th)[data-col=${cssString(target.col)}]`
         : target.kind === "row"
           ? `${table} ${rowSelector(target.row)} > :is(td, th)`
-          : `${table} ${rowSelector(target.row)} > :is(td, th)[data-col=${cssString(target.col)}]`;
+          : isLineKey(target.row)
+            ? `${table} tr > :is(td, th)[data-col=${cssString(target.col)}][data-line=${cssString(target.row)}]`
+            : `${table} ${rowSelector(target.row)} > :is(td, th)[data-col=${cssString(target.col)}]`;
     rules.push(`${selector} { ${body.join("; ")}; }`);
+    if (style.wrap !== undefined) rules.push(...wrapRules(selector, style.wrap));
     if (report === "rojmel" && style.fill && style.fill !== NO_FILL && !style.colour) {
       rules.push(`${selector} * { color: inherit; text-decoration: none; }`);
     }

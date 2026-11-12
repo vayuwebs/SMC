@@ -13,7 +13,7 @@
  *   - પત્રક-D's one row per cheque AND grant head, not per cheque (SPEC 6.7)
  */
 import { paise, sum, type Paise, ZERO } from "../lib/money.js";
-import { billNet, chequeAllocation, chequeAmount } from "./allocation.js";
+import { billNet, byVoucherOrder, chequeAllocation, chequeAmount } from "./allocation.js";
 import type { BookBill, BookCheque, YearBook } from "./types.js";
 
 // --------------------------------------------------------- cheque register
@@ -32,10 +32,10 @@ export interface ChequeRegisterRow {
   remarksGu: string | null;
 }
 
-/** ચેક રજીસ્ટર - one row per cheque, in cheque-number order (SPEC 6.4). */
+/** ચેક રજીસ્ટર - one row per cheque, in voucher order (voucher, then cheque number). */
 export function chequeRegister(book: YearBook): ChequeRegisterRow[] {
   return [...book.cheques]
-    .sort((a, b) => a.chequeNo - b.chequeNo)
+    .sort(byVoucherOrder)
     .map((cheque, index) => ({
       serial: index + 1,
       chequeNo: cheque.chequeNo,
@@ -266,7 +266,7 @@ export function patrakD(book: YearBook): PatrakDRow[] {
 
   const rows: Omit<PatrakDRow, "serial">[] = [];
 
-  for (const cheque of [...book.cheques].sort((a, b) => a.chequeNo - b.chequeNo)) {
+  for (const cheque of [...book.cheques].sort(byVoucherOrder)) {
     const allocation = [...chequeAllocation(cheque).entries()].sort(
       (a, b) => (order.get(a[0]) ?? 0) - (order.get(b[0]) ?? 0),
     );

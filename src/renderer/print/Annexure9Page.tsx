@@ -3,7 +3,6 @@ import type { Annexure9 } from "../../engine/types.js";
 import type { FinancialYearDto, SchoolDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
 import { formatDate } from "../../lib/dates.js";
-import { toGujaratiDigits } from "../../lib/gujarati.js";
 import { AnnexureBanner } from "./AnnexureBanner.js";
 import { GapRow, LayoutColGroup, Text } from "./layout-context.js";
 import type { ANNEXURE9_ROWS } from "../../shared/report-layout.js";
@@ -35,12 +34,12 @@ export function Annexure9Page({
   year: FinancialYearDto;
   report: Annexure9;
 }): JSX.Element {
-  const money = (paise: number): string => toGujaratiDigits(formatAmount(paise));
-  const endDate = toGujaratiDigits(formatDate(year.endDate));
+  const money = (paise: number): string => formatAmount(paise);
+  const endDate = formatDate(year.endDate);
 
   return (
     <div className="sheet">
-      <AnnexureBanner school={school} year={year} numberGu="૯" />
+      <AnnexureBanner school={school} year={year} numberGu="9" />
 
       <div className="annexure-heading" data-part="heading">
         <Text id="part:heading">બેંક સાથે મેળવણું – રીકન્સીલિએશન</Text>
@@ -49,13 +48,13 @@ export function Annexure9Page({
       <table className="form reconciliation" data-layout="">
         <LayoutColGroup />
         <tbody>
-          <Line k="cashbook" marker="૧ (+)" text={`રોજમેળ પ્રમાણે તા– ${endDate} ની સિલક ઉમેરવી`}>
+          <Line k="cashbook" marker="1 (+)" text={`રોજમેળ પ્રમાણે તા– ${endDate} ની સિલક ઉમેરવી`}>
             {money(report.cashbookBankPaise)}
           </Line>
-          <Line k="notCashed" index="૧" text="ચેક ઈસ્યુ થયા હોય પરંતુ વટાવેલ ન હોય">
+          <Line k="notCashed" index="1" text="ચેક ઈસ્યુ થયા હોય પરંતુ વટાવેલ ન હોય">
             {money(report.chequesIssuedNotCashedPaise)}
           </Line>
-          <Line k="notInCashbook" index="૨" text="બેંક માં જમા નોંધ થઈ હોય પરંતુ રોજમેળમાં દર્શાવ્યું ન હોય">
+          <Line k="notInCashbook" index="2" text="બેંક માં જમા નોંધ થઈ હોય પરંતુ રોજમેળમાં દર્શાવ્યું ન હોય">
             {money(report.creditsInBankNotInCashbookPaise)}
           </Line>
           <Line k="addTotal" className="subtotal" text="કુલ" right>
@@ -63,12 +62,12 @@ export function Annexure9Page({
           </Line>
 
           <Line k="deduct" marker="(–)" text="બાદ કરવું" />
-          <Line k="notCredited" index="૧" text="બેંકમાં મોકલવામાં આવેલી રોકડ કે ચેક બેંક ખાતામાં જમા ન થઈ હોય">
+          <Line k="notCredited" index="1" text="બેંકમાં મોકલવામાં આવેલી રોકડ કે ચેક બેંક ખાતામાં જમા ન થઈ હોય">
             {money(report.depositsNotYetCreditedPaise)}
           </Line>
           <Line
             k="charges"
-            index="૨"
+            index="2"
             text="બેંક ખાતામાં ઉધારવામાં આવેલ ચાર્જિસ પરંતુ તે રોજમેળમાં ઉલ્લેખ થયેલ ન હોય"
           >
             {money(report.bankChargesNotInCashbookPaise)}

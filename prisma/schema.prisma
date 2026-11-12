@@ -241,6 +241,11 @@ model Bill {
   chequeId Int?
   cheque   Cheque? @relation(fields: [chequeId], references: [id], onDelete: SetNull)
 
+  // How a reimbursement paid this bill: "CASH" (from the money taken in hand) or
+  // "BANK" (online). NULL follows the cheque's type: REIMBURSEMENT_BANK is
+  // bank, any other cash. Only a reimbursement's bills are ever either.
+  payMode String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -267,6 +272,18 @@ model Cheque {
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
 
   remarksGu String?
+
+  // A cheque the bank sent back unpaid. Its money comes back into the bank on
+  // returnedDate: an આવક line in the rojmel and a credit in each head's ledger.
+  // No other report shows a returned cheque. null = not returned.
+  returnedDate String?
+
+  // The cheque written again for a returned one. It keeps the returned cheque's
+  // voucher number, type, bills and allocation - those stay stored on the
+  // returned cheque, once - and only its own number and dates are new.
+  replacesChequeId Int?    @unique
+  replacesCheque   Cheque? @relation("ChequeReplacement", fields: [replacesChequeId], references: [id], onDelete: Restrict)
+  replacedBy       Cheque? @relation("ChequeReplacement")
 
   // amountPaise is deliberately absent: a cheque's amount is the sum of its
   // allocation, which for REIMBURSEMENT and DIRECT is computed from bills.

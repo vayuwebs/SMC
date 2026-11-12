@@ -1,0 +1,36 @@
+<!doctype html><html lang="gu"><head><meta charset="utf-8">
+<link rel="stylesheet" href="base.css"><style>
+.reps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.rep{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;display:flex;flex-direction:column;gap:4px}
+.rep b{font-size:14.5px;font-weight:600}
+.rep > span{font-size:12.5px;color:var(--ink-3);line-height:1.5}
+.rep .a{margin-top:12px;display:flex;gap:8px}
+.rep .a .btn{padding:6px 12px;font-size:12.5px}
+.rep.sel{border-color:var(--accent-line);box-shadow:inset 3px 0 0 var(--accent)}
+.secl{font-size:12px;color:var(--ink-3);margin:24px 0 10px}
+</style></head><body>
+<div class="app"><aside class="side"><div class="brand"><b>SMC હિસાબ</b><span>બેટાવાડાના મુવાડા પ્રા. શાળા</span></div><nav class="nav"><a><svg viewBox="0 0 20 20"><path d="M3 10l7-6 7 6v7H3z"/></svg>ડેશબોર્ડ</a><div class="nav-group">માહિતી</div><a><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M3 8h14"/></svg>ઉઘડતી સિલક</a><a><svg viewBox="0 0 20 20"><path d="M10 3v10M6 9l4 4 4-4M4 17h12"/></svg>ગ્રાન્ટ આવક</a><a><svg viewBox="0 0 20 20"><path d="M5 3h10v14l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5z"/><path d="M8 7h4M8 10h4"/></svg>બિલ</a><a><svg viewBox="0 0 20 20"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M5.5 11h5M13 9h2"/></svg>ચેક</a><a><svg viewBox="0 0 20 20"><path d="M3 8l7-4 7 4M4 8v7M8 8v7M12 8v7M16 8v7M3 16h14"/></svg>બેન્ક ચાર્જ</a><a><svg viewBox="0 0 20 20"><path d="M4 10l4 4 8-8"/></svg>પરિશિષ્ટ ૯ મેળવણું</a><div class="nav-group">છાપકામ</div><a class="on"><svg viewBox="0 0 20 20"><path d="M6 7V3h8v4M5 14H3V8h14v6h-2"/><rect x="6" y="11" width="8" height="6"/></svg>રિપોર્ટ</a><div class="nav-group">સેટિંગ</div><a><svg viewBox="0 0 20 20"><path d="M2 8l8-4 8 4-8 4z"/><path d="M5 10v4c3 2 7 2 10 0v-4"/></svg>શાળા અને ગ્રાન્ટ હેડ</a><a><svg viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6a3 3 0 016 0v3"/></svg>વર્ષ બંધ કરો</a><a><svg viewBox="0 0 20 20"><path d="M5 3h7l3 3v11H5z"/><path d="M12 3v3h3"/></svg>જૂની ફાઈલ લાવો</a><a><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg>સેટિંગ</a></nav><div class="side-foot"><span class="dot"></span>બેકઅપ સાચવેલ · ૨ મિનિટ પહેલાં</div></aside><div class="main">
+<div class="topbar"><div class="crumb">છાપકામ &nbsp;/&nbsp; <b>રિપોર્ટ</b></div>
+<div class="row"><span class="year">વર્ષ ૨૦૨૫–૨૬ <span style="color:var(--ink-3)">▾</span></span></div></div>
+<div class="content">
+<div class="head"><div><h1>રિપોર્ટ</h1><p class="sub">બધા રિપોર્ટ દાખલ કરેલી માહિતી પરથી આપોઆપ બને છે.</p></div>
+<div class="row"><span class="btn">છાપવાનું લેઆઉટ</span><button class="btn primary">બધા રિપોર્ટ એક PDF માં</button></div></div>
+<div class="secl">હિસાબી ચોપડા</div>
+<div class="reps">
+<div class="rep sel"><b>રોજમેળ</b><span>રોકડ અને બેન્ક – તારીખ મુજબ જમા/ઉધાર, પાના નંબર સાથે</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+<div class="rep"><b>ખાતાવહી</b><span>દરેક ગ્રાન્ટ હેડની અલગ ખાતાવહી</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+<div class="rep"><b>ગ્રાન્ટ રજિસ્ટર</b><span>વર્ષ દરમ્યાન મળેલ દરેક ગ્રાન્ટની નોંધ</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+</div>
+<div class="secl">રજિસ્ટર અને વાઉચર</div>
+<div class="reps">
+<div class="rep"><b>ચેક રજિસ્ટર</b><span>આપેલા ચેક, તારીખ અને વટાવ્યાની વિગત</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+<div class="rep"><b>બિલ રજિસ્ટર</b><span>બધાં બિલ – વાઉચર નંબર મુજબ</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+<div class="rep"><b>વાઉચર</b><span>દરેક ચેક માટે ચુકવણી વાઉચર</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+</div>
+<div class="secl">પત્રકો</div>
+<div class="reps">
+<div class="rep"><b>પત્રક-D</b><span>ગ્રાન્ટ મુજબ ખર્ચનું પત્રક</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+<div class="rep"><b>પરિશિષ્ટ ૯</b><span>બેન્ક સાથે મેળવણું (રીકન્સીલિએશન)</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+<div class="rep"><b>પરિશિષ્ટ ૧૦</b><span>વાર્ષિક ગ્રાન્ટ પત્રક</span><div class="a"><span class="btn">પૂર્વાવલોકન</span><span class="btn">PDF</span><span class="btn ghost">Excel</span></div></div>
+</div>
+</div></div></div></body></html>

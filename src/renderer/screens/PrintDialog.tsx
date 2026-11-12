@@ -22,6 +22,8 @@ import {
 import { useLanguage, useStrings, type Strings } from "../i18n/index.js";
 import { PrintRoot, type LayoutCheck } from "../print/PrintRoot.js";
 import { CustomMarginsDialog, chosenMargins, marginChoices } from "../components/PageMargins.js";
+import { Icon } from "../components/Icon.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * The print window: the report as it will come out of the printer on the
@@ -81,14 +83,14 @@ export function PrintDialog({
   const dirty = saved !== null && JSON.stringify(cleanPage(report, page)) !== JSON.stringify(cleanPage(report, savedPage));
 
   /** Close, asking first when there are settings not saved. */
-  const close = useCallback(() => {
-    if (dirty && !window.confirm(t.printDiscardConfirm)) return;
+  const close = useCallback(async () => {
+    if (dirty && !(await askConfirm(t.printDiscardConfirm))) return;
     onClose(changed);
   }, [dirty, changed, onClose, t]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" && !marginDialog) close();
+      if (event.key === "Escape" && !marginDialog) void close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -338,10 +340,10 @@ export function PrintDialog({
 
         <div className="print-dialog-actions">
           <button className="primary" disabled={busy !== null || saved === null} onClick={() => void run("print")}>
-            🖨️ {busy === "print" ? t.printing : t.printNow}
+            <Icon name="print" /> {busy === "print" ? t.printing : t.printNow}
           </button>
           <button className="ghost" disabled={busy !== null || saved === null} onClick={() => void run("pdf")}>
-            📄 {busy === "pdf" ? t.savingPdf : t.savePdf}
+            <Icon name="pdf" /> {busy === "pdf" ? t.savingPdf : t.savePdf}
           </button>
           <button
             className="ghost"
@@ -350,7 +352,7 @@ export function PrintDialog({
           >
             {busy === "save" ? t.printSaving : t.printSave}
           </button>
-          <button className="ghost" onClick={close}>
+          <button className="ghost" onClick={() => void close()}>
             {t.printClose}
           </button>
         </div>

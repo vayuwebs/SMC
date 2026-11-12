@@ -31,6 +31,12 @@ import {
   resolvePage,
   type ReportLayout,
 } from "../../shared/report-layout.js";
+import {
+  ROJMEL_MIN_SCALE,
+  balancingShiftPx,
+  calculateFitScale,
+  largestFittingScale,
+} from "../../shared/rojmel-adaptive.js";
 import "./print.css";
 
 /**
@@ -70,68 +76,58 @@ export function printableReportFromHash(hash: string): PrintableReport | null {
 }
 
 /**
- * Excel's "shrink to fit", for text wider than its cell. Only that cell gets
- * smaller; a row can only get shorter by it, so sheets already packed still fit.
+ * Text wider than its rojmel cell.
  *
- *   an amount    - a school's first lakh-rupee total at 14pt - down to 9pt;
- *   a rojmel description, footer label or reference, kept to one line so the
- *                page holds its 26 rows - down to 7pt, the way the client sets
- *                long ones to 9 by hand. Beyond that it wraps rather than being cut;
- *   a rojmel column heading whose longest word is wider than its column.
+ *   a description, footer label or receipt reference wraps onto more lines, so
+ *     every page keeps one font size;
+ *   a voucher or cheque number with its date stays on one line and is set
+ *     smaller until it fits - down to 7pt - rather than running into the next
+ *     column. Only that cell gets smaller, so a row never grows by it.
  */
 const PT = 96 / 72;
+const SMALLEST_REF_PX = 7 * PT;
 
 function fitCells(): void {
   // Undo an earlier pass first: after a layout change a cell may fit at its
-  // full size again, or need shrinking by a different amount.
+  // full size again, or need wrapping.
   for (const cell of document.querySelectorAll<HTMLElement>(".print-root [data-fitted]")) {
-    cell.style.fontSize = "";
     cell.style.whiteSpace = "";
+    cell.style.fontSize = "";
     cell.removeAttribute("data-fitted");
   }
 
-  const groups: [selector: string, smallestPt: number, wrapIfStillTooWide: boolean][] = [
-    ["td.figure", 9, false],
-    ["table.rojmel td.detail, table.rojmel td.label, table.rojmel td.ref", 7, true],
-    ["table.rojmel th", 7, false],
-  ];
-  const cells = groups.flatMap(([selector, smallestPt, wrap]) =>
-    [...document.querySelectorAll<HTMLElement>(`.print-root .sheet:not([aria-hidden]) ${selector}`)].map(
-      (cell) => ({ cell, smallestPx: smallestPt * PT, wrap }),
-    ),
+  const visible = ".print-root .sheet:not([aria-hidden]) table.rojmel";
+  const cells = document.querySelectorAll<HTMLElement>(
+    `${visible} td.detail:not([data-spill-left]), ${visible} td.label, ${visible} td[data-col='r.ref'], ${visible} td[data-col='r.cheque']`,
   );
+  for (const cell of cells) {
+    // A cell the school set to one line stays on one line (layoutCss, wrapRules).
+    if (cell.scrollWidth > cell.clientWidth + 1 && !getComputedStyle(cell).getPropertyValue("--one-line")) {
+      cell.style.whiteSpace = "normal";
+      cell.setAttribute("data-fitted", "");
+    }
+  }
 
-  // Every size is read first and written after, a few rounds at most. Reading a
-  // width after each write would make the browser lay out every sheet again
-  // for each half-pixel step - over a thousand times for a year's rojmel.
-  // Text width follows font size closely, so one round lands on (or just
-  // above) the right size and the next rounds only trim what is left.
-  let pending = cells;
-  for (let round = 0; round < 8 && pending.length > 0; round += 1) {
-    const tooWide = pending.flatMap((entry) => {
-      const { cell } = entry;
+  // Every size is read first and written after, a few rounds at most, so the
+  // sheets are not laid out again for each cell. Text width follows font size
+  // closely, so one round lands on the right size and the next only trims.
+  let pending = [...document.querySelectorAll<HTMLElement>(`${visible} td[data-col='p.ref'], ${visible} td[data-col='p.cheque']`)];
+  for (let round = 0; round < 4 && pending.length > 0; round += 1) {
+    const tooWide = pending.flatMap((cell) => {
       if (cell.scrollWidth <= cell.clientWidth + 1) return [];
       const style = getComputedStyle(cell);
       const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
       const ratio = (cell.clientWidth - padding) / Math.max(1, cell.scrollWidth - padding);
-      return [{ ...entry, size: parseFloat(style.fontSize), ratio }];
+      return [{ cell, size: parseFloat(style.fontSize), ratio }];
     });
-
     pending = [];
-    for (const entry of tooWide) {
-      const { cell, size, ratio, smallestPx, wrap } = entry;
+    for (const { cell, size, ratio } of tooWide) {
+      if (size <= SMALLEST_REF_PX) continue;
       // The size that fits, to the half pixel below; at least half a pixel
       // smaller than now, so every round makes progress.
-      const next = Math.max(smallestPx, Math.min(size - 0.5, Math.floor(size * ratio * 2) / 2));
-      if (size > smallestPx) {
-        cell.style.fontSize = `${next}px`;
-        cell.setAttribute("data-fitted", "");
-        pending.push(entry);
-      } else if (wrap) {
-        // At the smallest size and still too wide: wrap rather than cut.
-        cell.style.whiteSpace = "normal";
-        cell.setAttribute("data-fitted", "");
-      }
+      cell.style.fontSize = `${Math.max(SMALLEST_REF_PX, Math.min(size - 0.5, Math.floor(size * ratio * 2) / 2))}px`;
+      cell.setAttribute("data-fitted", "");
+      pending.push(cell);
     }
   }
 }
@@ -156,9 +152,41 @@ function spreadBlocks(): void {
     cell.style.height = "";
     cell.removeAttribute("data-spread");
   }
+  for (const title of document.querySelectorAll<HTMLElement>(".print-root .rojmel-title")) {
+    title.style.marginTop = "";
+  }
+  for (const container of document.querySelectorAll<HTMLElement>(".print-root .rojmel-table-container")) {
+    container.style.zoom = "";
+    container.style.width = "";
+  }
   const sheets = [
     ...document.querySelectorAll<HTMLElement>(".print-root > .sheet[data-spread-blocks]:not([aria-hidden])"),
   ];
+
+  // Ensure uniform 12pt text and 14pt title across all rojmel sheets
+  for (const sheet of sheets) {
+    const zoom = sheetZoom(sheet);
+    const top = sheet.getBoundingClientRect().top;
+    const used = Math.max(
+      0,
+      ...[...sheet.children].map(
+        (child) =>
+          (child.getBoundingClientRect().bottom - top) / zoom + parseFloat(getComputedStyle(child).marginBottom || "0"),
+      ),
+    );
+    const room = parseFloat(getComputedStyle(sheet).minHeight) - used - SPREAD_SAFETY_PX;
+    if (room < 0) {
+      if (sheet.getAttribute("data-auto-size") !== "12") {
+        sheet.setAttribute("data-auto-size", "12");
+        sheet.style.setProperty("--rojmel-text", "12pt");
+        sheet.style.setProperty("--rojmel-figure", "11pt");
+        sheet.style.setProperty("--report-font", "14pt");
+        sheet.style.setProperty("--rojmel-row-height", "5.4mm");
+      }
+      sheet.setAttribute("data-dense", "");
+    }
+  }
+
   const plan = (sheet: HTMLElement): { cells: { cell: HTMLElement; px: number }[]; room: number } => {
     const zoom = sheetZoom(sheet);
     // How far the content reaches - the sheet's own box is never shorter than
@@ -168,7 +196,7 @@ function spreadBlocks(): void {
       0,
       ...[...sheet.children].map(
         (child) =>
-          (child.getBoundingClientRect().bottom - top) / zoom + parseFloat(getComputedStyle(child).marginBottom),
+          (child.getBoundingClientRect().bottom - top) / zoom + parseFloat(getComputedStyle(child).marginBottom || "0"),
       ),
     );
     const rows = [
@@ -186,14 +214,239 @@ function spreadBlocks(): void {
     const plans = sheets.map(plan);
     for (const { cells, room } of plans) {
       // Nothing to share, or (second pass) close enough.
-      if (cells.length === 0 || Math.abs(room) < 1 || (pass === 0 && room <= 0)) continue;
-      const extra = room / cells.length;
-      for (const { cell, px } of cells) {
-        cell.style.height = `${Math.max(1, px + extra)}px`;
-        cell.setAttribute("data-spread", "");
+      if (cells.length === 0 || Math.abs(room) < 1) continue;
+      if (room > 0) {
+        const extra = room / cells.length;
+        for (const { cell, px } of cells) {
+          cell.style.height = `${Math.max(1, px + extra)}px`;
+          cell.setAttribute("data-spread", "");
+        }
+      } else if (pass === 1 && room < -1) {
+        // Space is tight; scale row heights down so it strictly fits within the single page
+        const needed = Math.abs(room) / cells.length;
+        for (const { cell, px } of cells) {
+          cell.style.height = `${Math.max(14, px - needed)}px`;
+          cell.setAttribute("data-spread", "");
+        }
       }
     }
   }
+
+  // Stage 4: If any sheet still has overflow (e.g. dense wrapped descriptions or many bills),
+  // apply gentle, non-extreme fit scaling to .rojmel-table-container (clamped >= 0.88)
+  // to mathematically guarantee ZERO content clipping (Priority 1: Don't miss any content).
+  for (const sheet of sheets) {
+    const zoom = sheetZoom(sheet);
+    const top = sheet.getBoundingClientRect().top;
+    const used = Math.max(
+      0,
+      ...[...sheet.children].map(
+        (child) =>
+          (child.getBoundingClientRect().bottom - top) / zoom + parseFloat(getComputedStyle(child).marginBottom || "0"),
+      ),
+    );
+    const room = parseFloat(getComputedStyle(sheet).minHeight) - used - SPREAD_SAFETY_PX;
+    if (room < -0.5) {
+      const container = sheet.querySelector<HTMLElement>(".rojmel-table-container");
+      if (container && sheet.hasAttribute("data-wrapping")) {
+        fitWrappedSheet(sheet, container);
+      } else if (container) {
+        const containerTop = (container.getBoundingClientRect().top - top) / zoom;
+        const containerBottom = (container.getBoundingClientRect().bottom - top) / zoom;
+        const containerHeight = Math.max(1, containerBottom - containerTop);
+        const availableForContainer = containerHeight + room;
+        // Non-extreme floor guarantees readability while ensuring all content is visible
+        const scale = calculateFitScale(containerHeight, availableForContainer, 0, ROJMEL_MIN_SCALE);
+        if (scale < 1) {
+          container.style.zoom = String(scale);
+          container.style.width = `${Math.round((sheet.clientWidth / scale) * 10) / 10}px`;
+        }
+      }
+    }
+  }
+  balanceRojmelGaps(sheets);
+}
+
+/** What is left of a rojmel sheet under its content, in the sheet's px. */
+function roomLeftPx(sheet: HTMLElement): number {
+  const zoom = sheetZoom(sheet);
+  const top = sheet.getBoundingClientRect().top;
+  const used = Math.max(
+    0,
+    ...[...sheet.children].map(
+      (child) =>
+        (child.getBoundingClientRect().bottom - top) / zoom + parseFloat(getComputedStyle(child).marginBottom || "0"),
+    ),
+  );
+  return parseFloat(getComputedStyle(sheet).minHeight) - used - SPREAD_SAFETY_PX;
+}
+
+/**
+ * A sheet the school's wrapping made too tall. The engine's page stands (the
+ * ledger prints its number), so the table is zoomed down as little as fits -
+ * the zoom is searched for, not worked out, as the lines change with it - and
+ * what the search leaves goes back into its rows.
+ */
+function fitWrappedSheet(sheet: HTMLElement, container: HTMLElement): void {
+  // Heights set while the sheet was too tall hold rows at their wrapped size.
+  for (const cell of sheet.querySelectorAll<HTMLElement>("[data-spread]")) {
+    cell.style.height = "";
+    cell.removeAttribute("data-spread");
+  }
+  const setZoom = (scale: number): void => {
+    container.style.zoom = String(scale);
+    container.style.width = `${Math.round((sheet.clientWidth / scale) * 10) / 10}px`;
+  };
+  const scale = largestFittingScale((candidate) => {
+    setZoom(candidate);
+    return roomLeftPx(sheet) >= 0;
+  });
+  setZoom(scale);
+
+  const room = roomLeftPx(sheet);
+  const rows = [...sheet.querySelectorAll<HTMLElement>("table.rojmel > tbody > tr[data-row]:not([data-fixed-height])")];
+  if (room < 1 || rows.length === 0) return;
+  // Inside the zoomed table a pixel is `scale` of the sheet's.
+  const sheetScale = sheetZoom(sheet) * scale;
+  const sizes = rows.map((row) => row.getBoundingClientRect().height / sheetScale);
+  rows.forEach((row, index) => {
+    const cell = row.querySelector<HTMLElement>(":scope > td");
+    if (!cell) return;
+    cell.style.height = `${sizes[index]! + room / scale / rows.length}px`;
+    cell.setAttribute("data-spread", "");
+  });
+}
+
+/** Millimetres in CSS px, for the page margins. */
+const PX_PER_MM = 96 / 25.4;
+
+/**
+ * From the top of a sheet to the top of its title's ink, in the sheet's px.
+ * The title's line box starts higher than its letters - the font's ascent and
+ * the line's leading are white on paper - so the ink is found from the
+ * baseline (a zero-size probe sitting on it) less the glyphs' measured ascent.
+ */
+function titleInkTopPx(sheet: HTMLElement, title: HTMLElement): number | null {
+  const text = title.querySelector<HTMLElement>("[data-text]") ?? title;
+  const words = text.textContent?.trim() ?? "";
+  const context = document.createElement("canvas").getContext("2d");
+  if (!words || !context) return null;
+  const style = getComputedStyle(text);
+  context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const ascent = context.measureText(words).actualBoundingBoxAscent;
+
+  const probe = document.createElement("span");
+  probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+  text.prepend(probe);
+  const zoom = sheetZoom(sheet);
+  const baseline = (probe.getBoundingClientRect().bottom - sheet.getBoundingClientRect().top) / zoom;
+  probe.remove();
+  return baseline - ascent;
+}
+
+/**
+ * Put as much white above the rojmel's title (from the top of its letters) as
+ * below its table, on the paper. Runs after the rows are spread, so a full
+ * sheet's leftover is only the safety margin; the fullest sheet decides the
+ * shift and every sheet takes the same one, so the title sits at the same
+ * height on every page and a short last page keeps its space at the bottom.
+ */
+function balanceRojmelGaps(sheets: HTMLElement[]): void {
+  const measured = sheets.flatMap((sheet) => {
+    const title = sheet.querySelector<HTMLElement>(":scope > .rojmel-title");
+    const inkTop = title ? titleInkTopPx(sheet, title) : null;
+    if (!title || inkTop === null) return [];
+    const zoom = sheetZoom(sheet);
+    const top = sheet.getBoundingClientRect().top;
+    const used = Math.max(
+      0,
+      ...[...sheet.children].map((child) => (child.getBoundingClientRect().bottom - top) / zoom),
+    );
+    const style = getComputedStyle(sheet);
+    const mm = (name: string): number => {
+      const value = parseFloat(style.getPropertyValue(name));
+      return (Number.isNaN(value) ? 10 : value) * PX_PER_MM;
+    };
+    return [{
+      title,
+      inkTop,
+      bottomGap: parseFloat(style.minHeight) - used,
+      marginTop: mm("--sheet-m-top"),
+      marginBottom: mm("--sheet-m-bottom"),
+    }];
+  });
+  if (measured.length === 0) return;
+  const fullestGap = Math.min(...measured.map((m) => m.bottomGap));
+  for (const m of measured) {
+    const shift = Math.min(
+      Math.max(0, m.bottomGap),
+      balancingShiftPx({ inkTopPx: m.inkTop, bottomGapPx: fullestGap, marginTopPx: m.marginTop, marginBottomPx: m.marginBottom }),
+    );
+    if (Math.abs(shift) >= 0.25) m.title.style.marginTop = `${Math.round(shift * 100) / 100}px`;
+  }
+}
+
+/**
+ * From the second row onwards in payments (where p.date is empty), descriptions
+ * are kept on one line. When a description does not fit in its cell (p.detail),
+ * it shifts left so the excess characters move into the empty p.date column.
+ * The rule between the two cells is then dropped on that row (print.css,
+ * [data-spilled]) so it does not cut through the words; the heavy આવક/જાવક
+ * rule on the date cell's other side stays.
+ *
+ * A description longer than both columns together wraps instead, across the
+ * width of both, so it never runs into the voucher column. Runs before
+ * spreadBlocks, so the extra lines are counted when the rows are sized.
+ */
+function spillCells(): void {
+  for (const span of document.querySelectorAll<HTMLElement>(".print-root [data-spill-span]")) {
+    span.style.transform = "";
+    span.style.width = "";
+    span.style.whiteSpace = "";
+  }
+  for (const cell of document.querySelectorAll<HTMLElement>(".print-root [data-spilled]")) {
+    delete cell.dataset.spilled;
+  }
+  const cells = document.querySelectorAll<HTMLElement>(
+    ".print-root .sheet:not([aria-hidden]) table.rojmel td[data-col='p.detail'][data-spill-left]",
+  );
+  // Every width is read first and written after, so the sheets are laid out once.
+  const moves = [...cells].flatMap((cell) => {
+    const span = cell.querySelector<HTMLElement>("[data-spill-span]");
+    if (!span) return [];
+    const spanRect = span.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    const rightOverflow = spanRect.right - (cellRect.right - 2);
+    if (rightOverflow <= 0) return [];
+    const dateCellRect = cell.closest("tr")?.querySelector<HTMLElement>("td[data-col='p.date']")?.getBoundingClientRect();
+    const maxShift = dateCellRect ? Math.max(0, spanRect.left - (dateCellRect.left + 2)) : 0;
+    // Screen pixels per CSS pixel inside this cell: the sheet's and the table's zoom together.
+    const scale = cell.offsetWidth > 0 ? cellRect.width / cell.offsetWidth : 1;
+    const wrapWidth = cellRect.right - 2 - (dateCellRect ? dateCellRect.left + 2 : spanRect.left);
+    return [{ cell, span, scale, wrap: rightOverflow > maxShift, shift: Math.min(rightOverflow, maxShift), wrapWidth, maxShift }];
+  });
+  for (const { cell, span, scale, wrap, shift, wrapWidth, maxShift } of moves) {
+    // The words now reach into the date cell: no rule between the two.
+    if (wrap ? maxShift > 0 : shift > 0) cell.dataset.spilled = "";
+    if (wrap) {
+      span.style.whiteSpace = "normal";
+      span.style.width = `${wrapWidth / scale}px`;
+      if (maxShift > 0) span.style.transform = `translateX(-${maxShift / scale}px)`;
+    } else if (shift > 0) {
+      span.style.transform = `translateX(-${shift / scale}px)`;
+    }
+  }
+}
+
+/** Moved-left descriptions that still reach past their own cell's right edge. */
+function overflowingSpills(): number {
+  const cells = document.querySelectorAll<HTMLElement>(
+    ".print-root > .sheet:not([aria-hidden]) table.rojmel td[data-col='p.detail'][data-spill-left]",
+  );
+  return [...cells].filter((cell) => {
+    const span = cell.querySelector<HTMLElement>("[data-spill-span]");
+    return span ? span.getBoundingClientRect().right > cell.getBoundingClientRect().right + 1 : false;
+  }).length;
 }
 
 /**
@@ -203,7 +456,7 @@ function spreadBlocks(): void {
  */
 function overflowingCells(): number {
   const cells = document.querySelectorAll<HTMLElement>(
-    ".print-root > .sheet:not([aria-hidden]) table[data-layout] td",
+    ".print-root > .sheet:not([aria-hidden]) table[data-layout] td:not([data-spill-left])",
   );
   return [...cells].filter((cell) => cell.scrollWidth > cell.clientWidth + 1).length;
 }
@@ -218,7 +471,11 @@ function overflowingSheets(): number[] {
   const sheets = document.querySelectorAll<HTMLElement>(".print-root > .sheet:not([aria-hidden])");
   return [...sheets].flatMap((sheet, index) => {
     const room = parseFloat(getComputedStyle(sheet).minHeight);
-    const tooTall = sheet.getBoundingClientRect().height / sheetZoom(sheet) > room + 1;
+    // A sheet is capped at one page and hides the rest (print.css), so its own
+    // box never grows: what it holds is its scrollHeight.
+    const tooTall =
+      sheet.getBoundingClientRect().height / sheetZoom(sheet) > room + 1 ||
+      sheet.scrollHeight > sheet.clientHeight + 1;
     const tooWide = sheet.scrollWidth > sheet.clientWidth + 1;
     return tooTall || tooWide ? [index + 1] : [];
   });
@@ -323,8 +580,9 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
       void layoutFontsReady(layoutValue?.layout).then(() => {
         if (pending() > 0) return;
         fitCells();
+        spillCells();
         spreadBlocks();
-        onChecked?.({ sheets: overflowingSheets(), cells: overflowingCells() });
+        onChecked?.({ sheets: overflowingSheets(), cells: overflowingCells() + overflowingSpills() });
         window.__printReady = true;
       });
     };

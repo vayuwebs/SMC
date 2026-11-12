@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
+import { Icon } from "./Icon.js";
 import { formatDate, maskTypedDate, parseTypedDate } from "../../lib/dates.js";
 
 /**
@@ -70,7 +71,7 @@ export function DateInput({
         type="button"
         className="ghost small date-input-picker"
         tabIndex={-1}
-        aria-label="📅"
+        aria-label="calendar"
         onClick={() => {
           const input = picker.current;
           if (!input) return;
@@ -82,7 +83,7 @@ export function DateInput({
           }
         }}
       >
-        📅
+        <Icon name="calendar" size={14} />
       </button>
       <input
         ref={picker}

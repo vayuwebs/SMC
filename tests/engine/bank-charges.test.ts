@@ -59,17 +59,30 @@ describe("a bank charge", () => {
     );
   });
 
-  it("does not print in the rojmel, but is a debit in its head's ledger", () => {
+  it("prints in the rojmel on the bank side, with no voucher or cheque number", () => {
     const rojmel = buildRojmel(book);
-    const hasCharge = rojmel.blocks.some((each) =>
-      each.paymentLines.some((line) => line.source.kind === "charge"),
-    );
-    expect(hasCharge).toBe(false);
+    const block = rojmel.blocks.find((each) => each.paymentLines.some((line) => line.source.kind === "charge"))!;
+    expect(block.fromDate).toBe("2025-09-30");
+    const line = block.paymentLines.find((each) => each.source.kind === "charge")!;
+    expect(line.bankPaise).toBe(CHARGE);
+    expect(line.cashPaise).toBe(0);
+    expect(line.referenceText).toBe("");
+    expect(line.chequeText).toBe("");
+    expect(line.descriptionGu).toContain("બેન્ક ચાર્જ");
+    // The footer sums still close: the block's bank closing is less by the charge.
+    expect(block.closingBankPaise).toBe(block.receiptTotalBankPaise - block.spentBankPaise);
+    // And the book ends where the balances say.
+    expect(rojmel.blocks.at(-1)!.closingBankPaise).toBe(yearEndBalance(book).bankPaise);
+  });
 
+  it("is a debit in its head's ledger, with its rojmel page", () => {
+    const rojmel = buildRojmel(book);
     const pages = pageResolver(rojmel);
     const account = ledger(book, "SWACHHATA", { pages });
     const row = account.rows.find((each) => each.descriptionGu === "બેન્ક ચાર્જ")!;
     expect(row.debitPaise).toBe(CHARGE);
+    expect(row.rojmelPage).toBe(pages.chargePage("C1"));
+    expect(row.rojmelPage).not.toBeNull();
     expect(account.closingPaise).toBe(ledger(plain, "SWACHHATA").closingPaise - CHARGE);
     expect(ledger(book, "FIRST_AID").rows.some((each) => each.descriptionGu === "બેન્ક ચાર્જ")).toBe(false);
   });

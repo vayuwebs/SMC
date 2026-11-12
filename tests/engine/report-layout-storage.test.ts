@@ -245,6 +245,25 @@ describe("colours and page setup in the workbook", () => {
     saved(await accounts.saveReportLayout("chequeRegister", emptyLayout()));
   });
 
+  it("wraps the rojmel's words for the whole report, grows their rows, and leaves its amounts alone", async () => {
+    const before = (await roundTrip("rojmel")).worksheets[0]!;
+    saved(await accounts.saveReportLayout("rojmel", { ...emptyLayout(), wrap: true }));
+    const sheet = (await roundTrip("rojmel")).worksheets[0]!;
+    saved(await accounts.saveReportLayout("rojmel", emptyLayout()));
+
+    let wordsWrapped = 0;
+    let grown = 0;
+    sheet.eachRow((row, rowNo) => {
+      row.eachCell((cell) => {
+        if (typeof cell.value === "number") expect(cell.alignment?.wrapText).toBeFalsy();
+        else if (cell.alignment?.wrapText) wordsWrapped += 1;
+      });
+      if ((row.height ?? 0) > (before.getRow(rowNo).height ?? 0)) grown += 1;
+    });
+    expect(wordsWrapped).toBeGreaterThan(0);
+    expect(grown).toBeGreaterThan(0);
+  });
+
   it("carries Excel's borders, italic, underline, vertical alignment and wrapping", async () => {
     const layout: ReportLayout = withStyle(emptyLayout(), { kind: "col", col: "payee" }, {
       italic: true,

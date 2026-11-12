@@ -11,6 +11,8 @@ import { LayoutEditor } from "./LayoutEditor.js";
 import { PrintDialog } from "./PrintDialog.js";
 import { paperOf, resolvePage } from "../../shared/report-layout.js";
 import "../print/print.css";
+import { Icon } from "../components/Icon.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * Reports.
@@ -29,29 +31,6 @@ type Tab = PrintableReportId | FigureTab;
 const STATUTORY_TABS: PrintableReportId[] = ["rojmel", "khatavahi", "annexure10", "annexure9", "patrakD"];
 const REGISTER_TABS: PrintableReportId[] = ["grantRegister", "chequeRegister", "billRegister", "vouchers"];
 const FIGURE_TABS: FigureTab[] = ["balances", "ledgers"];
-
-function getReportDescription(tab: PrintableReportId): string {
-  switch (tab) {
-    case "rojmel":
-      return "રોજમેળ (કેશ બુક) — શાળાના તમામ આવક અને જાવક વ્યવહારોની દૈનિક ક્રમબદ્ધ નોંધ.";
-    case "khatavahi":
-      return "ખાતાવહી — ગ્રાન્ટ હેડ મુજબ ખાતાઓની વિગતો, જમા અને ઉધાર વ્યવહારો તથા સિલક.";
-    case "annexure10":
-      return "પરિશિષ્ટ ૧૦ — ગ્રાન્ટ મુજબ વાર્ષિક હિસાબ પત્રક (ઓપનિંગ બેલેન્સ, મળેલી ગ્રાન્ટ, ખર્ચ અને આખર સિલક).";
-    case "annexure9":
-      return "પરિશિષ્ટ ૯ — બેંક સાથે મેળવણું (બેંક રિકન્સીલિએશન સ્ટેટમેન્ટ).";
-    case "patrakD":
-      return "પત્રક – D — ઓડિટ અને વાર્ષિક તપાસ માટેનું વિગતવાર પત્રક.";
-    case "grantRegister":
-      return "ગ્રાન્ટ રજીસ્ટર — વર્ષ દરમિયાન મળેલ તમામ ગ્રાન્ટ અને તેના ખર્ચની વિગતો.";
-    case "chequeRegister":
-      return "ચેક રજીસ્ટર — લખાયેલા તમામ ચેક, જેના નામે લખ્યા અને વટાવ્યાની તારીખો.";
-    case "billRegister":
-      return "બિલ રજીસ્ટર — વાઉચર મુજબના તમામ બિલ, વેપારી અને રકમની નોંધ.";
-    case "vouchers":
-      return "વાઉચર — ચુકવણીના પ્રિન્ટેડ વાઉચર ફોર્મ્સ.";
-  }
-}
 
 function labelFor(tab: Tab, t: Strings): string {
   switch (tab) {
@@ -84,13 +63,21 @@ function isPrintable(tab: Tab): tab is PrintableReportId {
   return (PRINTABLE_REPORTS as readonly string[]).includes(tab);
 }
 
+type ExportKind = "pdf" | "excel" | "excel-all";
+
+/**
+ * Every report as a card on one page. Print, PDF and Excel work straight from
+ * a card; the preview (and, from there, the layout editor) opens the report
+ * on its own page, with a way back to the cards.
+ */
 export function Reports(): JSX.Element {
   const t = useStrings();
   const [tab, setTab] = useState<Tab>("rojmel");
-  const [showPreview, setShowPreview] = useState(false);
-  // One flag per kind of export, so the two buttons can be told apart while one
-  // of them is working.
-  const [saving, setSaving] = useState<"pdf" | "excel" | "excel-all" | null>(null);
+  // Showing one report (its preview, or a figure view) rather than the cards.
+  const [open, setOpen] = useState(false);
+  // One export at a time: which kind, and for which report, so only that
+  // card's button says it is working.
+  const [saving, setSaving] = useState<{ kind: ExportKind; report: PrintableReportId | "all" } | null>(null);
   const [saved, setSaved] = useState<{ kind: "pdf" | "excel"; path: string } | null>(null);
   // The layout editor replaces the preview while it is open. The exports are
   // hidden meanwhile: they print the SAVED layout, and a half-edited one on
@@ -101,133 +88,171 @@ export function Reports(): JSX.Element {
   const [printing, setPrinting] = useState(false);
   // Bumped when the print window saved new settings, so the summary reloads.
   const [pageVersion, setPageVersion] = useState(0);
-  const pageSummary = usePageSummary(isPrintable(tab) ? tab : null, pageVersion, t);
+  const pageSummary = usePageSummary(open && isPrintable(tab) ? tab : null, pageVersion, t);
 
   /** Leaving the editor, or its report, with changes not saved: ask first. */
-  function mayLeaveEditor(): boolean {
-    return !editing || !layoutDirty || window.confirm(t.layoutDiscardConfirm);
+  async function mayLeaveEditor(): Promise<boolean> {
+    return !editing || !layoutDirty || (await askConfirm(t.layoutDiscardConfirm));
   }
 
-  function chooseTab(next: Tab): void {
-    if (next === tab || !mayLeaveEditor()) return;
+  function select(next: Tab): void {
     setTab(next);
     setSaved(null);
     setLayoutDirty(false);
-    setShowPreview(false);
+    setEditing(false);
     setPrinting(false);
-    if (!isPrintable(next)) setEditing(false);
   }
 
-  /** Both exports end the same way: a path to report, or a cancelled dialog. */
-  function runExport(which: "pdf" | "excel" | "excel-all"): void {
-    setSaving(which);
+  function openReport(next: Tab): void {
+    select(next);
+    setOpen(true);
+  }
+
+  async function backToCards(): Promise<void> {
+    if (!(await mayLeaveEditor())) return;
+    setEditing(false);
+    setLayoutDirty(false);
+    setOpen(false);
+  }
+
+  function printReport(report: PrintableReportId): void {
+    select(report);
+    setPrinting(true);
+  }
+
+  /** Every export ends the same way: a path to report, or a cancelled dialog. */
+  function runExport(kind: ExportKind, report: PrintableReportId | "all"): void {
+    setSaving({ kind, report });
     setSaved(null);
-    const work =
-      which === "pdf"
-        ? api.exportPdf(tab as PrintableReportId)
-        : api.exportExcel(which === "excel-all" ? "all" : (tab as PrintableReportId));
+    const work = kind === "pdf" ? api.exportPdf(report as PrintableReportId) : api.exportExcel(report);
     void work
       .then((result) => {
         if (result.ok && result.data) {
-          setSaved({ kind: which === "pdf" ? "pdf" : "excel", path: result.data });
+          setSaved({ kind: kind === "pdf" ? "pdf" : "excel", path: result.data });
         }
       })
       .finally(() => setSaving(null));
   }
 
+  const busy = saving !== null;
+  const isSaving = (kind: ExportKind, report: PrintableReportId | "all"): boolean =>
+    saving?.kind === kind && saving.report === report;
+
+  const savedNotice = saved !== null && (
+    <div className="issue success">
+      <div>{saved.kind === "pdf" ? t.pdfSaved(saved.path) : t.excelSaved(saved.path)}</div>
+    </div>
+  );
+
+  // The print window covers the whole window, so it can open from a card or
+  // from a report's own page alike.
+  const printDialog = printing && isPrintable(tab) && (
+    <PrintDialog
+      key={tab}
+      report={tab}
+      reportLabel={labelFor(tab, t)}
+      onClose={(changed) => {
+        setPrinting(false);
+        if (changed) setPageVersion((version) => version + 1);
+      }}
+    />
+  );
+
+  if (!open) {
+    const group = (title: string, ids: Tab[]): JSX.Element => (
+      <section className="report-group">
+        <h3 className="report-group-title">{title}</h3>
+        <div className="report-grid">
+          {ids.map((id) => (
+            <div className="report-card" key={id}>
+              <b>{labelFor(id, t)}</b>
+              <p>{t.reportBlurbs[id]}</p>
+              <div className="report-card-actions">
+                {isPrintable(id) ? (
+                  <>
+                    <button className="ghost small" onClick={() => openReport(id)}>
+                      <Icon name="eye" size={14} /> {t.previewShort}
+                    </button>
+                    <button className="ghost small" disabled={busy} onClick={() => printReport(id)}>
+                      <Icon name="print" size={14} /> {t.printOpen}
+                    </button>
+                    <button className="ghost small" disabled={busy} onClick={() => runExport("pdf", id)}>
+                      <Icon name="pdf" size={14} /> {isSaving("pdf", id) ? t.savingPdf : "PDF"}
+                    </button>
+                    <button className="ghost small" disabled={busy} onClick={() => runExport("excel", id)}>
+                      <Icon name="sheet" size={14} /> {isSaving("excel", id) ? t.savingExcel : "Excel"}
+                    </button>
+                  </>
+                ) : (
+                  <button className="ghost small" onClick={() => openReport(id)}>
+                    <Icon name="eye" size={14} /> {t.openFigures}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+
+    return (
+      <>
+        <div className="page-head">
+          <div>
+            <h2>{t.reportsTitle}</h2>
+            <p>{t.reportsGridNote}</p>
+          </div>
+          {/* The whole year in one workbook - the file a BRC asks for when
+              they want to check the figures. */}
+          <button className="primary" disabled={busy} onClick={() => runExport("excel-all", "all")}>
+            <Icon name="sheets" /> {isSaving("excel-all", "all") ? t.savingExcel : t.saveExcelAll}
+          </button>
+        </div>
+        {savedNotice}
+        {group(t.groupStatutory, STATUTORY_TABS)}
+        {group(t.groupRegisters, REGISTER_TABS)}
+        {group(t.groupFigures, FIGURE_TABS)}
+        {printDialog}
+      </>
+    );
+  }
+
   return (
     <>
+      <button className="link report-back" onClick={() => void backToCards()}>
+        ← {t.allReports}
+      </button>
       <div className="page-head">
         <div>
-          <h2>{t.reportsTitle}</h2>
+          <h2>{labelFor(tab, t)}</h2>
           <p>
-            {editing ? t.layoutEditNote : isPrintable(tab) ? t.printPreviewNote : t.reportsSubtitle}
+            {editing
+              ? t.layoutEditNote
+              : isPrintable(tab)
+                ? `${t.reportBlurbs[tab]}${pageSummary ? ` (${pageSummary})` : ""}`
+                : t.reportBlurbs[tab]}
           </p>
         </div>
-        <div className="row-actions">
-          {isPrintable(tab) && !editing && (
-            <button
-              className={showPreview ? "ghost" : "primary"}
-              onClick={() => setShowPreview(!showPreview)}
-            >
-              <span>👁️</span> {showPreview ? t.hidePreview : t.viewPreview}
+        {isPrintable(tab) && !editing && (
+          <div className="row-actions">
+            <button className="ghost" disabled={busy} onClick={() => setEditing(true)}>
+              <Icon name="edit" /> {t.layoutEdit}
             </button>
-          )}
-          {isPrintable(tab) && !editing && (
-            <button className="ghost" disabled={saving !== null} onClick={() => setEditing(true)}>
-              <span>✏️</span> {t.layoutEdit}
+            <button className="ghost" disabled={busy} onClick={() => runExport("pdf", tab)}>
+              <Icon name="pdf" /> {isSaving("pdf", tab) ? t.savingPdf : t.savePdf}
             </button>
-          )}
-          {editing && <span className="muted">{t.layoutUnsavedExport}</span>}
-          {isPrintable(tab) && !editing && (
-            <button className="ghost" disabled={saving !== null} onClick={() => setPrinting(true)}>
-              <span>🖨️</span> {t.printOpen}
+            <button className="ghost" disabled={busy} onClick={() => runExport("excel", tab)}>
+              <Icon name="sheet" /> {isSaving("excel", tab) ? t.savingExcel : t.saveExcel}
             </button>
-          )}
-          {isPrintable(tab) && !editing && (
-            <button className="ghost" disabled={saving !== null} onClick={() => runExport("pdf")}>
-              <span>📄</span> {saving === "pdf" ? t.savingPdf : t.savePdf}
+            <button className="primary" disabled={busy} onClick={() => setPrinting(true)}>
+              <Icon name="print" /> {t.printOpen}
             </button>
-          )}
-          {isPrintable(tab) && !editing && (
-            <button className="ghost" disabled={saving !== null} onClick={() => runExport("excel")}>
-              <span>📊</span> {saving === "excel" ? t.savingExcel : t.saveExcel}
-            </button>
-          )}
-          {/* The whole year in one workbook, whichever tab is open - this is the
-              file a BRC asks for when they want to check the figures. */}
-          {!editing && (
-            <button
-              className="ghost"
-              disabled={saving !== null}
-              onClick={() => runExport("excel-all")}
-            >
-              <span>📑</span> {saving === "excel-all" ? t.savingExcel : t.saveExcelAll}
-            </button>
-          )}
-        </div>
+          </div>
+        )}
+        {editing && <span className="muted">{t.layoutUnsavedExport}</span>}
       </div>
 
-      <div className="tab-category-strip card" style={{ padding: "12px 14px", marginBottom: 18 }}>
-        <div className="tab-category-row">
-          <span className="tab-category-label">🏛️ {t.groupStatutory}</span>
-          <div className="tab-category-buttons">
-            {STATUTORY_TABS.map((id) => (
-              <button key={id} className={tab === id ? "primary small" : "ghost small"} onClick={() => chooseTab(id)}>
-                {labelFor(id, t)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="tab-category-row" style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line-subtle)" }}>
-          <span className="tab-category-label">📋 {t.groupRegisters}</span>
-          <div className="tab-category-buttons">
-            {REGISTER_TABS.map((id) => (
-              <button key={id} className={tab === id ? "primary small" : "ghost small"} onClick={() => chooseTab(id)}>
-                {labelFor(id, t)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="tab-category-row" style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line-subtle)" }}>
-          <span className="tab-category-label">📊 {t.groupFigures}</span>
-          <div className="tab-category-buttons">
-            {FIGURE_TABS.map((id) => (
-              <button key={id} className={tab === id ? "primary small" : "ghost small"} onClick={() => chooseTab(id)}>
-                {labelFor(id, t)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {saved !== null && (
-        <div className="issue warning">
-          <div>{saved.kind === "pdf" ? t.pdfSaved(saved.path) : t.excelSaved(saved.path)}</div>
-        </div>
-      )}
+      {savedNotice}
 
       {isPrintable(tab) && editing ? (
         <LayoutEditor
@@ -240,102 +265,20 @@ export function Reports(): JSX.Element {
             setLayoutDirty(false);
           }}
         />
-      ) : isPrintable(tab) && printing ? (
-        <PrintDialog
-          key={tab}
-          report={tab}
-          reportLabel={labelFor(tab, t)}
-          onClose={(changed) => {
-            setPrinting(false);
-            if (changed) setPageVersion((version) => version + 1);
-          }}
-        />
       ) : isPrintable(tab) ? (
-        showPreview ? (
-          <div className="report-preview-section">
-            <div className="report-preview-toolbar">
-              <div className="report-preview-toolbar-title">
-                <span>📄 {labelFor(tab, t)} — {t.viewPreview}</span>
-                <span className="report-preview-toolbar-badge">{t.printPreviewNote}</span>
-              </div>
-              <div className="row-actions">
-                <button className="ghost small" onClick={() => setShowPreview(false)}>
-                  ✕ {t.hidePreview}
-                </button>
-                <button className="ghost small" disabled={saving !== null} onClick={() => setEditing(true)}>
-                  <span>✏️</span> {t.layoutEdit}
-                </button>
-                <button className="primary small" disabled={saving !== null} onClick={() => setPrinting(true)}>
-                  <span>🖨️</span> {t.printOpen}
-                </button>
-                <button className="ghost small" disabled={saving !== null} onClick={() => runExport("pdf")}>
-                  <span>📄</span> {saving === "pdf" ? t.savingPdf : t.savePdf}
-                </button>
-                <button className="ghost small" disabled={saving !== null} onClick={() => runExport("excel")}>
-                  <span>📊</span> {saving === "excel" ? t.savingExcel : t.saveExcel}
-                </button>
-              </div>
-            </div>
-            <div className="report-preview-frame">
-              <div className="report-preview-content">
-                <PrintRoot key={tab} report={tab} />
-              </div>
-            </div>
+        // Not behind the print window: that window draws the same report, and
+        // two copies on screen would share the layout stylesheet's id.
+        !printing && (
+        <div className="report-preview-frame standalone">
+          <div className="report-preview-content">
+            <PrintRoot key={tab} report={tab} />
           </div>
-        ) : (
-          <div className="card report-overview-card">
-            <div className="report-overview-header">
-              <div className="report-overview-info">
-                <div className="report-overview-badge">
-                  {STATUTORY_TABS.includes(tab as any) ? `🏛️ ${t.groupStatutory}` : `📋 ${t.groupRegisters}`}
-                </div>
-                <h3>{labelFor(tab, t)}</h3>
-                <p className="report-overview-desc">
-                  {getReportDescription(tab)}
-                  {pageSummary && ` (${pageSummary})`}
-                </p>
-                <p className="report-overview-hint muted">
-                  {t.previewPrompt}
-                </p>
-              </div>
-              <div className="report-overview-actions">
-                <button
-                  className="primary"
-                  onClick={() => setShowPreview(true)}
-                >
-                  <span>👁️</span> {t.viewPreview}
-                </button>
-                <button className="ghost" disabled={saving !== null} onClick={() => setPrinting(true)}>
-                  <span>🖨️</span> {t.printOpen}
-                </button>
-                <button
-                  className="ghost"
-                  disabled={saving !== null}
-                  onClick={() => runExport("pdf")}
-                >
-                  <span>📄</span> {saving === "pdf" ? t.savingPdf : t.savePdf}
-                </button>
-                <button
-                  className="ghost"
-                  disabled={saving !== null}
-                  onClick={() => runExport("excel")}
-                >
-                  <span>📊</span> {saving === "excel" ? t.savingExcel : t.saveExcel}
-                </button>
-                <button
-                  className="ghost"
-                  disabled={saving !== null}
-                  onClick={() => setEditing(true)}
-                >
-                  <span>✏️</span> {t.layoutEdit}
-                </button>
-              </div>
-            </div>
-          </div>
+        </div>
         )
       ) : (
         <Figures tab={tab} />
       )}
+      {printDialog}
     </>
   );
 }

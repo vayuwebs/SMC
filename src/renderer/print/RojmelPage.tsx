@@ -1,9 +1,15 @@
 import { Fragment } from "react";
 import type { CSSProperties, JSX } from "react";
 import type { RojmelBlock, RojmelLine, RojmelPage as RojmelPageData } from "../../engine/rojmel.js";
-import { ROW_GROUPS, ROW_KEYS, targetKey } from "../../shared/report-layout.js";
+import { ARRANGEMENTS, ROW_GROUPS, ROW_KEYS, layoutHasWrap, targetKey, wrapAt } from "../../shared/report-layout.js";
 import { isCashInHand, isGrantCredit, rojmelBlockRows } from "../../shared/rojmel-rows.js";
-import { GapRow, LayoutColGroup, useReportLayout, Text } from "./layout-context.js";
+import {
+  adaptiveRojmelWidths,
+  countPageRows,
+  isDenseRojmelPage,
+  targetBodyRowHeightMm,
+} from "../../shared/rojmel-adaptive.js";
+import { Arranged, GapRow, LayoutColGroup, useReportLayout, Text } from "./layout-context.js";
 import type { SchoolDto } from "../../shared/api.js";
 import { formatAmount } from "../../lib/money.js";
 import { formatSchoolTitle } from "../../lib/gujarati.js";
@@ -22,9 +28,8 @@ import { formatSchoolTitle } from "../../lib/gujarati.js";
  * line, because that is the side where the long lines are; the receipt side's
  * reference column holds the credited date, so it is as wide as a date.
  *
- * LATIN DIGITS. The rojmel is the one report that does not use Gujarati
- * numerals (SPEC section 6), which is why nothing here goes through
- * toGujaratiDigits - only the closing sentence at the end of the book does.
+ * LATIN DIGITS, as on every report - the closing sentence at the end of the
+ * book included.
  */
 export function RojmelSheet({
   school,
@@ -38,14 +43,37 @@ export function RojmelSheet({
   isLastPage: boolean;
 }): JSX.Element {
   // The આવક box ends where the receipt half of the table does - at the heavy
-  // rule down the middle - however the school has set the column widths.
-  const widths = useReportLayout()?.widths ?? {};
-  const receiptHalf = Object.entries(widths)
+  const layoutValue = useReportLayout();
+  const sheetWidths = adaptiveRojmelWidths(page, layoutValue?.layout);
+  const receiptHalf = Object.entries(sheetWidths)
     .filter(([id]) => id.startsWith("r."))
     .reduce((sum, [, width]) => sum + width, 0);
 
+  // Uniform typography across all rojmel sheets:
+  // Description font is strictly 12pt and figures 11pt across all pages and blocks.
+  // Ample pages (<= 15 rows, such as Page 1 with single opening block) increase row height (6.8mm)
+  // while keeping font sizes identical to dense pages.
+  const totalRows = countPageRows(page);
+  const isDense = totalRows >= 18 || isDenseRojmelPage(page);
+  const rowHeightMm = targetBodyRowHeightMm(totalRows);
+
+  const sheetVars: CSSProperties = {
+    "--receipt-half": receiptHalf > 0 ? `${receiptHalf}%` : undefined,
+    "--rojmel-text": "12pt",
+    "--rojmel-figure": "11pt",
+    "--report-font": "14pt",
+    "--rojmel-row-height": `${rowHeightMm}mm`,
+  } as CSSProperties;
+
   return (
-    <div className="sheet landscape" data-spread-blocks="">
+    <div
+      className="sheet landscape"
+      data-spread-blocks=""
+      data-auto-size="12"
+      data-dense={isDense ? "" : undefined}
+      data-wrapping={layoutValue && layoutHasWrap(layoutValue.layout) ? "" : undefined}
+      style={sheetVars}
+    >
       <div className="rojmel-title" data-part="title">
         <Text id="part:title">{formatSchoolTitle(school.smcLabelGu)}</Text>
       </div>
@@ -68,34 +96,36 @@ export function RojmelSheet({
         </div>
       </div>
 
-      <table className="form rojmel" data-layout="">
-        {/* Widths: REPORT_COLUMNS.rojmel, after the client's ROJMED sheet. */}
-        <LayoutColGroup />
-        <thead>
-          <tr data-row={ROW_KEYS.head}>
-            <th data-col="r.date" className="col-date"><Text id="col:r.date">તારીખ</Text></th>
-            <th data-col="r.detail" className="col-detail"><Text id="col:r.detail">આવકની વિગત</Text></th>
-            <th data-col="r.ref" className="col-ref"><Text id="col:r.ref">પહોંચ નંબર અને તારીખ</Text></th>
-            <th data-col="r.cheque" className="col-ref"><Text id="col:r.cheque">ચેક નં તારીખ ડી.ડી.નં તારીખ</Text></th>
-            <th data-col="r.cash" className="col-money"><Text id="col:r.cash">રોકડ</Text></th>
-            <th data-col="r.bank" className="col-money"><Text id="col:r.bank">બેન્ક</Text></th>
-            <th data-col="r.total" className="col-money"><Text id="col:r.total">કુલ રકમ</Text></th>
+      <div className="rojmel-table-container">
+        <table className="form rojmel" data-layout="">
+          {/* Widths: adaptive rebalanced widths for dense sheets, or standard/user layout. */}
+          <LayoutColGroup widths={sheetWidths} />
+          <thead>
+            <tr data-row={ROW_KEYS.head}>
+              <th data-col="r.date" className="col-date"><Text id="col:r.date">તારીખ</Text></th>
+              <th data-col="r.detail" className="col-detail"><Text id="col:r.detail">આવકની વિગત</Text></th>
+              <th data-col="r.ref" className="col-ref"><Text id="col:r.ref">પહોંચ નંબર અને તારીખ</Text></th>
+              <th data-col="r.cheque" className="col-ref"><Text id="col:r.cheque">ચેક નં તારીખ ડી.ડી.નં તારીખ</Text></th>
+              <th data-col="r.cash" className="col-money"><Text id="col:r.cash">રોકડ</Text></th>
+              <th data-col="r.bank" className="col-money"><Text id="col:r.bank">બેન્ક</Text></th>
+              <th data-col="r.total" className="col-money"><Text id="col:r.total">કુલ રકમ</Text></th>
 
-            <th data-col="p.date" className="col-date gutter"><Text id="col:p.date">તારીખ</Text></th>
-            <th data-col="p.detail" className="col-detail"><Text id="col:p.detail">જાવક ની વિગત</Text></th>
-            <th data-col="p.ref" className="col-ref"><Text id="col:p.ref">વાઉચર નંબર અને તારીખ</Text></th>
-            <th data-col="p.cheque" className="col-ref"><Text id="col:p.cheque">ચેક નં તારીખ</Text></th>
-            <th data-col="p.cash" className="col-money"><Text id="col:p.cash">રોકડ</Text></th>
-            <th data-col="p.bank" className="col-money"><Text id="col:p.bank">બેન્ક</Text></th>
-            <th data-col="p.total" className="col-money"><Text id="col:p.total">કુલ રકમ</Text></th>
-          </tr>
-        </thead>
-        <tbody>
-          {page.blocks.map((block) => (
-            <Block key={block.id} block={block} />
-          ))}
-        </tbody>
-      </table>
+              <th data-col="p.date" className="col-date gutter"><Text id="col:p.date">તારીખ</Text></th>
+              <th data-col="p.detail" className="col-detail"><Text id="col:p.detail">જાવક ની વિગત</Text></th>
+              <th data-col="p.ref" className="col-ref"><Text id="col:p.ref">વાઉચર નંબર અને તારીખ</Text></th>
+              <th data-col="p.cheque" className="col-ref"><Text id="col:p.cheque">ચેક નં તારીખ</Text></th>
+              <th data-col="p.cash" className="col-money"><Text id="col:p.cash">રોકડ</Text></th>
+              <th data-col="p.bank" className="col-money"><Text id="col:p.bank">બેન્ક</Text></th>
+              <th data-col="p.total" className="col-money"><Text id="col:p.total">કુલ રકમ</Text></th>
+            </tr>
+          </thead>
+          <tbody>
+            {page.blocks.map((block) => (
+              <Block key={block.id} block={block} />
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {isLastPage && (
         <p className="rojmel-closing" data-part="closing">
@@ -126,8 +156,8 @@ function Block({ block }: { block: RojmelBlock }): JSX.Element {
             data-row-group={ROW_GROUPS.rojmelRow(index)}
             data-fixed-height={heightSet(row.key, ROW_GROUPS.rojmelRow(index)) ? "" : undefined}
           >
-            <Half side="r" line={row.left} rowKey={row.key} />
-            <Half side="p" line={row.right} rowKey={row.key} />
+            <Half side="r" line={row.left} lineKey={row.leftKey} rowKey={row.key} group={ROW_GROUPS.rojmelRow(index)} />
+            <Half side="p" line={row.right} lineKey={row.rightKey} rowKey={row.key} group={ROW_GROUPS.rojmelRow(index)} />
           </tr>
           <GapRow rowKey={row.key} group={ROW_GROUPS.rojmelRow(index)} />
         </Fragment>
@@ -207,42 +237,65 @@ function Block({ block }: { block: RojmelBlock }): JSX.Element {
  * One half of a row: the receipt side ("r") or, across the gutter, the payment
  * side ("p"). Cells are named `r.detail`, `p.cash` and so on (REPORT_COLUMNS).
  */
-function Half({ side, line, rowKey }: { side: "r" | "p"; line: RojmelLine | null; rowKey?: string }): JSX.Element {
+function Half({
+  side,
+  line,
+  lineKey,
+  rowKey,
+  group,
+}: {
+  side: "r" | "p";
+  line: RojmelLine | null;
+  lineKey: string | null;
+  rowKey: string;
+  group: string;
+}): JSX.Element {
+  const layout = useReportLayout()?.layout;
   if (!line) return <Blank side={side} />;
   const gutter = side === "p" ? " gutter" : "";
   // A grant (or interest) received is coloured from its words to its amounts,
   // so the money coming in stands out on the page; nothing else is.
   const credit = isGrantCredit(line) ? " grant-credit" : "";
   const hand = isCashInHand(line) ? " cash-in-hand" : "";
+  // From second row onwards in payment (side === "p"), when line.dateText is empty,
+  // the description can extend left into the empty date column on a single line -
+  // unless the school wrapped it, when it stays inside its own cell.
+  const wrapped = layout !== undefined && wrapAt(layout, rowKey, `${side}.detail`, group, lineKey) === true;
+  const canSpillLeft = side === "p" && !line.dateText && !wrapped;
+  const lineAttr = { "data-line": lineKey ?? undefined };
 
   return (
     <>
-      <td data-col={`${side}.date`} className={"col-date" + gutter}>
+      <td data-col={`${side}.date`} {...lineAttr} className={"col-date" + gutter}>
         <DateText text={line.dateText} />
       </td>
       <td
         data-col={`${side}.detail`}
+        {...lineAttr}
+        data-spill-left={canSpillLeft ? "" : undefined}
         className={(line.headingOnly ? "detail heading" : "detail") + credit + hand}
       >
-        {rowKey ? (
-          <Text id={`cell:${rowKey}:${side}.detail`}>{line.descriptionGu}</Text>
+        {canSpillLeft ? (
+          <span className="detail-spill" data-spill-span="">
+            <Text id={`cell:${rowKey}:${side}.detail`}>{line.descriptionGu}</Text>
+          </span>
         ) : (
-          line.descriptionGu
+          <Text id={`cell:${rowKey}:${side}.detail`}>{line.descriptionGu}</Text>
         )}
       </td>
-      <td data-col={`${side}.ref`} className={"ref" + credit + hand}>
+      <td data-col={`${side}.ref`} {...lineAttr} className={"ref" + credit + hand}>
         {side === "p" ? <VoucherRef text={line.referenceText} /> : line.referenceText}
       </td>
-      <td data-col={`${side}.cheque`} className={"ref" + credit + hand}>
+      <td data-col={`${side}.cheque`} {...lineAttr} className={"ref" + credit + hand}>
         {side === "p" ? <ChequeRef text={line.chequeText} /> : line.chequeText}
       </td>
-      <td data-col={`${side}.cash`} className={"figure" + credit + hand}>
+      <td data-col={`${side}.cash`} {...lineAttr} className={"figure" + credit + hand}>
         {line.headingOnly ? "" : formatAmount(line.cashPaise)}
       </td>
-      <td data-col={`${side}.bank`} className={"figure" + credit + hand}>
+      <td data-col={`${side}.bank`} {...lineAttr} className={"figure" + credit + hand}>
         {line.headingOnly ? "" : formatAmount(line.bankPaise)}
       </td>
-      <td data-col={`${side}.total`} className={"figure" + credit + hand}>
+      <td data-col={`${side}.total`} {...lineAttr} className={"figure" + credit + hand}>
         {line.headingOnly ? "" : formatAmount(line.totalPaise)}
       </td>
     </>
@@ -251,8 +304,10 @@ function Half({ side, line, rowKey }: { side: "r" | "p"; line: RojmelLine | null
 
 /**
  * Sub-vouchers (1/1, 1/2 ...) are coloured pink; main voucher numbers red.
- * Displays voucher number on top and date on the next line underneath.
+ * Voucher number and date share one line; a pair too wide for the column is
+ * set smaller to fit (PrintRoot, fitCells).
  */
+/** "1/3 11/07/24": the voucher (or bill) number in bold and its date - arranged as the school set it. */
 function VoucherRef({ text }: { text: string }): JSX.Element {
   if (!text) return <></>;
   const space = text.indexOf(" ");
@@ -260,10 +315,15 @@ function VoucherRef({ text }: { text: string }): JSX.Element {
   const rest = space <= 0 ? "" : text.slice(space).trim();
   const isSub = no.includes("/");
   return (
-    <div className="voucher-cell">
-      <strong className={isSub ? "sub-voucher-no" : "voucher-no"}>{no}</strong>
-      {rest && <span className="voucher-date">{rest}</span>}
-    </div>
+    <Arranged
+      className="voucher-cell"
+      id={ARRANGEMENTS.rojmelRef.id}
+      template={ARRANGEMENTS.rojmelRef.template}
+      parts={{
+        "નંબર": { text: no, render: (value) => <strong className={isSub ? "sub-voucher-no" : "voucher-no"}>{value}</strong> },
+        "તારીખ": { text: rest, render: (value) => <span className="voucher-date">{value}</span> },
+      }}
+    />
   );
 }
 
@@ -285,16 +345,22 @@ function DateText({ text }: { text: string }): JSX.Element {
   return <span className="date-single">{text}</span>;
 }
 
+/** The cheque number in bold and its date - arranged as the school set it. */
 function ChequeRef({ text }: { text: string }): JSX.Element {
   if (!text) return <></>;
   const space = text.indexOf(" ");
   const no = space <= 0 ? text : text.slice(0, space);
-  const rest = space <= 0 ? "" : text.slice(space);
+  const rest = space <= 0 ? "" : text.slice(space).trim();
   return (
-    <>
-      <strong className="cheque-no">{no}</strong>
-      {rest}
-    </>
+    <Arranged
+      className="cheque-cell"
+      id={ARRANGEMENTS.rojmelCheque.id}
+      template={ARRANGEMENTS.rojmelCheque.template}
+      parts={{
+        "નંબર": { text: no, render: (value) => <strong className="cheque-no">{value}</strong> },
+        "તારીખ": { text: rest, render: (value) => <span className="cheque-date">{value}</span> },
+      }}
+    />
   );
 }
 

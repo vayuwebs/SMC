@@ -16,6 +16,8 @@ import {
   annexure9,
   annexure10,
   balancesByDate,
+  byVoucherOrder,
+  cashbookCheques,
   chequeAllocation,
   chequeAmount,
   allLedgers,
@@ -45,9 +47,9 @@ import type {
   Voucher,
 } from "../engine/registers.js";
 import type { Issue } from "../engine/validation.js";
-import { isAllocationComputed, type ChequeType } from "../lib/types.js";
+import { isAllocationComputed, isReimbursement, type ChequeType } from "../lib/types.js";
 import { codeForNewHead } from "../lib/default-grant-heads.js";
-import { financialYearEnd, financialYearStart } from "../lib/dates.js";
+import { financialYearEnd, financialYearStart, isEarlierYear, shiftYears } from "../lib/dates.js";
 import { matchHeadNames, readLegacyWorkbook } from "./legacy-import.js";
 import {
   emptyLayout,
@@ -568,9 +570,25 @@ export class AccountsService implements BooksApi {
       // bills they paid - the old register links them by voucher, not by id.
       const billIdsByVoucher = new Map<number, number[]>();
 
+      // The vouchers of the grant returns being brought in: a grant return has
+      // no bill, so a bill-register row under one is the return itself again.
+      const grantReturnVouchers = new Set(
+        plan.cheques
+          .filter((row) => wantedCheques.get(row.sourceRow)?.type === "GRANT_RETURN" && row.voucherNo !== null)
+          .map((row) => row.voucherNo!),
+      );
+
       for (const row of plan.bills) {
         const choice = wantedBills.get(row.sourceRow);
         if (!choice) continue;
+        if (row.voucherNo !== null && grantReturnVouchers.has(row.voucherNo)) {
+          skipped.push({
+            kind: "bill",
+            sourceRow: row.sourceRow,
+            reasonGu: `વાઉચર ${row.voucherNo} બચત ગ્રાન્ટ પરતનો છે – તેનું બિલ ન હોય`,
+          });
+          continue;
+        }
         if (row.billDate === null) {
           skipped.push({ kind: "bill", sourceRow: row.sourceRow, reasonGu: "તારીખ નથી" });
           continue;
@@ -744,6 +762,11 @@ export class AccountsService implements BooksApi {
    *    same day - so carrying it would mean inventing the split.
    *  - **A year that already exists.** Never overwrite a year of books.
    *
+   * A new year OLDER than this one (a past year filled in afterwards) opens with
+   * the balances the school types, zero where it types none - never this year's
+   * બંધ સિલક, which comes after it. Nothing carries, so cash in hand is no reason
+   * to refuse.
+   *
    * Only ACTIVE heads carry forward. A head the state stopped is deactivated on
    * the masters screen, and its year is over.
    */
@@ -783,7 +806,9 @@ export class AccountsService implements BooksApi {
       };
     }
 
-    if (preview.cashPaise !== 0) {
+    const earlier = isEarlierYear(label, preview.year.label);
+
+    if (!earlier && preview.cashPaise !== 0) {
       return fail(
         "cash_in_hand_at_year_end",
         `૩૧ માર્ચે રોકડ સિલક ${formatAmount(preview.cashPaise)} છે. વર્ષ બંધ કરતાં પહેલાં તે બેન્કમાં જમા કરો અથવા તેનો ખર્ચ નોંધો.`,
@@ -842,9 +867,10 @@ export class AccountsService implements BooksApi {
           data: {
             financialYearId: next.id,
             grantHeadId: head.id,
-            // This year's બંધ સિલક, unless the school changed it on the way.
+            // This year's બંધ સિલક, unless the school changed it on the way -
+            // or, for an older year, only what the school typed.
             // Cash is zero: closing cash is refused above, so all of it is bank.
-            bankPaise: openings[head.id] ?? closingByHead.get(head.id) ?? 0,
+            bankPaise: openings[head.id] ?? (earlier ? 0 : (closingByHead.get(head.id) ?? 0)),
             cashPaise: 0,
           },
         });
@@ -911,6 +937,87 @@ export class AccountsService implements BooksApi {
    */
   async reopenYear(id: number): Promise<ApiResult<FinancialYearDto>> {
     return this.openYear(id);
+  }
+
+  /**
+   * Correct the label of this year when it was typed wrong - 2023-24 for what is
+   * really 2024-25 - without deleting and re-entering its books.
+   *
+   * The label decides 1 April and 31 March, so those move with it, and so does
+   * every date entered in the year: they were typed in the wrong year too. Each
+   * moves by the same number of years, day and month unchanged, so the year's
+   * entries keep their order and still fall inside it. All in one transaction.
+   *
+   * Only the open year can be renamed, as only it can be edited at all.
+   */
+  async renameYear(newLabel: string): Promise<ApiResult<FinancialYearDto>> {
+    const label = newLabel.trim();
+    const start = Number(label.slice(0, 4));
+    if (!/^\d{4}-\d{2}$/.test(label) || label.slice(5) !== String((start + 1) % 100).padStart(2, "0")) {
+      return fail(
+        "bad_year_label",
+        "નાણાકીય વર્ષ 2026-27 ના સ્વરૂપમાં લખો",
+        `financial year label "${newLabel}" must look like 2026-27`,
+      );
+    }
+
+    const frozen = await this.refuseIfClosed();
+    if (frozen) return frozen;
+
+    const year = await this.prisma.financialYear.findUniqueOrThrow({
+      where: { id: this.financialYearId },
+    });
+    if (year.label === label) return { ok: true, data: yearToDto(year) };
+
+    const taken = await this.prisma.financialYear.findFirst({
+      where: { schoolId: year.schoolId, label, id: { not: year.id } },
+    });
+    if (taken) {
+      return fail("year_exists", `વર્ષ ${label} પહેલેથી છે`, `financial year ${label} already exists`);
+    }
+
+    const years = start - Number(year.label.slice(0, 4));
+    const shift = (value: string): string => shiftYears(value, years);
+    const shiftOrNull = (value: string | null): string | null => (value === null ? null : shift(value));
+    const where = { financialYearId: year.id };
+
+    const renamed = await this.prisma.$transaction(async (tx) => {
+      for (const receipt of await tx.receipt.findMany({ where })) {
+        await tx.receipt.update({
+          where: { id: receipt.id },
+          data: {
+            date: shift(receipt.date),
+            ddChequeDate: shiftOrNull(receipt.ddChequeDate),
+            allotmentOrderDate: shiftOrNull(receipt.allotmentOrderDate),
+            depositedDate: shiftOrNull(receipt.depositedDate),
+            creditedDate: shiftOrNull(receipt.creditedDate),
+          },
+        });
+      }
+      for (const bill of await tx.bill.findMany({ where })) {
+        await tx.bill.update({ where: { id: bill.id }, data: { billDate: shift(bill.billDate) } });
+      }
+      for (const cheque of await tx.cheque.findMany({ where })) {
+        await tx.cheque.update({
+          where: { id: cheque.id },
+          data: {
+            chequeDate: shift(cheque.chequeDate),
+            cashbookDate: shift(cheque.cashbookDate),
+            cashedDate: shiftOrNull(cheque.cashedDate),
+            returnedDate: shiftOrNull(cheque.returnedDate),
+          },
+        });
+      }
+      for (const charge of await tx.bankCharge.findMany({ where })) {
+        await tx.bankCharge.update({ where: { id: charge.id }, data: { date: shift(charge.date) } });
+      }
+      return tx.financialYear.update({
+        where: { id: year.id },
+        data: { label, startDate: financialYearStart(label), endDate: financialYearEnd(label) },
+      });
+    });
+
+    return { ok: true, data: yearToDto(renamed) };
   }
 
   /**
@@ -1112,7 +1219,11 @@ export class AccountsService implements BooksApi {
       include: { grantHead: true, cheque: true },
       orderBy: [{ voucherNo: "asc" }, { id: "asc" }],
     });
-    return bills.map(billToDto);
+    // A bill stays linked to the cheque first written for it; the one that
+    // actually pays it - the replacement of a returned cheque - comes from the engine.
+    const book = await this.book();
+    const payingNo = new Map(book.bills.map((bill) => [bill.id, bill.chequeNo]));
+    return bills.map((bill) => ({ ...billToDto(bill), chequeNo: payingNo.get(String(bill.id)) ?? null }));
   }
 
   async createBill(input: BillInput): Promise<ApiResult<BillDto>> {
@@ -1189,6 +1300,18 @@ export class AccountsService implements BooksApi {
         `the deduction of ${formatAmount(input.deductionPaise)} exceeds the bill amount of ${formatAmount(input.amountPaise)}`,
       );
     }
+    // A grant return has no bill: the bill register prints its own row for it.
+    const grantReturn = await this.prisma.cheque.findFirst({
+      where: { financialYearId: this.financialYearId, voucherNo: input.voucherNo, type: "GRANT_RETURN" },
+      select: { chequeNo: true },
+    });
+    if (grantReturn) {
+      return fail(
+        "bill_on_grant_return_voucher",
+        `વાઉચર ${input.voucherNo} બચત ગ્રાન્ટ પરતનો છે (ચેક નં. ${grantReturn.chequeNo}). ગ્રાન્ટ પરતનું બિલ નોંધવાનું નથી – બિલ રજીસ્ટરમાં તે આપોઆપ આવે છે. બિલ માટે બીજો વાઉચર નંબર લો.`,
+        `voucher ${input.voucherNo} is the grant return of cheque ${grantReturn.chequeNo}; a grant return needs no bill (the bill register lists it by itself) - use another voucher number`,
+      );
+    }
     if (input.billNo !== null) {
       const clash = await this.prisma.bill.findFirst({
         where: {
@@ -1219,9 +1342,12 @@ export class AccountsService implements BooksApi {
       include: {
         bills: { include: { grantHead: true } },
         allocations: { include: { grantHead: true } },
+        replacesCheque: { select: { chequeNo: true } },
+        replacedBy: { select: { chequeNo: true } },
       },
       orderBy: { chequeNo: "asc" },
     });
+    const inBook = cashbookCheques(book);
 
     const headIdByCode = new Map<string, number>();
     for (const cheque of cheques) {
@@ -1230,10 +1356,20 @@ export class AccountsService implements BooksApi {
     }
     const nameByCode = new Map(book.heads.map((head) => [head.code, head.nameGu]));
 
-    return cheques.map((cheque) => {
+    // Voucher order (voucher, sub-voucher, then cheque number), as the reports list them.
+    const ordered = [...cheques].sort((a, b) => {
+      const left = inBook.find((candidate) => candidate.chequeNo === a.chequeNo);
+      const right = inBook.find((candidate) => candidate.chequeNo === b.chequeNo);
+      return byVoucherOrder(
+        left ?? { voucherNo: a.voucherNo, chequeNo: a.chequeNo, bills: a.bills },
+        right ?? { voucherNo: b.voucherNo, chequeNo: b.chequeNo, bills: b.bills },
+      );
+    });
+
+    return ordered.map((cheque) => {
       // The allocation comes from the engine, so the screen shows exactly what
       // the reports will - one definition of the split, never two.
-      const fromEngine = book.cheques.find((candidate) => candidate.chequeNo === cheque.chequeNo);
+      const fromEngine = inBook.find((candidate) => candidate.chequeNo === cheque.chequeNo);
       const allocation = fromEngine ? chequeAllocation(fromEngine) : new Map<string, number>();
 
       const rows = [...allocation.entries()].map(([code, amountPaise]) => ({
@@ -1249,14 +1385,19 @@ export class AccountsService implements BooksApi {
         chequeDate: cheque.chequeDate,
         cashbookDate: cheque.cashbookDate,
         cashedDate: cheque.cashedDate,
-        voucherNo: cheque.voucherNo,
+        // A replacement's voucher number, type and bills are its returned cheque's.
+        voucherNo: fromEngine ? fromEngine.voucherNo : cheque.voucherNo,
         payeeGu: cheque.payeeGu,
         purposeGu: cheque.purposeGu,
-        type: cheque.type as ChequeType,
+        type: (fromEngine?.type ?? cheque.type) as ChequeType,
         remarksGu: cheque.remarksGu,
         allocation: rows,
         amountPaise: fromEngine ? chequeAmount(fromEngine) : 0,
-        billCount: cheque.bills.length,
+        billCount: fromEngine ? fromEngine.bills.length : cheque.bills.length,
+        returnedDate: cheque.returnedDate,
+        replacesChequeId: cheque.replacesChequeId,
+        replacesChequeNo: cheque.replacesCheque?.chequeNo ?? null,
+        replacedByChequeNo: cheque.replacedBy?.chequeNo ?? null,
       };
     });
   }
@@ -1266,6 +1407,7 @@ export class AccountsService implements BooksApi {
     if (frozen) return frozen;
     const invalid = await this.checkCheque(input, null);
     if (invalid) return invalid;
+    input = await this.inheritFromReturned(input);
 
     const bankAccountId = await this.primaryBankAccountId();
 
@@ -1282,8 +1424,11 @@ export class AccountsService implements BooksApi {
         purposeGu: input.purposeGu,
         type: input.type,
         remarksGu: input.remarksGu ?? null,
+        returnedDate: input.returnedDate ?? null,
+        replacesChequeId: input.replacesChequeId ?? null,
         // Typed rows exist only for a grant return; the other types compute it.
-        allocations: isAllocationComputed(input.type)
+        // A replacement keeps none of its own: they stay on the returned cheque.
+        allocations: isAllocationComputed(input.type) || input.replacesChequeId
           ? undefined
           : {
               create: (input.typedAllocation ?? []).map((row) => ({
@@ -1303,6 +1448,7 @@ export class AccountsService implements BooksApi {
     if (frozen) return frozen;
     const invalid = await this.checkCheque(input, id);
     if (invalid) return invalid;
+    input = await this.inheritFromReturned(input);
 
     await this.prisma.cheque.update({
       where: { id },
@@ -1316,11 +1462,13 @@ export class AccountsService implements BooksApi {
         purposeGu: input.purposeGu,
         type: input.type,
         remarksGu: input.remarksGu ?? null,
+        returnedDate: input.returnedDate ?? null,
+        replacesChequeId: input.replacesChequeId ?? null,
       },
     });
 
     await this.prisma.chequeAllocation.deleteMany({ where: { chequeId: id } });
-    if (!isAllocationComputed(input.type)) {
+    if (!isAllocationComputed(input.type) && !input.replacesChequeId) {
       for (const row of input.typedAllocation ?? []) {
         await this.prisma.chequeAllocation.create({
           data: { chequeId: id, grantHeadId: row.grantHeadId, amountPaise: row.amountPaise },
@@ -1335,21 +1483,46 @@ export class AccountsService implements BooksApi {
   async deleteCheque(id: number): Promise<ApiResult<null>> {
     const frozen = await this.refuseIfClosed();
     if (frozen) return frozen;
+    const replacement = await this.prisma.cheque.findFirst({
+      where: { replacesChequeId: id },
+      select: { chequeNo: true },
+    });
+    if (replacement) {
+      return fail(
+        "cheque_has_replacement",
+        `આ ચેકના બદલે ચેક નં. ${replacement.chequeNo} લખેલ છે; પહેલાં તે ચેક કાઢો`,
+        `cheque ${replacement.chequeNo} replaces this one; delete that first`,
+      );
+    }
     // Release the bills rather than deleting them: the bill is a real document
     // that still exists even when the cheque that paid it is corrected away.
-    await this.prisma.bill.updateMany({ where: { chequeId: id }, data: { chequeId: null } });
+    await this.prisma.bill.updateMany({ where: { chequeId: id }, data: { chequeId: null, payMode: null } });
     await this.prisma.cheque.delete({ where: { id } });
     return { ok: true, data: null };
   }
 
-  /** Point exactly the requested bills at this cheque, releasing any others. */
+  /**
+   * Point exactly the requested bills at this cheque, releasing any others - and,
+   * for a reimbursement, note how each was paid: online (bankBillIds) or in cash.
+   * Without bankBillIds every bill follows the cheque's type.
+   */
   private async linkBills(chequeId: number, input: ChequeInput): Promise<void> {
-    await this.prisma.bill.updateMany({ where: { chequeId }, data: { chequeId: null } });
-    if (input.billIds.length > 0) {
-      await this.prisma.bill.updateMany({
-        where: { id: { in: input.billIds } },
-        data: { chequeId },
-      });
+    // A replacement's bills stay linked to the returned cheque it stands for.
+    if (input.replacesChequeId) return;
+    await this.prisma.bill.updateMany({ where: { chequeId }, data: { chequeId: null, payMode: null } });
+    if (input.billIds.length === 0) return;
+    if (!isReimbursement(input.type) || input.bankBillIds === undefined) {
+      await this.prisma.bill.updateMany({ where: { id: { in: input.billIds } }, data: { chequeId } });
+      return;
+    }
+    const online = new Set(input.bankBillIds);
+    const bank = input.billIds.filter((id) => online.has(id));
+    const cash = input.billIds.filter((id) => !online.has(id));
+    if (bank.length > 0) {
+      await this.prisma.bill.updateMany({ where: { id: { in: bank } }, data: { chequeId, payMode: "BANK" } });
+    }
+    if (cash.length > 0) {
+      await this.prisma.bill.updateMany({ where: { id: { in: cash } }, data: { chequeId, payMode: "CASH" } });
     }
   }
 
@@ -1369,6 +1542,26 @@ export class AccountsService implements BooksApi {
         `cheque number ${input.chequeNo} already exists`,
       );
     }
+
+    // The other way round: a grant return on a voucher that already has bills
+    // would print them and the return under one number.
+    if (input.type === "GRANT_RETURN" && input.voucherNo !== null && !input.replacesChequeId) {
+      const bills = await this.prisma.bill.count({
+        where: { financialYearId: this.financialYearId, voucherNo: input.voucherNo },
+      });
+      if (bills > 0) {
+        return fail(
+          "grant_return_on_bill_voucher",
+          `વાઉચર ${input.voucherNo} માં બિલ છે. બચત ગ્રાન્ટ પરતને બિલ વગરનો પોતાનો વાઉચર નંબર આપો.`,
+          `voucher ${input.voucherNo} already has bills; give the grant return a voucher number of its own`,
+        );
+      }
+    }
+
+    const returned = await this.checkReturn(input, excludeId);
+    if (returned) return returned;
+    // A replacement's bills and split are its returned cheque's: nothing to check here.
+    if (input.replacesChequeId) return null;
 
     if (isAllocationComputed(input.type)) {
       if (input.billIds.length === 0) {
@@ -1421,6 +1614,81 @@ export class AccountsService implements BooksApi {
     }
 
     return null;
+  }
+
+  /**
+   * The rules for a returned cheque and the one written in its place:
+   *  - a cheque cannot stop being returned while another stands in its place;
+   *  - a replacement stands for a cheque of this year that came back, has no
+   *    other replacement yet, and is not itself;
+   *  - the bank cannot send back the cheque before it was written.
+   */
+  private async checkReturn(input: ChequeInput, excludeId: number | null): Promise<ApiResult<never> | null> {
+    if (input.returnedDate && input.returnedDate < input.cashbookDate) {
+      return fail(
+        "returned_before_cashbook_date",
+        "રિટર્ન તારીખ રોજમેળ તારીખ પહેલાંની ન હોઈ શકે",
+        `returned ${input.returnedDate} before the cash-book date ${input.cashbookDate}`,
+      );
+    }
+
+    if (excludeId !== null && !input.returnedDate) {
+      const replacement = await this.prisma.cheque.findFirst({
+        where: { replacesChequeId: excludeId },
+        select: { chequeNo: true },
+      });
+      if (replacement) {
+        return fail(
+          "replaced_cheque_not_returned",
+          `આ ચેકના બદલે ચેક નં. ${replacement.chequeNo} લખેલ છે, એટલે તે રિટર્ન જ રહેવો જોઈએ`,
+          `cheque ${replacement.chequeNo} replaces this one, so it must stay returned`,
+        );
+      }
+    }
+
+    if (!input.replacesChequeId) return null;
+    if (input.replacesChequeId === excludeId) {
+      return fail("cheque_replaces_itself", "ચેક પોતાના બદલે ન હોઈ શકે", "a cheque cannot replace itself");
+    }
+    const original = await this.prisma.cheque.findFirst({
+      where: { id: input.replacesChequeId, financialYearId: this.financialYearId },
+      select: { chequeNo: true, returnedDate: true, replacedBy: { select: { id: true, chequeNo: true } } },
+    });
+    if (!original) {
+      return fail("replaced_cheque_not_found", "રિટર્ન થયેલ ચેક મળ્યો નહીં", `cheque ${input.replacesChequeId} not found`);
+    }
+    if (original.returnedDate === null) {
+      return fail(
+        "replaced_cheque_not_returned",
+        `ચેક નં. ${original.chequeNo} રિટર્ન થયેલ નથી`,
+        `cheque ${original.chequeNo} has not been returned`,
+      );
+    }
+    if (original.replacedBy && original.replacedBy.id !== excludeId) {
+      return fail(
+        "cheque_already_replaced",
+        `ચેક નં. ${original.chequeNo} ના બદલે ચેક નં. ${original.replacedBy.chequeNo} પહેલેથી લખેલ છે`,
+        `cheque ${original.chequeNo} is already replaced by cheque ${original.replacedBy.chequeNo}`,
+      );
+    }
+    return null;
+  }
+
+  /**
+   * A replacement carries the returned cheque's voucher number and type, so the
+   * stored row says what it prints. Its bills and allocation stay on the
+   * returned cheque and are read from there (engine/load.ts).
+   */
+  private async inheritFromReturned(input: ChequeInput): Promise<ChequeInput> {
+    if (!input.replacesChequeId) return input;
+    const book = await this.book();
+    const original = await this.prisma.cheque.findUnique({
+      where: { id: input.replacesChequeId },
+      select: { chequeNo: true },
+    });
+    const fromEngine = cashbookCheques(book).find((cheque) => cheque.chequeNo === original?.chequeNo);
+    if (!fromEngine) return input;
+    return { ...input, voucherNo: fromEngine.voucherNo, type: fromEngine.type, billIds: [], typedAllocation: [] };
   }
 
   private async chequeById(id: number): Promise<ApiResult<ChequeDto>> {
@@ -1777,6 +2045,10 @@ function nextYearLabel(label: string): string {
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
+function yearToDto(year: { id: number; label: string; startDate: string; endDate: string; status: string }): FinancialYearDto {
+  return { id: year.id, label: year.label, startDate: year.startDate, endDate: year.endDate, status: year.status };
+}
+
 function bookSchoolToDto(book: YearBook): SchoolDto {
   return { ...book.school };
 }
@@ -1850,6 +2122,7 @@ function billToDto(bill: {
   quantityGu: string | null;
   remarksGu: string | null;
   chequeId: number | null;
+  payMode: string | null;
   grantHead: { nameGu: string };
   cheque: { chequeNo: number } | null;
 }): BillDto {
@@ -1869,5 +2142,6 @@ function billToDto(bill: {
     remarksGu: bill.remarksGu,
     chequeId: bill.chequeId,
     chequeNo: bill.cheque?.chequeNo ?? null,
+    payMode: bill.payMode === "CASH" || bill.payMode === "BANK" ? bill.payMode : null,
   };
 }

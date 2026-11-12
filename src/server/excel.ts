@@ -12,7 +12,7 @@
  *  1. **Amounts are numbers**, in rupees, with a number format. Not text, not
  *     Gujarati digits - a Gujarati-digit amount cannot be summed, sorted or
  *     charted, and the whole point of this file is that it can be. The printed
- *     reports keep their Gujarati digits (SPEC section 6); this is not a printed
+ *     reports print Latin digits too, but as text; this is not a printed
  *     report.
  *  2. **Dates are text in DD/MM/YYYY**, the way the forms print them. Excel's
  *     date type would re-interpret them by the reader's locale, which is exactly
@@ -69,15 +69,19 @@ import {
   billRowKeys,
   rowGapMm,
   textOf,
+  arrangeLines,
   emptyLayout,
+  ARRANGEMENTS,
   fontFamily,
   ledgerRowKeys,
   styleAt,
+  wrapAt,
   targetKey,
   widthScale,
   BORDER_SIDES,
   type BorderStyle,
   type CellStyle,
+  type LineWeight,
   type ReportLayout,
   type ResolvedPage,
 } from "../shared/report-layout.js";
@@ -186,11 +190,21 @@ function printSetup(worksheet: ExcelJS.Worksheet, page: ResolvedPage, repeatRows
   };
 }
 
-/** The ruled lines round a cell, in a colour a school chose or black. */
-function ruledIn(colour: string | undefined): Partial<ExcelJS.Borders> {
-  if (!colour) return THIN;
-  const line = { style: "thin" as const, color: { argb: argb(colour) } };
+/** The ruled lines round a cell, in the colour and weight a school chose (thin black by default). */
+function ruledIn(colour: string | undefined, weight: LineWeight | undefined = undefined): Partial<ExcelJS.Borders> {
+  if (!colour && !weight) return THIN;
+  const line = { style: weight ?? ("thin" as const), ...(colour ? { color: { argb: argb(colour) } } : {}) };
   return { top: line, left: line, bottom: line, right: line };
+}
+
+/** The whole report's text colour, weight, slant and underline (આખું પત્રક), for every font. */
+function wholeReportFont(layout: ReportLayout): Partial<ExcelJS.Font> {
+  return {
+    ...(layout.colour ? { color: { argb: argb(layout.colour) } } : {}),
+    ...(layout.bold !== undefined ? { bold: layout.bold } : {}),
+    ...(layout.italic !== undefined ? { italic: layout.italic } : {}),
+    ...(layout.underline !== undefined ? { underline: layout.underline } : {}),
+  };
 }
 
 const THIN: Partial<ExcelJS.Borders> = {
@@ -221,7 +235,7 @@ function sheet(
   const excelSize = (pt: number): number => Math.round(((pt * REPORT_FONT_SIZE) / defaultPt) * 2) / 2;
   const fontName = fontFamily(layout.font);
   const size = layout.sizePt === undefined ? REPORT_FONT_SIZE : excelSize(layout.sizePt);
-  const colour: Partial<ExcelJS.Font> = layout.colour ? { color: { argb: argb(layout.colour) } } : {};
+  const colour = wholeReportFont(layout);
   const font = { name: fontName, size, ...colour };
   const headFont = { name: fontName, size, bold: true, ...colour };
 
@@ -284,8 +298,8 @@ function sheet(
     if (row.cellCount === 0) continue;
     for (let col = 1; col <= columns.length; col += 1) {
       const target = row.getCell(col);
-      target.border = ruledIn(layout.lineColour);
-      if (layout.colour) target.font = { ...target.font, color: { argb: argb(layout.colour) } };
+      target.border = ruledIn(layout.lineColour, layout.lineWeight);
+      target.font = { ...target.font, ...colour };
       const value = target.value;
       const figure = typeof value === "number" || (typeof value === "string" && latinText.test(value));
       // Unless the school chose a face for the whole report.
@@ -307,17 +321,17 @@ function sheet(
 
     // Highlights, bold, fonts, sizes and alignment the school chose, cell by
     // cell: the report's alignment, then the column's style, the row's, the cell's.
-    const styled = Object.keys(layout.styles).length > 0 || layout.align !== undefined;
+    const styled = Object.keys(layout.styles).length > 0 || layout.align !== undefined || layout.wrap !== undefined;
     for (const { excelRow, key, group, side } of styled ? placed : []) {
       const row = worksheet.getRow(excelRow);
       const rowHeight = key ? heightOfRow(layout, key, group) : undefined;
       if (rowHeight !== undefined) row.height = Math.round(rowHeight * PT_PER_MM * 10) / 10;
       columns.forEach((column, index) => {
         const id = layoutIdOf(column, side);
-        const style: CellStyle = {
+        const style: CellStyle = withReportWrap(layout, row.getCell(index + 1), {
           ...(layout.align ? { align: layout.align } : {}),
           ...(id === null && key === null ? {} : styleAt(layout, key, id, group)),
-        };
+        });
         if (Object.keys(style).length > 0) apply(row.getCell(index + 1), style);
       });
     }
@@ -377,9 +391,9 @@ function rojmelSheet(
   const fontName = fontFamily(layout.font);
   const size = layout.sizePt === undefined ? REPORT_FONT_SIZE : excelSize(layout.sizePt);
   // The text colour the school chose for the whole report, if any.
-  const colour: Partial<ExcelJS.Font> = layout.colour ? { color: { argb: argb(layout.colour) } } : {};
+  const colour = wholeReportFont(layout);
   const font: Partial<ExcelJS.Font> = { name: fontName, size, ...colour };
-  const bold: Partial<ExcelJS.Font> = { ...font, bold: true };
+  const bold: Partial<ExcelJS.Font> = { ...font, bold: layout.bold ?? true };
   // Figures, dates and numbers in Calibri, as the client's ROJMED sheet has
   // them: a Gujarati face's Latin digits are not on every PC. A face the
   // school chose for the whole report is used for them too.
@@ -388,8 +402,8 @@ function rojmelSheet(
     size,
     ...colour,
   };
-  const ruling = ruledIn(layout.lineColour);
-  const latinBold: Partial<ExcelJS.Font> = { ...latin, bold: true };
+  const ruling = ruledIn(layout.lineColour, layout.lineWeight);
+  const latinBold: Partial<ExcelJS.Font> = { ...latin, bold: layout.bold ?? true };
   const last = ROJMEL_HEADINGS.length;
   const colOf = new Map(ROJMEL_HEADINGS.map(([id], index) => [id, index + 1]));
 
@@ -402,7 +416,13 @@ function rojmelSheet(
     worksheet.getColumn(index + 1).width = Math.round((widths[id] ?? 5) * 19) / 10;
   });
 
-  const keyed: { row: ExcelJS.Row; key: string; group?: string }[] = [];
+  const keyed: {
+    row: ExcelJS.Row;
+    key: string;
+    group?: string;
+    /** The line keys of the row's two sides. */
+    lines?: { r: string | null; p: string | null };
+  }[] = [];
   const cell = (row: ExcelJS.Row, id: string): ExcelJS.Cell => row.getCell(colOf.get(id)!);
   const money = (target: ExcelJS.Cell, paise: number | null): void => {
     target.value = paise === null ? null : rupees(paise);
@@ -438,22 +458,36 @@ function rojmelSheet(
     const ref = cell(row, `${side}.ref`);
     text(ref, line.referenceText);
     ref.font = latin;
-    // "1/3 11/07/24": voucher number bold on top, date on the next line underneath.
-    const space = line.referenceText.indexOf(" ");
-    if (side === "p" && line.referenceText !== "") {
-      ref.value = {
-        richText:
-          space > 0
-            ? [
-                { text: line.referenceText.slice(0, space), font: latinBold },
-                { text: `\n${line.referenceText.slice(space).trim()}`, font: latin },
-              ]
-            : [{ text: line.referenceText, font: latinBold }],
+    // "1/3 11/07/24": the number in bold and its date - on one line, or one
+    // under the other, as the school arranged them (ARRANGEMENTS).
+    const arranged = (target: ExcelJS.Cell, value: string, id: string, template: string): void => {
+      const space = value.indexOf(" ");
+      const lines = arrangeLines(layout, id, template, {
+        "નંબર": space > 0 ? value.slice(0, space) : value,
+        "તારીખ": space > 0 ? value.slice(space).trim() : "",
+      });
+      target.value = {
+        richText: lines.flatMap((line, index) => [
+          ...(index > 0 ? [{ text: "\n", font: latin }] : []),
+          ...line.map((segment, at) => ({
+            text: at > 0 ? ` ${segment.text}` : segment.text,
+            font: segment.part === "નંબર" ? latinBold : latin,
+          })),
+        ]),
       };
-      ref.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      target.alignment = { horizontal: "center", vertical: "middle", wrapText: lines.length > 1 };
+    };
+    if (side === "p" && line.referenceText !== "") {
+      arranged(ref, line.referenceText, ARRANGEMENTS.rojmelRef.id, ARRANGEMENTS.rojmelRef.template);
     }
-    text(cell(row, `${side}.cheque`), line.chequeText);
-    cell(row, `${side}.cheque`).font = latin;
+    const chequeCell = cell(row, `${side}.cheque`);
+    if (side === "p" && line.chequeText !== "") {
+      arranged(chequeCell, line.chequeText, ARRANGEMENTS.rojmelCheque.id, ARRANGEMENTS.rojmelCheque.template);
+    } else {
+      text(chequeCell, line.chequeText);
+      chequeCell.font = latin;
+      chequeCell.alignment = { horizontal: "center", vertical: "middle", wrapText: false };
+    }
     if (!line.headingOnly) {
       money(cell(row, `${side}.cash`), line.cashPaise);
       money(cell(row, `${side}.bank`), line.bankPaise);
@@ -571,7 +605,12 @@ function rojmelSheet(
         ruled(row);
         half(row, "r", tableRow.left);
         half(row, "p", tableRow.right);
-        keyed.push({ row, key: tableRow.key, group: ROW_GROUPS.rojmelRow(index) });
+        keyed.push({
+          row,
+          key: tableRow.key,
+          group: ROW_GROUPS.rojmelRow(index),
+          lines: { r: tableRow.leftKey, p: tableRow.rightKey },
+        });
         const gap = rowGapMm(layout, tableRow.key, ROW_GROUPS.rojmelRow(index));
         if (gap) worksheet.addRow([]).height = Math.round(gap * PT_PER_MM * 10) / 10;
       }
@@ -603,7 +642,7 @@ function rojmelSheet(
 
   // The school's own layout: highlights, bold, fonts, sizes, alignment.
   const titleStyle = layout.styles[targetKey({ kind: "part", part: EXCEL_TITLE_PART.rojmel })];
-  for (const { row, key, group = null } of keyed) {
+  for (const { row, key, group = null, lines } of keyed) {
     if (key === "") {
       if (titleStyle) applyStyle(row.getCell(1), titleStyle, excelSize);
       continue;
@@ -611,12 +650,37 @@ function rojmelSheet(
     const rowHeight = heightOfRow(layout, key, group);
     if (rowHeight !== undefined) row.height = Math.round(rowHeight * PT_PER_MM * 10) / 10;
     for (const [id] of ROJMEL_HEADINGS) {
-      const style = styleAt(layout, key, id, group);
-      if (Object.keys(style).length > 0) applyStyle(cell(row, id), style, excelSize);
+      const line = lines?.[id.startsWith("r.") ? "r" : "p"] ?? null;
+      const target = cell(row, id);
+      const style = withReportWrap(layout, target, styleAt(layout, key, id, group, line));
+      if (Object.keys(style).length > 0) applyStyle(target, style, excelSize);
+      // Rows here have a set height, which Excel would not grow for wrapped text.
+      if (rowHeight === undefined && wrapAt(layout, key, id, group, line) === true) {
+        row.height = Math.max(row.height ?? 0, wrappedRowPt(target, worksheet.getColumn(target.col).width));
+      }
     }
   }
 
   printSetup(worksheet, resolvePage("rojmel", layout.page));
+}
+
+/** The whole report's wrap reaches words only: an amount in Excel is a number, and never wraps. */
+function withReportWrap(layout: ReportLayout, cell: ExcelJS.Cell, style: CellStyle): CellStyle {
+  const words = cell.value !== null && cell.value !== undefined && typeof cell.value !== "number";
+  return layout.wrap && style.wrap === undefined && words ? { ...style, wrap: true } : style;
+}
+
+/** One line of a rojmel row, in points. */
+const EXCEL_LINE_PT = 18;
+
+/**
+ * About how tall a wrapped cell needs its row. Excel measures nothing on
+ * opening a file, so this counts by characters; a Gujarati letter's marks count
+ * too, which errs towards a row slightly too tall rather than cut text.
+ */
+function wrappedRowPt(cell: ExcelJS.Cell, columnWidth: number | undefined): number {
+  const length = typeof cell.value === "string" ? cell.value.length : 0;
+  return Math.ceil(length / Math.max(1, columnWidth ?? 10)) * EXCEL_LINE_PT + 3;
 }
 
 /** A row's height as the school set it: for the row itself, else for its group. */
@@ -1012,7 +1076,7 @@ function annexure9Sheet(
   sheet(
     workbook,
     "પરિશિષ્ટ 9",
-    titleOf(school, yearLabel, "પરિશિષ્ટ – ૯ (બેંક મેળવણું)"),
+    titleOf(school, yearLabel, "પરિશિષ્ટ – 9 (બેંક મેળવણું)"),
     [
       { header: "વિગત", width: 52, layout: "detail" },
       { header: "રકમ", width: 15, money: true, layout: "amount" },
@@ -1046,7 +1110,7 @@ function annexure10Sheet(
   sheet(
     workbook,
     "પરિશિષ્ટ 10",
-    titleOf(school, yearLabel, "પરિશિષ્ટ – ૧૦ (વાર્ષિક ગ્રાન્ટ પત્રક)"),
+    titleOf(school, yearLabel, "પરિશિષ્ટ – 10 (વાર્ષિક ગ્રાન્ટ પત્રક)"),
     [
       { header: "ક્રમ", width: 6, layout: "serial" },
       { header: "વિગત", width: 30, layout: "head" },

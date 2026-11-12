@@ -157,8 +157,8 @@ Sample year totals: Opening 12,998 + Received 29,417 − Spent 39,763 − Return
 General print rules seen in the reference PDFs:
 - Every page header: `SMCE <school name>`.
 - Amounts with two decimals (`12998.00`). No thousands separators in the originals.
-- **Rojmel uses Latin digits; every other report prints Gujarati digits** (૦૧૨૩૪૫૬૭૮૯), including dates
-  and amounts. Make this a per-report setting.
+- **Every report prints Latin digits**, including dates and amounts. (The originals print Gujarati
+  digits everywhere but the rojmel; the client asked for English figures on every report.)
 - Dates print as DD/MM/YYYY.
 - Paper: Rojmel, Khatavahi, registers = A4 landscape. Annexure 9 and 10 = A4 portrait.
 
@@ -197,6 +197,12 @@ Each block:
        bill no + bill date, cash amount
      - and on the LEFT (receipt) side one cash line: `મુખ્ય શિક્ષકે નાણાં ઉપાડી હાથ પર લીધા` with cash =
        cheque amount (the bank → cash transfer)
+     - This is "પરત ખર્ચ સભ્ય સચિવને (રોકડ)". Each bill is paid either in cash (રોકડ) or online (બેન્ક),
+       chosen per bill on the cheque form; the cheque's type - (રોકડ) or (બેન્ક) - is only the starting
+       choice. A cash bill prints in the cash column, an online bill in the bank column, never both. The
+       withdrawal line and the `હાથ પર લીધા` line carry only the cash bills' total; with no cash bill
+       there is no amount on the withdrawal line and no `હાથ પર લીધા` line. The bank still falls by the
+       whole cheque.
    - **Direct cheque**: `<grant name>માંથી ચેકથી નાણાં ચુકવ્યા` + line `<payee>ને <purpose>ના ચુકવ્યા વા.મુજબ`,
      bank amount.
    - **Grant return**: `સી.આર.સી કો.ઓર્ડિનેટરને બચત ગ્રાન્ટ પરત`, bank amount, followed by a breakdown list
@@ -209,7 +215,7 @@ Each block:
    - `શ્રી કુલ` = ખર્ચખાતે + બંધ સિલક; must equal the left receipt totals.
 5. Next block's opening = this block's closing (cash and bank separately).
 6. After the last block: sentence
-   `તારીખ ૩૧/૦૩/૨૦૨૬ ના રોજ <school> SMCE ની બંધ સિલક રૂપિયા ૧૫૪.૦૦ રહે છે.` (Gujarati digits).
+   `તારીખ 31/03/2026 ના રોજ <school> SMCE ની બંધ સિલક રૂપિયા 154.00 રહે છે.` (Latin digits).
 
 **Page numbers matter**: the ledger prints the rojmel page on which each entry appears. Paginate the rojmel
 deterministically (row capacity per page, don't split a block unless it exceeds a page) and expose

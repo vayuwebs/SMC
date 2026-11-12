@@ -5,6 +5,7 @@ import type { GrantHeadDto, SchoolDto } from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
 import { useStrings } from "../i18n/index.js";
+import { askConfirm } from "../components/ConfirmDialog.js";
 
 /**
  * The masters: the school's own details and its grant heads.
@@ -312,8 +313,8 @@ export function Masters({ onChanged }: { onChanged: () => void }): JSX.Element {
                       <button
                         className="danger"
                         disabled={busy}
-                        onClick={() => {
-                          if (!window.confirm(t.mastersConfirmDelete(head.nameGu))) return;
+                        onClick={async () => {
+                          if (!(await askConfirm(t.mastersConfirmDelete(head.nameGu)))) return;
                           void headWrite(head.id, () => api.deleteGrantHead(head.id));
                         }}
                       >
