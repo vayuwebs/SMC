@@ -125,3 +125,35 @@ describe("shape styles and text effects", () => {
     expect(css).toContain("linear-gradient(90deg, #ffffff, #000000)");
   });
 });
+
+describe("a heading's outer box, joined to the table", () => {
+  it("keeps the new settings through the layout schema", () => {
+    const styles = { "part:title": { shape: "plaque" as const, boxFill: "#e8f0fe", joinTable: true, shapeFit: "center" as const, shapeInsetMm: 2 } };
+    expect(reportLayoutSchema.parse({ ...emptyLayout(), styles }).styles).toEqual(styles);
+    expect(() => reportLayoutSchema.parse({ ...emptyLayout(), styles: { "part:title": { shapeFit: "stretch" } } })).toThrow();
+  });
+
+  it("paints the outer box and leaves room for the inner space", () => {
+    const css = layoutCss(
+      "rojmel",
+      { ...emptyLayout(), styles: { "part:title": { shape: "plaque", boxFill: "#e8f0fe", shapeInsetMm: 2 } } },
+      "#r",
+    );
+    expect(css).toMatch(/\[data-part="title"\] \{ position: relative; isolation: isolate; background: #e8f0fe; border-color: transparent; padding: 3\.6mm 11mm/);
+  });
+
+  it("joins a heading to the table on the table's own line, its pieces meeting", () => {
+    const css = layoutCss(
+      "rojmel",
+      { ...emptyLayout(), lineColour: "#333333", lineWeight: "medium", styles: { "part:band": { joinTable: true } } },
+      "#r",
+    );
+    expect(css).toContain('[data-part="band"] { margin-top: 0; margin-bottom: -1.4pt; border: 1.4pt solid #333333;');
+    expect(css).toContain('[data-part="band"] > [data-part] + [data-part] { margin-left: -1.4pt; }');
+  });
+
+  it("gives an unshaped heading the outer box colour as its background", () => {
+    const css = layoutCss("rojmel", { ...emptyLayout(), styles: { "part:title": { boxFill: "#fff8e1" } } }, "#r");
+    expect(css).toContain('#r [data-part="title"] { background: #fff8e1; }');
+  });
+});

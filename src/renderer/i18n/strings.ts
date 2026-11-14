@@ -427,6 +427,14 @@ export interface Strings {
   shapeTextGlow: string;
   shapeNeedsHeading: string;
   shapeExcelNote: string;
+  shapeBox: string;
+  shapeBoxFill: string;
+  shapeBoxFillNone: string;
+  shapeJoinTable: string;
+  shapeJoinTableHint: string;
+  shapeFit: string;
+  shapeFits: { fill: string; center: string };
+  shapeInset: string;
   layoutTheme: string;
   layoutThemeNone: string;
   layoutThemeHint: string;
@@ -1167,6 +1175,14 @@ export const gu: Strings = {
   shapeTextGlow: "લખાણની ચમક",
   shapeNeedsHeading: "આકાર મથાળા (શાળાનું નામ, પટ્ટી, બેનર) માટે છે — પહેલાં કોઈ મથાળા પર ક્લિક કરો.",
   shapeExcelNote: "Excel માં આકાર નથી દોરાતો — ત્યાં ફક્ત રંગ, ગ્રેડિયન્ટ અને કિનારી આવે.",
+  shapeBox: "બહારનું ખાનું",
+  shapeBoxFill: "બહારના ખાનાનો રંગ",
+  shapeBoxFillNone: "રંગ વગર",
+  shapeJoinTable: "કોષ્ટક સાથે જોડો",
+  shapeJoinTableHint: "મથાળું અને કોષ્ટક વચ્ચે જગ્યા નહીં; મથાળાની કિનારી કોષ્ટકની જ લાઈન.",
+  shapeFit: "આકાર ખાનામાં",
+  shapeFits: { fill: "આખું ભરો", center: "વચ્ચે" },
+  shapeInset: "અંદરની જગ્યા",
   layoutTheme: "થીમ (રંગ)",
   layoutThemeNone: "થીમ વગર (ફોર્મ મુજબ)",
   layoutThemeHint: "મથાળું, કોલમનાં મથાળાં, એક છોડીને એક હરોળ અને કુલની હરોળ એક સાથે રંગાય. તમે જાતે આપેલા રંગ તેના પર રહે.",
@@ -1935,6 +1951,14 @@ export const en: Strings = {
   shapeTextGlow: "Text glow",
   shapeNeedsHeading: "Shapes are for headings (the school name, a band, a banner) - click a heading first.",
   shapeExcelNote: "Excel cannot draw the shape - it gets the colours, the gradient and the outline only.",
+  shapeBox: "Outer box",
+  shapeBoxFill: "Outer box colour",
+  shapeBoxFillNone: "No colour",
+  shapeJoinTable: "Join to the table",
+  shapeJoinTableHint: "No gap between heading and table; the heading's edge is the table's own line.",
+  shapeFit: "Shape in box",
+  shapeFits: { fill: "Fill", center: "Centre" },
+  shapeInset: "Inner space",
   layoutTheme: "Theme (colours)",
   layoutThemeNone: "No theme (as the form)",
   layoutThemeHint: "Colours the title, the column headings, every other row and the total row at once. Colours you set yourself stay on top.",

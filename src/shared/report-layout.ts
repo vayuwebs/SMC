@@ -154,6 +154,10 @@ export type TextRotation = (typeof TEXT_ROTATIONS)[number];
 export const NUMBER_DATE_ARRANGEMENTS = ["inline", "stacked", "dateFirst"] as const;
 export type NumberDateArrangement = (typeof NUMBER_DATE_ARRANGEMENTS)[number];
 
+/** How a shape sits in its heading's box: filling it, or in its middle round the words. */
+export const SHAPE_FITS = ["fill", "center"] as const;
+export type ShapeFit = (typeof SHAPE_FITS)[number];
+
 /** The shapes a heading can take: see src/shared/shapes.ts, after Excel's gallery. */
 export const HEADING_SHAPES = SHAPE_IDS;
 export type HeadingShape = ShapeId;
@@ -233,6 +237,14 @@ export const cellStyleSchema = z
     textOutline: hexColour.optional(),
     textShadow: z.boolean().optional(),
     textGlow: hexColour.optional(),
+    /** A shaped heading's outer box: its own background, behind the shape. */
+    boxFill: hexColour.optional(),
+    /** The heading joins the table: no gap, and its edge drawn on the table's own line. */
+    joinTable: z.boolean().optional(),
+    /** The shape fills its box ("fill", the default) or sits in its middle, round its words ("center"). */
+    shapeFit: z.enum(SHAPE_FITS).optional(),
+    /** Space left between the box's edge and the shape. */
+    shapeInsetMm: z.number().min(0).max(20).optional(),
     /** Excel's borders: each edge its own line style and colour. */
     borders: z
       .object({ top: borderEdge.optional(), right: borderEdge.optional(), bottom: borderEdge.optional(), left: borderEdge.optional() })
@@ -1459,9 +1471,14 @@ function textEffectDeclarations(style: CellStyle): string[] {
  */
 function shapedPartRules(selector: string, style: CellStyle): string[] {
   const info = shapeInfo(style.shape!);
-  const padding = `padding: ${info.padYMm}mm ${info.padXMm}mm ${info.padYMm + (info.padBottomMm ?? 0)}mm`;
+  const inset = style.shapeInsetMm ?? 0;
+  const padding = `padding: ${info.padYMm + inset}mm ${info.padXMm + inset}mm ${info.padYMm + inset + (info.padBottomMm ?? 0)}mm`;
+  // The box's own background shows round the shape; its lines are the table's
+  // when the heading joins it, else none (the shape is the outline).
+  const background = style.boxFill ?? "transparent";
+  const lines = style.joinTable ? "" : " border-color: transparent;";
   return [
-    `${selector} { position: relative; isolation: isolate; background: transparent; border-color: transparent; ${padding}; }`,
+    `${selector} { position: relative; isolation: isolate; background: ${background};${lines} ${padding}; }`,
     `${selector} :is(td, th, div, span) { background: transparent; border-color: transparent; }`,
     `${selector} > .shape-layer { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; overflow: visible; background: transparent; }`,
     // A theme colours everything inside the title; never the drawing itself.
@@ -1479,6 +1496,7 @@ function partRules(
   style: CellStyle,
   part?: ReportPart,
   theme: TableTheme | null = null,
+  join: { colour: string; widthPt: number } | null = null,
 ): string[] {
   const attribute = `[data-part=${cssString(partId)}]`;
   const selector = `${root} ${attribute}`;
@@ -1502,6 +1520,18 @@ function partRules(
     if (gradient) rules.push(`${selector} * { background: transparent; }`);
   }
   if (shaped) rules.push(...shapedPartRules(selector, style));
+  else if (style.boxFill) rules.push(`${selector} { background: ${style.boxFill}; }`);
+  if (style.joinTable && join) {
+    // No gap above or below, the table's own line all round, and the bottom
+    // line laid over the next piece's top - heading and table read as one.
+    rules.push(
+      `${selector} { margin-top: 0; margin-bottom: -${join.widthPt}pt; border: ${join.widthPt}pt solid ${join.colour}; box-sizing: border-box; }`,
+      // A heading made of pieces in a row (the rojmel's band): the pieces meet, their lines shared.
+      `${selector} { gap: 0; }`,
+      `${selector} > [data-part] + [data-part] { margin-left: -${join.widthPt}pt; }`,
+      `${selector} > [data-part] { border: ${join.widthPt}pt solid ${join.colour}; }`,
+    );
+  }
   const effects = textEffectDeclarations(style);
   if (effects.length > 0) rules.push(`${all} { ${effects.join("; ")}; }`);
   if (style.rotate) rules.push(`${all} { ${ROTATE_CSS[style.rotate]}; }`);
@@ -1648,7 +1678,12 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   for (const { target, style } of targets) {
     if (target.kind === "part") {
       const part = REPORT_PARTS[report].find((each) => each.id === target.part);
-      rules.push(...partRules(root, target.part, style, part, theme));
+      rules.push(
+        ...partRules(root, target.part, style, part, theme, {
+          colour: layout.lineColour ?? theme?.line ?? "#000",
+          widthPt: layout.lineWeight ? LINE_WEIGHT_PT[layout.lineWeight] : 0.7,
+        }),
+      );
       continue;
     }
     const body = declarations(style, report);
@@ -1742,9 +1777,9 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout): void {
   for (const element of root.querySelectorAll<HTMLElement>("[data-part]")) {
     const style = shaped.get(element.dataset["part"] ?? "");
     if (!style) continue;
-    const width = element.offsetWidth;
-    const height = element.offsetHeight;
-    if (width === 0 || height === 0) continue;
+    const box = shapeBox(element, style);
+    if (!box) continue;
+    const { width, height } = box;
     uid += 1;
     const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme), style.shapeAdjust, `shape${uid}`);
     let layer = element.querySelector<HTMLElement>(":scope > .shape-layer");
@@ -1760,6 +1795,8 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout): void {
     }
     layer.style.width = `${width}px`;
     layer.style.height = `${height}px`;
+    layer.style.left = `${box.left}px`;
+    layer.style.top = `${box.top}px`;
     wanted.add(layer);
   }
   for (const layer of root.querySelectorAll(".shape-layer")) {
@@ -1796,4 +1833,45 @@ export function shapeStylePresets(): ShapeStylePreset[] {
       return { id: `${level}:${theme.id}`, theme: theme.id, level, patch };
     }),
   );
+}
+
+const PX_PER_MM = 96 / 25.4;
+
+/**
+ * Where a heading's shape goes inside its box, in the box's own CSS pixels:
+ * the whole box less the inner space ("fill"), or centred round the words,
+ * as wide as they need plus the shape's own margin ("center").
+ */
+function shapeBox(
+  element: HTMLElement,
+  style: CellStyle,
+): { left: number; top: number; width: number; height: number } | null {
+  const boxWidth = element.offsetWidth;
+  const boxHeight = element.offsetHeight;
+  if (boxWidth === 0 || boxHeight === 0) return null;
+  const inset = (style.shapeInsetMm ?? 0) * PX_PER_MM;
+  const height = Math.max(4, boxHeight - 2 * inset);
+  let width = Math.max(4, boxWidth - 2 * inset);
+
+  if (style.shapeFit === "center") {
+    // The words' extent, measured on screen and brought back to the box's own
+    // pixels (the sheet may be zoomed).
+    const outer = element.getBoundingClientRect();
+    const scale = outer.width > 0 ? boxWidth / outer.width : 1;
+    const centre = outer.left + outer.width / 2;
+    let half = 0;
+    for (const child of element.children) {
+      if (child.classList.contains("shape-layer")) continue;
+      const rects = child.getClientRects();
+      for (const rect of rects) {
+        if (rect.width === 0) continue;
+        half = Math.max(half, centre - rect.left, rect.right - centre);
+      }
+    }
+    if (half > 0) {
+      const margin = shapeInfo(style.shape!).padXMm * PX_PER_MM;
+      width = Math.min(width, Math.max(height * 2, 2 * half * scale + 2 * margin));
+    }
+  }
+  return { left: (boxWidth - width) / 2, top: inset, width, height };
 }
