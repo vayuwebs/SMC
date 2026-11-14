@@ -22,6 +22,10 @@ const APPROVAL = readFileSync(
   path.join(process.cwd(), "supabase", "migrations", "0002_account_approval.sql"),
   "utf8",
 );
+const DELETING = readFileSync(
+  path.join(process.cwd(), "supabase", "migrations", "0003_delete_school.sql"),
+  "utf8",
+);
 
 /** What a fresh Supabase project provides before our migration runs. */
 const SUPABASE_BASICS = `
@@ -79,6 +83,7 @@ beforeAll(async () => {
   await db.exec(SUPABASE_BASICS);
   await db.exec(MIGRATION);
   await db.exec(APPROVAL);
+  await db.exec(DELETING);
   await db.query("insert into auth.users (id, email) values ($1, 'a@x.in'), ($2, 'b@x.in')", [A, B]);
   // The owner approves both, as in the dashboard.
   await db.query("update public.account_access set approved = true where user_id in ($1, $2)", [A, B]);
@@ -100,6 +105,7 @@ describe("the migration", () => {
   it("can be run a second time without harm", async () => {
     await expect(db.exec(MIGRATION)).resolves.toBeDefined();
     await expect(db.exec(APPROVAL)).resolves.toBeDefined();
+    await expect(db.exec(DELETING)).resolves.toBeDefined();
   });
 
   it("makes a private backups bucket", async () => {
@@ -258,5 +264,64 @@ describe("approving accounts", () => {
     } finally {
       await fresh.close();
     }
+  });
+});
+
+describe("deleting a school", () => {
+  const D = randomUUID();
+  const schoolD = randomUUID();
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, 'd@x.in')", [D]);
+    await db.query("update public.account_access set approved = true where user_id = $1", [D]);
+    await as("authenticated", D, "select * from public.create_profile($1, 'ડી શાળા', '4444', $2)", [schoolD, key()]);
+    await as("authenticated", D, backupInsert, [schoolD, `${D}/${schoolD}/one.smcbak`, sha]);
+  });
+
+  it("will not delete another account's school", async () => {
+    const result = await as("authenticated", A, "select public.delete_profile($1) as ok", [schoolD]);
+    expect(result.rows).toEqual([{ ok: false }]);
+    expect((await as("authenticated", D, "select id from public.profiles")).rows).toEqual([{ id: schoolD }]);
+  });
+
+  it("is refused to someone not signed in", async () => {
+    await expect(as("anon", null, "select public.delete_profile($1)", [schoolD])).rejects.toThrow(/permission denied/);
+  });
+
+  it("hides the school, its key and its backups from the account, and refuses new ones", async () => {
+    expect((await as("authenticated", D, "select public.delete_profile($1) as ok", [schoolD])).rows).toEqual([
+      { ok: true },
+    ]);
+    expect((await as("authenticated", D, "select id from public.profiles")).rows).toEqual([]);
+    expect((await as("authenticated", D, "select profile_id from public.profile_keys")).rows).toEqual([]);
+    expect((await as("authenticated", D, "select id from public.backups")).rows).toEqual([]);
+    await expect(as("authenticated", D, backupInsert, [schoolD, `${D}/${schoolD}/two.smcbak`, sha])).rejects.toThrow(
+      /row-level security/,
+    );
+    await expect(
+      as("authenticated", D, "insert into storage.objects (bucket_id, name) values ('backups', $1)", [
+        `${D}/${schoolD}/two.smcbak`,
+      ]),
+    ).rejects.toThrow(/row-level security/);
+    // A second delete finds nothing to delete.
+    expect((await as("authenticated", D, "select public.delete_profile($1) as ok", [schoolD])).rows).toEqual([
+      { ok: false },
+    ]);
+  });
+
+  it("keeps everything on the server, so the owner can bring it back", async () => {
+    expect((await db.query("select count(*)::int as n from public.profile_keys where profile_id = $1", [schoolD])).rows)
+      .toEqual([{ n: 1 }]);
+    expect((await db.query("select count(*)::int as n from public.backups where profile_id = $1", [schoolD])).rows)
+      .toEqual([{ n: 1 }]);
+  });
+
+  it("lets the same DISE code be created again", async () => {
+    const again = randomUUID();
+    await as("authenticated", D, "select * from public.create_profile($1, 'ડી શાળા', '4444', $2)", [again, key()]);
+    expect((await as("authenticated", D, "select id from public.profiles")).rows).toEqual([{ id: again }]);
+    await expect(
+      as("authenticated", D, "select * from public.create_profile($1, 'x', '4444', $2)", [randomUUID(), key()]),
+    ).rejects.toThrow(/unique|duplicate/);
   });
 });

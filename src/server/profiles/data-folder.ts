@@ -5,7 +5,8 @@
  * is a folder the user chose, and moving the pen drive moves the books.
  *
  *   <the folder the user picked>\
- *     SMC Accounts\                     created by the app
+ *     SMC Accounts\                     created by the app; the user may rename it
+ *       smc-data-folder.json            marks it as ours whatever it is called
  *       24160203401\                    one folder per school (its DISE code)
  *         profile.json                  which school, which account - not secret
  *         books.db                      the books, encrypted (src/server/vault.ts)
@@ -29,6 +30,12 @@ export const BOOKS_FILE = "books.db";
 export const BACKUPS_DIR = "backups";
 export const SYNC_FILE = "sync.json";
 export const LOCK_FILE = "books.lock";
+/**
+ * Left in the folder that holds the school folders. With it, that folder is
+ * recognised under any name the user gives it - "SMC Accounts" is only the
+ * name it starts with.
+ */
+export const DATA_DIR_MARKER = "smc-data-folder.json";
 
 /** How many local copies each school folder keeps. */
 export const LOCAL_BACKUPS_KEPT = 10;
@@ -107,17 +114,30 @@ export function keyMatches(manifest: Manifest, keyHex: string): boolean {
  * anybody looking at the pen drive would recognise.
  */
 export function folderForNewSchool(chosen: string, diseCode: string): string {
-  const base =
-    path.basename(chosen).toLowerCase() === DATA_DIR_NAME.toLowerCase()
-      ? chosen
-      : path.join(chosen, DATA_DIR_NAME);
+  const base = isDataDir(chosen) ? chosen : path.join(chosen, DATA_DIR_NAME);
   const name = safeFolderName(diseCode) || "school";
   let candidate = path.join(base, name);
   for (let n = 2; existsSync(candidate); n += 1) candidate = path.join(base, `${name}-${n}`);
   return candidate;
 }
 
-function safeFolderName(value: string): string {
+/** Is this the folder that holds school folders - by its first name, or by its marker? */
+export function isDataDir(dir: string): boolean {
+  if (path.basename(dir).toLowerCase() === DATA_DIR_NAME.toLowerCase()) return true;
+  return existsSync(path.join(dir, DATA_DIR_MARKER));
+}
+
+/** Leave the marker in a data folder, so it is still found after a rename. */
+export function markDataDir(dir: string): void {
+  if (existsSync(path.join(dir, DATA_DIR_MARKER))) return;
+  try {
+    writeJsonAtomic(path.join(dir, DATA_DIR_MARKER), { format: "smc-accounts-data-folder", formatVersion: 1 });
+  } catch {
+    // A read-only drive: it is still found under its first name.
+  }
+}
+
+export function safeFolderName(value: string): string {
   return value
     .trim()
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
@@ -148,8 +168,8 @@ export interface FoundProfile {
 /**
  * Every school folder at or just below `dir`.
  *
- * The user may pick the school folder itself, the "SMC Accounts" folder, or
- * the drive it is on - all three find it. Deeper than that is not searched: a
+ * The user may pick the school folder itself, the "SMC Accounts" folder (by
+ * whatever name it has now), or the drive it is on - all three find it. Deeper than that is not searched: a
  * pen drive root with thousands of photos should not take a minute to open.
  */
 export function findProfilesIn(dir: string): FoundProfile[] {
@@ -162,7 +182,7 @@ export function findProfilesIn(dir: string): FoundProfile[] {
   consider(dir);
   for (const child of subfolders(dir)) {
     consider(child);
-    if (path.basename(child).toLowerCase() === DATA_DIR_NAME.toLowerCase()) {
+    if (isDataDir(child)) {
       for (const school of subfolders(child)) consider(school);
     }
   }

@@ -1,4 +1,4 @@
-import type { PrintableReportId } from "../../shared/api.js";
+import type { LayoutSkipReason, PrintableReportId } from "../../shared/api.js";
 
 /**
  * Interface strings, in Gujarati and English.
@@ -251,6 +251,10 @@ export interface Strings {
 
   // --------------------------------------------------------- report layout
   layoutEdit: string;
+  applyLayoutToAll: string;
+  applyLayoutConfirm: (report: string) => string;
+  applyLayoutDone: (count: number) => string;
+  applyLayoutSkipped: Record<LayoutSkipReason, string>;
   layoutEditNote: string;
   layoutDone: string;
   layoutSave: string;
@@ -392,7 +396,37 @@ export interface Strings {
   layoutArrange: string;
   layoutArrangements: { column: string; inline: string; stacked: string; dateFirst: string };
   layoutShape: string;
-  layoutShapes: Record<"rect" | "rounded" | "pill" | "banner" | "ribbon" | "double" | "plaque" | "badge" | "floral", string>;
+  shapeTab: string;
+  shapeInsert: string;
+  shapeNone: string;
+  shapeGroups: { rectangles: string; basic: string; arrows: string; banners: string; callouts: string; decorative: string };
+  shapeAdjust: string;
+  shapeStyles: string;
+  shapeStyleLevels: { subtle: string; moderate: string; intense: string; outline: string };
+  shapeFill: string;
+  shapeFill2: string;
+  shapeGradientNone: string;
+  shapeGradientAngle: string;
+  shapeGradientAngles: Record<"0" | "45" | "90" | "135" | "180" | "225" | "270" | "315", string>;
+  shapeOutline: string;
+  shapeOutlineWeight: string;
+  shapeOutlineDash: string;
+  shapeDashes: { solid: string; dashed: string; dotted: string; none: string };
+  shapeEffects: string;
+  shapeShadow: string;
+  shapeShadows: { none: string; outer: string; outerStrong: string; below: string; inner: string };
+  shapeGlow: string;
+  shapeGlowSize: string;
+  shapeSoftEdge: string;
+  shapeBevel: string;
+  shapeBevels: { none: string; soft: string; round: string; angle: string };
+  shapeAccent: string;
+  shapeText: string;
+  shapeTextOutline: string;
+  shapeTextShadow: string;
+  shapeTextGlow: string;
+  shapeNeedsHeading: string;
+  shapeExcelNote: string;
   layoutTheme: string;
   layoutThemeNone: string;
   layoutThemeHint: string;
@@ -617,6 +651,15 @@ export interface Strings {
   schoolsFindFolder: string;
   schoolsRestore: string;
   schoolsForget: string;
+  schoolsFindFolderHint: string;
+  schoolDelete: string;
+  schoolDeleteTitle: (school: string) => string;
+  schoolDeleteWarning: string;
+  schoolDeletePassword: string;
+  schoolDeleteConfirm: string;
+  schoolDeleted: (school: string) => string;
+  schoolDeletedFolder: (folder: string) => string;
+  schoolDeletedNoFolder: string;
   schoolsLastOpened: string;
   schoolsOffline: string;
   schoolsRefresh: string;
@@ -663,6 +706,11 @@ export interface Strings {
   accountEmail: string;
   dataFolder: string;
   openDataFolder: string;
+  renameDataFolder: string;
+  renameDataFolderLabel: string;
+  renameDataFolderHint: string;
+  renameDataFolderSave: string;
+  renameDataFolderDone: (folder: string) => string;
   encryptionNote: string;
   backupStatus: string;
   backupNow: string;
@@ -700,7 +748,7 @@ export interface Strings {
 }
 
 export const gu: Strings = {
-  appName: "SMC હિસાબ",
+  appName: "SMCE હિસાબ",
   year: "વર્ષ",
   groupData: "માહિતી",
   groupPrinting: "છાપકામ",
@@ -929,6 +977,19 @@ export const gu: Strings = {
   printPreviewNote: "છાપવાનું પાનું — હંમેશાં ગુજરાતીમાં, ગુજરાતી અંકો સાથે.",
 
   layoutEdit: "ગોઠવણી બદલો",
+  applyLayoutToAll: "બધી શાળામાં લાગુ કરો",
+  applyLayoutConfirm: (report) =>
+    `"${report}" ની સાચવેલી ગોઠવણી - દેખાવ, પાનું, કૉલમ અને ખાનાં - આ ખાતાની બીજી બધી શાળાઓમાં લાગુ થશે, અને તેમની આ રિપોર્ટની હાલની ગોઠવણીની જગ્યાએ આવશે. જે શાળાની પેન ડ્રાઈવ અત્યારે લાગેલી નથી તે બાકી રહેશે. આગળ વધવું છે?`,
+  applyLayoutDone: (count) =>
+    count === 0 ? "કોઈ બીજી શાળામાં ગોઠવણી લાગુ થઈ નહીં." : `${count} શાળામાં ગોઠવણી લાગુ થઈ.`,
+  applyLayoutSkipped: {
+    notConnected: "બાકી - પેન ડ્રાઈવ / ફોલ્ડર મળ્યું નહીં",
+    openElsewhere: "બાકી - બીજા PC પર ખુલ્લી છે",
+    noKey: "બાકી - આ PC પર પહેલી વાર; ઇન્ટરનેટ ચાલુ કરીને ફરી પ્રયત્ન કરો",
+    newerData: "બાકી - સોફ્ટવેરના નવા સંસ્કરણનો ડેટા",
+    notSetUp: "બાકી - હજી શરૂઆત (સેટઅપ) થઈ નથી",
+    failed: "બાકી - ભૂલ આવી (લોગ જુઓ)",
+  },
   layoutEditNote: "ખાનાંની પહોળાઈ, અક્ષર, જગ્યા અને રંગ બદલો. ફેરફાર PDF અને Excel બંનેમાં આવશે.",
   layoutDone: "બંધ કરો",
   layoutSave: "ગોઠવણી સાચવો",
@@ -1075,17 +1136,37 @@ export const gu: Strings = {
   layoutArrange: "નંબર અને તારીખ",
   layoutArrangements: { column: "કોલમ પ્રમાણે", inline: "બાજુ-બાજુમાં", stacked: "તારીખ નંબરની નીચે", dateFirst: "તારીખ નંબરની ઉપર" },
   layoutShape: "મથાળાનો આકાર",
-  layoutShapes: {
-    rect: "સાદું ખાનું",
-    rounded: "ગોળ ખૂણા",
-    pill: "ગોળ છેડા",
-    banner: "બેનર (અણીદાર છેડા)",
-    ribbon: "રિબન",
-    double: "બેવડી કિનારી",
-    plaque: "તકતી (સોનેરી ફ્રેમ)",
-    badge: "બેજ (સોનેરી કિનારી)",
-    floral: "ફૂલવાળી ફ્રેમ",
-  },
+  shapeTab: "આકાર ફોર્મેટ",
+  shapeInsert: "આકાર",
+  shapeNone: "આકાર વગર (ફોર્મ મુજબ)",
+  shapeGroups: { rectangles: "લંબચોરસ", basic: "મૂળ આકાર", arrows: "તીર", banners: "બેનર અને રિબન", callouts: "કૉલઆઉટ", decorative: "શણગારેલી ફ્રેમ" },
+  shapeAdjust: "ગોઠવણ",
+  shapeStyles: "તૈયાર આકાર સ્ટાઇલ",
+  shapeStyleLevels: { subtle: "હળવું", moderate: "મધ્યમ", intense: "ઘાટું", outline: "ફક્ત કિનારી" },
+  shapeFill: "ભરણ (રંગ)",
+  shapeFill2: "ગ્રેડિયન્ટનો બીજો રંગ",
+  shapeGradientNone: "ગ્રેડિયન્ટ વગર",
+  shapeGradientAngle: "ગ્રેડિયન્ટની દિશા",
+  shapeGradientAngles: { "0": "ડાબેથી જમણે", "45": "ત્રાંસું ↘", "90": "ઉપરથી નીચે", "135": "ત્રાંસું ↙", "180": "જમણેથી ડાબે", "225": "ત્રાંસું ↖", "270": "નીચેથી ઉપર", "315": "ત્રાંસું ↗" },
+  shapeOutline: "કિનારી",
+  shapeOutlineWeight: "જાડાઈ",
+  shapeOutlineDash: "લાઈન",
+  shapeDashes: { solid: "સળંગ", dashed: "તૂટક", dotted: "ટપકાં", none: "કિનારી વગર" },
+  shapeEffects: "અસરો",
+  shapeShadow: "પડછાયો",
+  shapeShadows: { none: "પડછાયો નહીં", outer: "બહાર હળવો", outerStrong: "બહાર ઘાટો", below: "નીચે", inner: "અંદર" },
+  shapeGlow: "ચમક",
+  shapeGlowSize: "ચમકનું માપ",
+  shapeSoftEdge: "નરમ કિનારી",
+  shapeBevel: "ઉપસાવ",
+  shapeBevels: { none: "ઉપસાવ નહીં", soft: "હળવો", round: "ગોળ", angle: "ખૂણાદાર" },
+  shapeAccent: "શણગારનો રંગ",
+  shapeText: "લખાણની અસર",
+  shapeTextOutline: "લખાણની કિનારી",
+  shapeTextShadow: "લખાણનો પડછાયો",
+  shapeTextGlow: "લખાણની ચમક",
+  shapeNeedsHeading: "આકાર મથાળા (શાળાનું નામ, પટ્ટી, બેનર) માટે છે — પહેલાં કોઈ મથાળા પર ક્લિક કરો.",
+  shapeExcelNote: "Excel માં આકાર નથી દોરાતો — ત્યાં ફક્ત રંગ, ગ્રેડિયન્ટ અને કિનારી આવે.",
   layoutTheme: "થીમ (રંગ)",
   layoutThemeNone: "થીમ વગર (ફોર્મ મુજબ)",
   layoutThemeHint: "મથાળું, કોલમનાં મથાળાં, એક છોડીને એક હરોળ અને કુલની હરોળ એક સાથે રંગાય. તમે જાતે આપેલા રંગ તેના પર રહે.",
@@ -1140,7 +1221,7 @@ export const gu: Strings = {
   mm: "મિમી",
   pt: "pt",
 
-  setupTitle: "SMC હિસાબ — શરૂઆત",
+  setupTitle: "SMCE હિસાબ — શરૂઆત",
   setupSubtitle: "પહેલી વાર વાપરતાં પહેલાં શાળાની માહિતી ભરો. આ એક જ વાર કરવાનું છે.",
   setupSchoolSection: "શાળાની માહિતી",
   setupSchoolName: "શાળાનું નામ",
@@ -1319,6 +1400,17 @@ export const gu: Strings = {
   schoolsFindFolder: "ફોલ્ડર પસંદ કરો",
   schoolsRestore: "ક્લાઉડ બેકઅપમાંથી પાછી લાવો",
   schoolsForget: "આ PC ની યાદીમાંથી કાઢો",
+  schoolsFindFolderHint: "ફોલ્ડરનું નામ બદલ્યું હોય કે ખસેડ્યું હોય તો \"ફોલ્ડર પસંદ કરો\" થી નવું ફોલ્ડર બતાવો.",
+  schoolDelete: "શાળા કાઢી નાખો",
+  schoolDeleteTitle: (school) => `${school} - આખી શાળા કાઢી નાખો`,
+  schoolDeleteWarning:
+    "આ શાળાનાં બધાં વર્ષ, આવક, બિલ, ચેક અને ગોઠવણી કાઢી નખાશે: ખાતામાંથી (ક્લાઉડમાંથી) અને, પેન ડ્રાઈવ લાગેલી હોય તો, તેના ફોલ્ડરમાંથી પણ. આ પાછું લાવી શકાશે નહીં. ઇન્ટરનેટ જરૂરી છે.",
+  schoolDeletePassword: "ખાતરી માટે ખાતાનો પાસવર્ડ",
+  schoolDeleteConfirm: "હા, કાયમ માટે કાઢી નાખો",
+  schoolDeleted: (school) => `${school} કાઢી નાખી.`,
+  schoolDeletedFolder: (folder) => `તેનું ફોલ્ડર પણ કાઢ્યું: ${folder}`,
+  schoolDeletedNoFolder:
+    "તેનું ફોલ્ડર આ PC પરથી મળ્યું નહીં. તે પેન ડ્રાઈવ પર હોય તો ત્યાંથી હાથેથી કાઢી નાખો - હવે તે ખોલી શકાશે નહીં.",
   schoolsLastOpened: "છેલ્લે ખોલી",
   schoolsOffline: "ઇન્ટરનેટ નથી: ફક્ત આ PC પર ખોલેલી શાળાઓ બતાવી છે.",
   schoolsRefresh: "ફરી તપાસો",
@@ -1366,6 +1458,12 @@ export const gu: Strings = {
   accountEmail: "ખાતું",
   dataFolder: "ડેટાનું ફોલ્ડર",
   openDataFolder: "ફોલ્ડર ખોલો",
+  renameDataFolder: "ફોલ્ડરનું નામ બદલો",
+  renameDataFolderLabel: "ડેટાના ફોલ્ડરનું નવું નામ",
+  renameDataFolderHint:
+    "આ ફોલ્ડરમાંની બધી શાળા સાથે ખસશે. બીજા PC પર શાળા ન મળે તો શાળાની યાદીમાં \"ફોલ્ડર પસંદ કરો\" થી નવું ફોલ્ડર બતાવો.",
+  renameDataFolderSave: "નામ બદલો",
+  renameDataFolderDone: (folder) => `ફોલ્ડરનું નામ બદલાયું. હવે ડેટા અહીં છે: ${folder}`,
   encryptionNote: "આ શાળાનો ડેટા એન્ક્રિપ્ટ થયેલો છે: પેન ડ્રાઈવ ખોવાય તો પણ કોઈ તે વાંચી શકે નહીં.",
   backupStatus: "બેકઅપની સ્થિતિ",
   backupNow: "હમણાં બેકઅપ લો",
@@ -1416,7 +1514,7 @@ export const gu: Strings = {
 };
 
 export const en: Strings = {
-  appName: "SMC Accounts",
+  appName: "SMCE Accounts",
   year: "Year",
   groupData: "Data entry",
   groupPrinting: "Printing",
@@ -1647,6 +1745,19 @@ export const en: Strings = {
   printPreviewNote: "Print layout — always Gujarati, with Gujarati digits.",
 
   layoutEdit: "Edit layout",
+  applyLayoutToAll: "Apply to all schools",
+  applyLayoutConfirm: (report) =>
+    `The saved layout of "${report}" - its look, page, columns and cells - will be applied to every other school in this account, replacing their current layout of this report. Schools whose pen drive is not plugged in now are left out. Go ahead?`,
+  applyLayoutDone: (count) =>
+    count === 0 ? "The layout was not applied to any other school." : `Applied to ${count} school${count === 1 ? "" : "s"}.`,
+  applyLayoutSkipped: {
+    notConnected: "left out - pen drive / folder not found",
+    openElsewhere: "left out - open on another PC",
+    noKey: "left out - first time on this PC; try again with the internet on",
+    newerData: "left out - saved by a newer version of the software",
+    notSetUp: "left out - not set up yet",
+    failed: "left out - something went wrong (see the log)",
+  },
   layoutEditNote: "Change column widths, fonts, spacing and highlights. Changes apply to both the PDF and Excel.",
   layoutDone: "Close",
   layoutSave: "Save layout",
@@ -1793,17 +1904,37 @@ export const en: Strings = {
   layoutArrange: "Number and date",
   layoutArrangements: { column: "As the column", inline: "Side by side", stacked: "Date under number", dateFirst: "Date above number" },
   layoutShape: "Heading shape",
-  layoutShapes: {
-    rect: "Plain box",
-    rounded: "Rounded corners",
-    pill: "Rounded ends",
-    banner: "Banner (pointed ends)",
-    ribbon: "Ribbon",
-    double: "Double border",
-    plaque: "Plaque (gold frame)",
-    badge: "Badge (gold edge)",
-    floral: "Floral frame",
-  },
+  shapeTab: "Shape Format",
+  shapeInsert: "Shape",
+  shapeNone: "No shape (as the form)",
+  shapeGroups: { rectangles: "Rectangles", basic: "Basic shapes", arrows: "Block arrows", banners: "Banners and ribbons", callouts: "Callouts", decorative: "Decorated frames" },
+  shapeAdjust: "Adjust",
+  shapeStyles: "Shape styles",
+  shapeStyleLevels: { subtle: "Subtle", moderate: "Moderate", intense: "Intense", outline: "Outline only" },
+  shapeFill: "Shape fill",
+  shapeFill2: "Gradient's second colour",
+  shapeGradientNone: "No gradient",
+  shapeGradientAngle: "Gradient direction",
+  shapeGradientAngles: { "0": "Left to right", "45": "Diagonal ↘", "90": "Top to bottom", "135": "Diagonal ↙", "180": "Right to left", "225": "Diagonal ↖", "270": "Bottom to top", "315": "Diagonal ↗" },
+  shapeOutline: "Shape outline",
+  shapeOutlineWeight: "Weight",
+  shapeOutlineDash: "Dashes",
+  shapeDashes: { solid: "Solid", dashed: "Dashed", dotted: "Dotted", none: "No outline" },
+  shapeEffects: "Shape effects",
+  shapeShadow: "Shadow",
+  shapeShadows: { none: "No shadow", outer: "Outer, light", outerStrong: "Outer, strong", below: "Below", inner: "Inner" },
+  shapeGlow: "Glow",
+  shapeGlowSize: "Glow size",
+  shapeSoftEdge: "Soft edges",
+  shapeBevel: "Bevel",
+  shapeBevels: { none: "No bevel", soft: "Soft", round: "Round", angle: "Angle" },
+  shapeAccent: "Ornament colour",
+  shapeText: "Text effects",
+  shapeTextOutline: "Text outline",
+  shapeTextShadow: "Text shadow",
+  shapeTextGlow: "Text glow",
+  shapeNeedsHeading: "Shapes are for headings (the school name, a band, a banner) - click a heading first.",
+  shapeExcelNote: "Excel cannot draw the shape - it gets the colours, the gradient and the outline only.",
   layoutTheme: "Theme (colours)",
   layoutThemeNone: "No theme (as the form)",
   layoutThemeHint: "Colours the title, the column headings, every other row and the total row at once. Colours you set yourself stay on top.",
@@ -1858,7 +1989,7 @@ export const en: Strings = {
   mm: "mm",
   pt: "pt",
 
-  setupTitle: "SMC Accounts — first run",
+  setupTitle: "SMCE Accounts — first run",
   setupSubtitle: "Enter the school's details before using the software. This is done once.",
   setupSchoolSection: "School details",
   setupSchoolName: "School name",
@@ -2036,6 +2167,17 @@ export const en: Strings = {
   schoolsFindFolder: "Choose folder",
   schoolsRestore: "Restore from cloud backup",
   schoolsForget: "Remove from this PC's list",
+  schoolsFindFolderHint: 'If its folder was renamed or moved, use "Choose folder" to point at the new one.',
+  schoolDelete: "Delete school",
+  schoolDeleteTitle: (school) => `${school} - delete the whole school`,
+  schoolDeleteWarning:
+    "Every year, receipt, bill, cheque and layout of this school will be deleted: from the account (the cloud) and, if its pen drive is plugged in, from its folder too. This cannot be undone. Needs the internet.",
+  schoolDeletePassword: "Your account password, to confirm",
+  schoolDeleteConfirm: "Yes, delete it for good",
+  schoolDeleted: (school) => `${school} was deleted.`,
+  schoolDeletedFolder: (folder) => `Its folder was removed too: ${folder}`,
+  schoolDeletedNoFolder:
+    "Its folder was not found on this PC. If it is on a pen drive, delete it there by hand - it can no longer be opened.",
   schoolsLastOpened: "Last opened",
   schoolsOffline: "No internet: only schools opened on this PC are shown.",
   schoolsRefresh: "Check again",
@@ -2083,6 +2225,12 @@ export const en: Strings = {
   accountEmail: "Account",
   dataFolder: "Data folder",
   openDataFolder: "Open folder",
+  renameDataFolder: "Rename folder",
+  renameDataFolderLabel: "New name of the data folder",
+  renameDataFolderHint:
+    'Every school in this folder moves with it. If another PC cannot find the school, use "Choose folder" on its school list to point at the new folder.',
+  renameDataFolderSave: "Rename",
+  renameDataFolderDone: (folder) => `Folder renamed. The data is now in ${folder}`,
   encryptionNote: "This school's data is encrypted: if the pen drive is lost, nobody can read it.",
   backupStatus: "Backup status",
   backupNow: "Back up now",

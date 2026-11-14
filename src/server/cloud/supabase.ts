@@ -191,6 +191,14 @@ export class SupabaseCloud implements CloudBackend {
     return key;
   }
 
+  async deleteProfile(session: CloudSession, profileId: string): Promise<void> {
+    // A database function (supabase/migrations/0003_delete_school.sql): the
+    // tables themselves allow no update or delete through the app's key.
+    const { data, error, status } = await this.as(session).rpc("delete_profile", { p_id: profileId });
+    if (error) throw dataFailure(error, status);
+    if (data !== true) throw new CloudError("not-found", "no such school in this account");
+  }
+
   // ---------------------------------------------------------------- backups
 
   async uploadBackup(session: CloudSession, backup: NewBackup): Promise<CloudBackup> {
@@ -351,6 +359,8 @@ function dataFailure(error: { message: string; code?: string }, status: number):
     return new CloudError("session-expired", error.message);
   }
   if (status === 429) return new CloudError("rate-limited", error.message);
+  // PostgREST: no such function - the project has not had a newer migration run.
+  if (error.code === "PGRST202") return new CloudError("needs-update", error.message);
   return new CloudError("server", error.message);
 }
 

@@ -21,18 +21,24 @@ import type { PrismaClient } from "@prisma/client";
 import { runMigrations, NewerDataError } from "../../electron/migrate.js";
 import type { Issue } from "../engine/validation.js";
 import { createPrismaClient } from "../lib/db.js";
-import type {
-  ApiResult,
-  AppStateDto,
-  BackupStatusDto,
-  CloudBackupDto,
-  CloudInfoDto,
-  FolderInspectionDto,
-  OpenSchoolResultDto,
-  SchoolListDto,
-  SchoolListItemDto,
-  SetupInput,
+import {
+  PRINTABLE_REPORTS,
+  type ApiResult,
+  type ApplyLayoutResultDto,
+  type AppStateDto,
+  type BackupStatusDto,
+  type CloudBackupDto,
+  type CloudInfoDto,
+  type DeleteSchoolResultDto,
+  type FolderInspectionDto,
+  type LayoutSkipReason,
+  type OpenSchoolResultDto,
+  type PrintableReportId,
+  type SchoolListDto,
+  type SchoolListItemDto,
+  type SetupInput,
 } from "../shared/api.js";
+import type { ReportLayout } from "../shared/report-layout.js";
 import { AccountsService } from "./accounts-service.js";
 import { CloudBackups, type Timers } from "./backup/cloud-backups.js";
 import { Account, type SecretBox } from "./cloud/account.js";
@@ -41,15 +47,21 @@ import { CloudError, type CloudBackend, type CloudBackup, type CloudProfile } fr
 import {
   acquireLock,
   booksFile,
-  DATA_DIR_NAME,
+  DATA_DIR_MARKER,
   findProfilesIn,
   folderForNewSchool,
+  isDataDir,
   isWritableLocation,
   keyMatches,
+  LOCK_FILE,
+  lockSchema,
   MANIFEST_FILE,
+  markDataDir,
   newManifest,
   readManifest,
+  readSyncState,
   releaseLock,
+  safeFolderName,
   takeLocalBackup,
   writeManifest,
   writeSyncState,
@@ -237,19 +249,8 @@ export class AppController {
     }
 
     // 1. Password verification for safety
-    if (!this.standalone && this.account && this.account.user) {
-      if (!input.password || input.password.trim() === "") {
-        return failure(issue("password_required", "સુરક્ષા માટે ખાતાનો પાસવર્ડ દાખલ કરો.", "Please enter your account password for safety."));
-      }
-      try {
-        await this.account.backend.signIn(this.account.user.email, input.password);
-      } catch (error) {
-        if (error instanceof CloudError && error.code === "invalid-credentials") {
-          return failure(issue("invalid_credentials", "પાસવર્ડ ખોટો છે.", "Incorrect password."));
-        }
-        return failure(cloudIssue(error, "deleteYear"));
-      }
-    }
+    const wrongPassword = await this.checkPassword(input.password, "deleteYear");
+    if (wrongPassword) return failure(wrongPassword);
 
     // 2. Perform delete in books
     const deleteResult = await current.books.deleteYear(input);
@@ -277,6 +278,204 @@ export class AppController {
         switchedToYearId,
       },
     };
+  }
+
+  // ------------------------------------------------- deleting a whole school
+
+  /**
+   * Delete a school: out of the account in the cloud, and its data folder off
+   * the pen drive or PC when it is reachable.
+   *
+   * The account password is asked again, and the cloud goes first: without the
+   * internet nothing is deleted at all, so a school is never left deleted here
+   * but still listed (and openable) everywhere else.
+   */
+  async deleteSchool(profileId: string, password: string): Promise<ApiResult<DeleteSchoolResultDto>> {
+    const account = this.account;
+    const user = account?.user;
+    if (!account || !user) return failure(ISSUES.notSignedIn());
+    const wrongPassword = await this.checkPassword(password, "deleteSchool");
+    if (wrongPassword) return failure(wrongPassword);
+
+    // Found before anything changes: a folder is only deleted once it is known
+    // to be this school's and this account's.
+    const open = this.current?.profileId === profileId ? this.current : null;
+    const found = open ? { folder: open.folder, manifest: open.manifest } : this.locate(profileId);
+    if (found) {
+      const cached = account.cachedKey(profileId);
+      const mine = found.manifest.ownerUserId === user.id || Boolean(cached && keyMatches(found.manifest, cached));
+      if (!mine) return failure(ISSUES.otherAccount());
+    }
+
+    try {
+      await account.withSession((session) => account.backend.deleteProfile(session, profileId));
+    } catch (error) {
+      // Not in this account's cloud (never synced, or already deleted): the
+      // local part still has to go.
+      if (!(error instanceof CloudError && error.code === "not-found")) {
+        return failure(this.errorIssue(error, "deleteSchool"));
+      }
+    }
+
+    // No backup is owed any more - the cloud would refuse it - so the books are
+    // let go without the usual flush.
+    if (open) await this.discardCurrent();
+
+    this.known.forget(profileId);
+    account.forgetKey(profileId);
+
+    let folderRemoved: string | null = null;
+    if (found) {
+      try {
+        removeSchoolFolder(found.folder);
+        folderRemoved = found.folder;
+      } catch (error) {
+        return failure(ISSUES.folderNotRemoved(found.folder, error instanceof Error ? error.message : String(error)));
+      }
+    }
+    return { ok: true, data: { list: await this.listSchools(), folderRemoved } };
+  }
+
+  // ------------------------------------------- one layout for every school
+
+  /**
+   * Copy the open school's saved layout of `report` into every other school of
+   * this account that this PC can reach right now. Each one gets a local copy
+   * of its books first, and owes a cloud backup afterwards, just as if the
+   * layout had been saved while it was open.
+   *
+   * Schools that cannot be reached are listed with the reason rather than
+   * failing the whole thing: a pen drive that is not plugged in is normal.
+   */
+  async applyLayoutToAllSchools(report: PrintableReportId): Promise<ApiResult<ApplyLayoutResultDto>> {
+    const current = this.current;
+    const account = this.account;
+    const user = account?.user;
+    if (!current || this.dataMissing || !current.books) return failure(ISSUES.noSchoolOpen());
+    if (!account || !user) return failure(ISSUES.notSignedIn());
+    if (!PRINTABLE_REPORTS.includes(report)) {
+      return failure(issue("unknown_report", "આવો રિપોર્ટ નથી", `no printable report called ${report}`));
+    }
+    const layout = await current.books.getReportLayout(report);
+
+    const targets = new Map<string, string>();
+    for (const known of this.known.all()) {
+      if (known.ownerUserId === user.id) targets.set(known.profileId, known.schoolNameGu);
+    }
+    try {
+      const inCloud = await account.withSession((session) => account.backend.listProfiles(session));
+      for (const profile of inCloud) if (!targets.has(profile.id)) targets.set(profile.id, profile.schoolNameGu);
+    } catch {
+      // Offline: the schools this PC knows are enough.
+    }
+    targets.delete(current.profileId);
+
+    const applied: string[] = [];
+    const skipped: ApplyLayoutResultDto["skipped"] = [];
+    for (const [profileId, schoolNameGu] of targets) {
+      const reason = await this.applyLayoutTo(profileId, report, layout);
+      if (reason === null) applied.push(schoolNameGu);
+      else skipped.push({ profileId, schoolNameGu, reason });
+    }
+    return { ok: true, data: { applied, skipped } };
+  }
+
+  private async applyLayoutTo(
+    profileId: string,
+    report: PrintableReportId,
+    layout: ReportLayout,
+  ): Promise<LayoutSkipReason | null> {
+    const found = this.locate(profileId);
+    if (!found) return "notConnected";
+    let keyHex: string;
+    try {
+      keyHex = await this.keyFor(found.manifest);
+    } catch {
+      return "noKey";
+    }
+    if (!acquireLock(found.folder, this.device).ok) return "openElsewhere";
+
+    let prisma: PrismaClient | null = null;
+    try {
+      takeLocalBackup(found.folder, keyHex, "before-layout");
+      runMigrations(booksFile(found.folder), this.options.migrationsDir, { keyHex });
+      prisma = createPrismaClient({ file: booksFile(found.folder), keyHex });
+      const year = await latestYear(prisma);
+      if (!year) return "notSetUp";
+      const saved = await new AccountsService(prisma, year.id).saveReportLayout(report, layout);
+      if (!saved.ok) return "failed";
+      const sync = readSyncState(found.folder);
+      if (!sync.pendingSince) writeSyncState(found.folder, { ...sync, pendingSince: new Date(this.now()).toISOString() });
+      return null;
+    } catch (error) {
+      if (error instanceof NewerDataError) return "newerData";
+      console.error(`applyLayoutTo ${profileId} failed:`, error);
+      return "failed";
+    } finally {
+      await prisma?.$disconnect().catch(() => undefined);
+      releaseLock(found.folder, this.device);
+    }
+  }
+
+  // ----------------------------------------------- renaming the data folder
+
+  /**
+   * Rename the folder that holds the open school's folder - "SMC Accounts"
+   * unless the user changed it. Every school kept in it moves along, and this
+   * PC's list is pointed at the new place. Another PC that remembers the old
+   * name finds it again by itself when it is at the top of a drive (the marker
+   * file), and otherwise through "Find folder" on the school list.
+   */
+  async renameDataFolder(newName: string): Promise<ApiResult<AppStateDto>> {
+    const current = this.current;
+    if (!current || this.dataMissing || this.standalone) return failure(ISSUES.noSchoolOpen());
+
+    const name = newName.trim();
+    if (name === "" || safeFolderName(name) !== name || name === "." || name === "..") {
+      return failure(ISSUES.badFolderName(name));
+    }
+    const schoolFolder = current.folder;
+    const dataDir = path.dirname(schoolFolder);
+    const parent = path.dirname(dataDir);
+    if (parent === dataDir) return failure(ISSUES.folderAtDriveRoot());
+    const target = path.join(parent, name);
+    if (target === dataDir) return { ok: true, data: this.getAppState() };
+    // A change of case alone is a rename on Windows, not a clash.
+    if (existsSync(target) && target.toLowerCase() !== dataDir.toLowerCase()) {
+      return failure(ISSUES.folderExists(target));
+    }
+
+    // Every school in it moves, so none may be open on another PC.
+    const inside = findProfilesIn(dataDir).filter((school) => school.folder !== dataDir);
+    for (const school of inside) {
+      const holder = readJson(path.join(school.folder, LOCK_FILE), lockSchema);
+      if (holder && holder.deviceId !== this.device.id) {
+        return failure(ISSUES.folderInUse(school.manifest.schoolNameGu, holder.deviceName));
+      }
+    }
+
+    const profileId = current.profileId;
+    // Windows cannot rename a folder with the books open inside it.
+    await this.closeSchool();
+    try {
+      renameSync(dataDir, target);
+    } catch (error) {
+      await this.openSchool(profileId, { folder: schoolFolder, force: true });
+      return failure(ISSUES.renameFailed(dataDir, error instanceof Error ? error.message : String(error)));
+    }
+    markDataDir(target);
+
+    for (const school of inside) {
+      const known = this.known.get(school.manifest.profileId);
+      if (known) this.known.remember({ ...known, folder: path.join(target, path.relative(dataDir, school.folder)) });
+    }
+
+    const opened = await this.openSchool(profileId, {
+      folder: path.join(target, path.basename(schoolFolder)),
+      force: true,
+    });
+    if (!opened.ok) return opened;
+    return { ok: true, data: this.getAppState() };
   }
 
   // ---------------------------------------------------------------- account
@@ -862,6 +1061,43 @@ export class AppController {
     return this.options.now?.() ?? Date.now();
   }
 
+  /**
+   * Asked again before anything that cannot be undone. Null when it is right
+   * (or there is no account to ask about: the standalone testing database).
+   */
+  private async checkPassword(password: string | undefined, where: string): Promise<Issue | null> {
+    const account = this.account;
+    const user = account?.user;
+    if (this.standalone || !account || !user) return null;
+    if (!password || password.trim() === "") {
+      return issue("password_required", "સુરક્ષા માટે ખાતાનો પાસવર્ડ દાખલ કરો.", "Please enter your account password for safety.");
+    }
+    try {
+      await account.backend.signIn(user.email, password);
+      return null;
+    } catch (error) {
+      if (error instanceof CloudError && error.code === "invalid-credentials") {
+        return issue("invalid_credentials", "પાસવર્ડ ખોટો છે.", "Incorrect password.");
+      }
+      return cloudIssue(error, where);
+    }
+  }
+
+  /** Let go of the open school at once: no backup flush, the lock released. */
+  private async discardCurrent(): Promise<void> {
+    const current = this.current;
+    if (!current) return;
+    this.backups?.detach();
+    this.current = null;
+    this.dataMissing = false;
+    await current.prisma.$disconnect().catch(() => undefined);
+    try {
+      releaseLock(current.folder, this.device);
+    } catch {
+      // The drive is gone; its lock goes with it.
+    }
+  }
+
   private locate(profileId: string): FoundProfile | null {
     const known = this.known.get(profileId);
     const roots = this.options.roots?.() ?? mountedRoots(this.options.platform);
@@ -886,6 +1122,8 @@ export class AppController {
   /** Make a found, unlocked school folder the open one. */
   private async bind(found: FoundProfile, keyHex: string): Promise<void> {
     const file = booksFile(found.folder);
+    // So the folder holding it is still recognised if the user renames it.
+    if (isDataDir(path.dirname(found.folder))) markDataDir(path.dirname(found.folder));
     // A copy before anything - including a migration - touches the books.
     takeLocalBackup(found.folder, keyHex, "open");
     const migration = runMigrations(file, this.options.migrationsDir, { keyHex });
@@ -1019,13 +1257,25 @@ function readLegacySchool(file: string): { nameGu: string; diseCode: string } | 
 /** Undo a school folder this attempt created - and "SMC Accounts" if it made that too and it is empty. */
 function removeNewFolder(folder: string, removeParentIfEmpty: boolean): void {
   rmSync(folder, { recursive: true, force: true });
-  const parent = path.dirname(folder);
-  if (removeParentIfEmpty && path.basename(parent) === DATA_DIR_NAME) {
-    try {
-      if (readdirSync(parent).length === 0) rmdirSync(parent);
-    } catch {
-      // Leave it.
-    }
+  if (removeParentIfEmpty) removeDataDirIfEmpty(path.dirname(folder));
+}
+
+/** A deleted school's folder, and the data folder too when nothing else is left in it. */
+function removeSchoolFolder(folder: string): void {
+  // Retries: Windows can take a moment to let go of a database just closed.
+  rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  removeDataDirIfEmpty(path.dirname(folder));
+}
+
+function removeDataDirIfEmpty(dir: string): void {
+  if (!isDataDir(dir)) return;
+  try {
+    const left = readdirSync(dir).filter((name) => name !== DATA_DIR_MARKER);
+    if (left.length > 0) return;
+    rmSync(path.join(dir, DATA_DIR_MARKER), { force: true });
+    rmdirSync(dir);
+  } catch {
+    // Leave it.
   }
 }
 
@@ -1126,6 +1376,13 @@ function cloudIssue(error: unknown, where: string): Issue {
         "This was not found in the cloud for this account.",
         detail,
       );
+    case "needs-update":
+      return issue(
+        "cloud_needs_update",
+        "ક્લાઉડમાં આ સુવિધા હજી ચાલુ થઈ નથી. સોફ્ટવેર આપનારને ક્લાઉડ અપડેટ (0003) ચલાવવા કહો.",
+        "The cloud does not support this yet. Ask the software's provider to run the cloud update (0003).",
+        detail,
+      );
     case "server":
       return issue("cloud_error", "ક્લાઉડ સર્વરે ભૂલ બતાવી. થોડી વાર પછી ફરી પ્રયત્ન કરો.", "The cloud server reported an error. Try again later.", detail);
   }
@@ -1150,8 +1407,8 @@ const ISSUES = {
   noSchoolInFolder: (folder: string) =>
     issue(
       "no_school_in_folder",
-      "આ ફોલ્ડરમાં SMC હિસાબનો કોઈ ડેટા નથી.",
-      "There is no SMC Accounts data in this folder.",
+      "આ ફોલ્ડરમાં SMCE હિસાબનો કોઈ ડેટા નથી.",
+      "There is no SMCE Accounts data in this folder.",
       `no profile.json in or just below ${folder}`,
     ),
   notWritable: (folder: string) =>
@@ -1177,8 +1434,8 @@ const ISSUES = {
   newerData: (detail: string) =>
     issue(
       "newer_data",
-      "આ ડેટા SMC હિસાબના નવા સંસ્કરણથી સાચવાયેલો છે. આ PC પર સોફ્ટવેર અપડેટ કરો.",
-      "This data was saved by a newer version of SMC Accounts. Update the software on this PC.",
+      "આ ડેટા SMCE હિસાબના નવા સંસ્કરણથી સાચવાયેલો છે. આ PC પર સોફ્ટવેર અપડેટ કરો.",
+      "This data was saved by a newer version of SMCE Accounts. Update the software on this PC.",
       detail,
     ),
   wrongKey: (detail: string) =>
@@ -1193,6 +1450,41 @@ const ISSUES = {
       "backup_damaged",
       "ડાઉનલોડ થયેલો બેકઅપ બગડેલો છે, તેથી વાપર્યો નથી. ફરી પ્રયત્ન કરો.",
       "The downloaded backup was damaged, so it was not used. Try again.",
+    ),
+  folderNotRemoved: (folder: string, detail: string) =>
+    issue(
+      "folder_not_removed",
+      `શાળા ખાતામાંથી કાઢી નાખી, પણ તેનું ફોલ્ડર કાઢી શકાયું નહીં: ${folder}. તેને હાથેથી કાઢી નાખો.`,
+      `The school was deleted from the account, but its folder could not be removed: ${folder}. Delete it by hand.`,
+      detail,
+    ),
+  badFolderName: (name: string) =>
+    issue(
+      "bad_folder_name",
+      'ફોલ્ડરનું નામ ખાલી ન રાખો અને તેમાં \\ / : * ? " < > | જેવા ચિહ્નો ન વાપરો.',
+      'Give the folder a name, without characters such as \\ / : * ? " < > |.',
+      `not a usable folder name: ${JSON.stringify(name)}`,
+    ),
+  folderAtDriveRoot: () =>
+    issue(
+      "folder_at_drive_root",
+      "આ શાળાનો ડેટા સીધો ડ્રાઈવમાં છે, તેથી બદલવા માટે કોઈ ફોલ્ડર નથી.",
+      "This school's data is directly on the drive, so there is no folder to rename.",
+    ),
+  folderExists: (target: string) =>
+    issue("folder_exists", `આ નામનું ફોલ્ડર પહેલેથી છે: ${target}`, `A folder with this name already exists: ${target}`),
+  folderInUse: (schoolNameGu: string, deviceName: string) =>
+    issue(
+      "folder_in_use",
+      `${schoolNameGu} હાલ બીજા PC (${deviceName}) પર ખુલ્લી છે. ત્યાં બંધ કરીને ફરી પ્રયત્ન કરો.`,
+      `${schoolNameGu} is open on another PC (${deviceName}). Close it there and try again.`,
+    ),
+  renameFailed: (folder: string, detail: string) =>
+    issue(
+      "rename_failed",
+      `ફોલ્ડરનું નામ બદલી શકાયું નહીં: ${folder}. તેમાંની કોઈ ફાઈલ બીજા પ્રોગ્રામમાં ખુલ્લી હોઈ શકે.`,
+      `The folder could not be renamed: ${folder}. A file in it may be open in another program.`,
+      detail,
     ),
   internal: (detail: string) =>
     issue("internal_error", "અણધારી ભૂલ આવી. વિગત માટે લોગ જુઓ.", "Something went wrong. See the log for details.", detail),

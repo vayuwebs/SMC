@@ -134,6 +134,8 @@ function AccountAndBackup({
   const [issues, setIssues] = useState<Issue[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The new name being typed for the data folder; null while not renaming.
+  const [folderName, setFolderName] = useState<string | null>(null);
 
   async function work(task: () => Promise<void>): Promise<void> {
     setBusy(true);
@@ -178,6 +180,20 @@ function AccountAndBackup({
       window.location.reload();
     });
 
+  const renameFolder = () =>
+    work(async () => {
+      if (folderName === null) return;
+      const result = await api.renameDataFolder(folderName);
+      if (!result.ok) {
+        setIssues(result.issues);
+        return;
+      }
+      setFolderName(null);
+      if (result.data.phase === "open") setMessage(t.renameDataFolderDone(result.data.school.folder));
+      // The school was closed and reopened from its new place: show that place.
+      onSignedOut();
+    });
+
   const signOut = () =>
     work(async () => {
       if (!(await askConfirm(t.signOutHint))) return;
@@ -208,7 +224,45 @@ function AccountAndBackup({
               <span className="num-inline">{school.folder}</span>{" "}
               <button className="ghost small" type="button" onClick={() => void api.showDataFolder()}>
                 {t.openDataFolder}
-              </button>
+              </button>{" "}
+              {folderName === null && (
+                <button
+                  className="ghost small"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setFolderName(dataFolderName(school.folder))}
+                >
+                  {t.renameDataFolder}
+                </button>
+              )}
+              {folderName !== null && (
+                <form
+                  className="rename-folder"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void renameFolder();
+                  }}
+                >
+                  <div className="field">
+                    <label htmlFor="data-folder-name">{t.renameDataFolderLabel}</label>
+                    <input
+                      id="data-folder-name"
+                      autoFocus
+                      value={folderName}
+                      onChange={(event) => setFolderName(event.target.value)}
+                    />
+                  </div>
+                  <button className="primary small" type="submit" disabled={busy || folderName.trim() === ""}>
+                    {busy ? t.working : t.renameDataFolderSave}
+                  </button>
+                  <button className="ghost small" type="button" disabled={busy} onClick={() => setFolderName(null)}>
+                    {t.cancel}
+                  </button>
+                  <div className="muted" style={{ fontSize: 13, flexBasis: "100%" }}>
+                    {t.renameDataFolderHint}
+                  </div>
+                </form>
+              )}
               <div className="muted" style={{ fontSize: 13 }}>
                 {t.encryptionNote}
               </div>
@@ -253,4 +307,10 @@ function AccountAndBackup({
       )}
     </div>
   );
+}
+
+/** "SMC Accounts" in F:\SMC Accounts\24160203401: the folder that holds the school's own. */
+function dataFolderName(schoolFolder: string): string {
+  const parts = schoolFolder.split(/[\\/]+/).filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 2]! : "";
 }

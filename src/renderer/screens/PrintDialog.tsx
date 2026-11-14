@@ -199,9 +199,31 @@ export function PrintDialog({
       </div>
 
       <aside className="print-dialog-panel">
-        <div className="print-dialog-head">
-          <h2>{t.printTitle(reportLabel)}</h2>
-          <span className="muted">{sheetCount > 0 ? t.printSheets(sheetCount) : "…"}</span>
+        {/* Pinned to the top of the panel: the settings below can run longer
+            than the window, and Print / Close should never scroll away. */}
+        <div className="print-dialog-top">
+          <div className="print-dialog-head">
+            <h2>{t.printTitle(reportLabel)}</h2>
+            <span className="muted">{sheetCount > 0 ? t.printSheets(sheetCount) : "…"}</span>
+          </div>
+          <div className="print-dialog-actions">
+            <button className="primary" disabled={busy !== null || saved === null} onClick={() => void run("print")}>
+              <Icon name="print" /> {busy === "print" ? t.printing : t.printNow}
+            </button>
+            <button className="ghost" disabled={busy !== null || saved === null} onClick={() => void run("pdf")}>
+              <Icon name="pdf" /> {busy === "pdf" ? t.savingPdf : t.savePdf}
+            </button>
+            <button
+              className="ghost"
+              disabled={busy !== null || saved === null || !dirty}
+              onClick={() => void run("save")}
+            >
+              {busy === "save" ? t.printSaving : t.printSave}
+            </button>
+            <button className="ghost" onClick={() => void close()}>
+              ← {t.printClose}
+            </button>
+          </div>
         </div>
 
         <div className="field">
@@ -337,25 +359,6 @@ export function PrintDialog({
         )}
         {message && <div className={`issue ${message.kind === "ok" ? "warning" : "error"}`}>{message.text}</div>}
         {dirty && <p className="layout-hint">{t.printUnsavedNote}</p>}
-
-        <div className="print-dialog-actions">
-          <button className="primary" disabled={busy !== null || saved === null} onClick={() => void run("print")}>
-            <Icon name="print" /> {busy === "print" ? t.printing : t.printNow}
-          </button>
-          <button className="ghost" disabled={busy !== null || saved === null} onClick={() => void run("pdf")}>
-            <Icon name="pdf" /> {busy === "pdf" ? t.savingPdf : t.savePdf}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy !== null || saved === null || !dirty}
-            onClick={() => void run("save")}
-          >
-            {busy === "save" ? t.printSaving : t.printSave}
-          </button>
-          <button className="ghost" onClick={() => void close()}>
-            {t.printClose}
-          </button>
-        </div>
 
         <div className="print-dialog-view">
           <div className="segmented">

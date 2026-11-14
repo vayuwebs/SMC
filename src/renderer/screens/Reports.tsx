@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { api } from "../api.js";
 import type { DayBalance, Ledger } from "../../engine/types.js";
-import { PRINTABLE_REPORTS, type PrintableReportId } from "../../shared/api.js";
+import { PRINTABLE_REPORTS, type ApplyLayoutResultDto, type PrintableReportId } from "../../shared/api.js";
+import type { Issue } from "../../engine/validation.js";
+import { IssueList } from "../components/IssueList.js";
 import { Money } from "../components/Money.js";
 import { formatDate } from "../format.js";
 import { useStrings, type Strings } from "../i18n/index.js";
@@ -98,6 +100,7 @@ export function Reports(): JSX.Element {
   function select(next: Tab): void {
     setTab(next);
     setSaved(null);
+    setApplyResult(null);
     setLayoutDirty(false);
     setEditing(false);
     setPrinting(false);
@@ -134,7 +137,45 @@ export function Reports(): JSX.Element {
       .finally(() => setSaving(null));
   }
 
-  const busy = saving !== null;
+  // "Apply this layout to all schools": what happened, shown under the head.
+  const [applyResult, setApplyResult] = useState<
+    { ok: true; data: ApplyLayoutResultDto } | { ok: false; issues: Issue[] } | null
+  >(null);
+  const [applying, setApplying] = useState(false);
+
+  /** Copy the saved layout of this one report into every other school's books. */
+  async function applyToAll(report: PrintableReportId): Promise<void> {
+    if (!(await askConfirm(t.applyLayoutConfirm(labelFor(report, t))))) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      setApplyResult(await api.applyLayoutToAllSchools(report));
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  const applied = applyResult !== null && (
+    applyResult.ok ? (
+      <div className={`issue ${applyResult.data.skipped.length > 0 ? "warning" : "success"}`}>
+        <div>
+          <div>{t.applyLayoutDone(applyResult.data.applied.length)}</div>
+          {applyResult.data.applied.length > 0 && (
+            <div className="muted">{applyResult.data.applied.join(", ")}</div>
+          )}
+          {applyResult.data.skipped.map((skip) => (
+            <div key={skip.profileId}>
+              {skip.schoolNameGu}: {t.applyLayoutSkipped[skip.reason]}
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <IssueList issues={applyResult.issues} />
+    )
+  );
+
+  const busy = saving !== null || applying;
   const isSaving = (kind: ExportKind, report: PrintableReportId | "all"): boolean =>
     saving?.kind === kind && saving.report === report;
 
@@ -219,7 +260,10 @@ export function Reports(): JSX.Element {
 
   return (
     <>
-      <button className="link report-back" onClick={() => void backToCards()}>
+      {/* Back, Edit layout and the exports stay at the top while the preview
+          scrolls under them - a register runs to many pages. */}
+      <div className="report-sticky-head">
+      <button className="ghost small report-back" onClick={() => void backToCards()}>
         ← {t.allReports}
       </button>
       <div className="page-head">
@@ -238,6 +282,9 @@ export function Reports(): JSX.Element {
             <button className="ghost" disabled={busy} onClick={() => setEditing(true)}>
               <Icon name="edit" /> {t.layoutEdit}
             </button>
+            <button className="ghost" disabled={busy} onClick={() => void applyToAll(tab)}>
+              <Icon name="copy" /> {applying ? t.working : t.applyLayoutToAll}
+            </button>
             <button className="ghost" disabled={busy} onClick={() => runExport("pdf", tab)}>
               <Icon name="pdf" /> {isSaving("pdf", tab) ? t.savingPdf : t.savePdf}
             </button>
@@ -251,8 +298,10 @@ export function Reports(): JSX.Element {
         )}
         {editing && <span className="muted">{t.layoutUnsavedExport}</span>}
       </div>
+      </div>
 
       {savedNotice}
+      {applied}
 
       {isPrintable(tab) && editing ? (
         <LayoutEditor

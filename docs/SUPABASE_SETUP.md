@@ -90,6 +90,16 @@ account every school, key and backup, so this holds whatever copy of the app is
 used. Accounts that already existed when the script ran are approved
 automatically, so nobody already using the app is locked out.
 
+### 4c. Deleting schools — run the third script once
+
+1. **SQL Editor** → **New query**, paste **all** of
+   `supabase/migrations/0003_delete_school.sql`, press **Run**.
+
+Until this has run, "Delete school" in the app stops with *ક્લાઉડમાં આ સુવિધા હજી
+ચાલુ થઈ નથી…* and deletes nothing. Existing projects need it too: it is safe to
+run on a project that is already in use. See "Deleted schools" below for what a
+deletion keeps on the server.
+
 ## 5. Email: the code template and a real sender
 
 The app confirms email addresses and resets passwords with a **6-digit code**
@@ -246,6 +256,22 @@ To **withdraw** an account, untick **approved**. The next time that PC lists or
 opens a school with the internet on, the app signs it out and forgets the login
 on that PC. (With the internet off the app keeps working on the pen drive, as it
 always does.) The **note** column is yours for remarks such as the school's name.
+
+## Deleted schools
+
+When a user deletes a school (school list → **શાળા કાઢી નાખો**, with their
+password), the app deletes its folder from the pen drive and the cloud marks
+the school **deleted**: it disappears from the account, no PC can fetch its key
+any more, and it takes no new backups. Nothing is destroyed on the server — the
+row, its key and its backup files stay — so a stolen login can hide a school but
+never wipe its history.
+
+- **Bring one back:** **Table Editor** → **profiles** → find the row (its
+  `deleted_at` is filled) → clear `deleted_at` → **Save**. The school lists again
+  and can be restored from its backups.
+- **Purge one for good:** **Table Editor** → **profiles** → delete the row (its
+  key and backup records go with it), then **Storage** → **backups** → open the
+  account's folder and delete the folder named after the school's id.
 
 ## Looking after it
 

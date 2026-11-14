@@ -355,8 +355,9 @@ describe("2 + 3: text direction, number-and-date order, heading shapes and theme
     expect(css).toContain("writing-mode: sideways-lr");
     expect(css).toMatch(/data-line="line:cheque:110"\] \.arranged-line \{ flex-direction: column-reverse/);
     expect(css).toMatch(/data-col="p\.cheque"\] \.arranged \{ flex-direction: column;/);
-    expect(css).toContain("border-image: url(\"data:image/svg+xml,");
-    expect(css).toContain("clip-path: polygon(");
+    // A shaped heading makes room for its words; the shape is drawn behind them (paintShapes).
+    expect(css).toMatch(/\[data-part="title"\] \{ position: relative; isolation: isolate;[^}]*padding: 1\.6mm 9mm/);
+    expect(css).toContain('[data-part="band"] > .shape-layer');
     expect(css).toContain("background: #7b1d1d; color: #fff8e1");
   });
 

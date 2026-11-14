@@ -13,7 +13,9 @@ import {
   BORDER_STYLES,
   LAYOUT_FONTS,
   LINE_WEIGHTS,
-  HEADING_SHAPES,
+  shapePaint,
+  shapeStylePresets,
+  themeOf,
   TABLE_THEMES,
   TEXT_ROTATIONS,
   NUMBER_DATE_ARRANGEMENTS,
@@ -51,7 +53,6 @@ import {
   type LayoutFontId,
   type LayoutTarget,
   type LineWeight,
-  type HeadingShape,
   type TableThemeId,
   type TextRotation,
   type NumberDateArrangement,
@@ -68,6 +69,8 @@ import { Popover } from "../components/Popover.js";
 import { MarginsMenu } from "../components/PageMargins.js";
 import { cleanPage } from "./PrintDialog.js";
 import { askConfirm } from "../components/ConfirmDialog.js";
+import { ShapeGallery, ShapeStyleGallery } from "../components/ShapeFormat.js";
+import { BEVELS, OUTLINE_DASHES, SHADOWS, shapeInfo, type BevelPreset, type OutlineDash, type ShadowPreset, type ShapeId } from "../../shared/shapes.js";
 
 /**
  * The layout editor, shaped like Excel: a ribbon of tabs across the top, the
@@ -108,7 +111,7 @@ const SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36];
 const VIEW_ZOOMS = [50, 75, 90, 100, 125, 150];
 
 type Scope = "cell" | "groupCell" | "row" | "col";
-type Tab = "home" | "page" | "report" | "view";
+type Tab = "home" | "page" | "report" | "view" | "shape";
 type BorderCommand = "all" | "outside" | "thickOutside" | "none" | BorderSide;
 type Pen = { style: Exclude<BorderStyle, "none">; colour: string | undefined };
 
@@ -245,6 +248,20 @@ const CLEARED: StylePatch = {
   rotate: undefined,
   arrange: undefined,
   shape: undefined,
+  shapeAdjust: undefined,
+  fill2: undefined,
+  gradientAngle: undefined,
+  outlinePt: undefined,
+  outlineDash: undefined,
+  accent: undefined,
+  shadow: undefined,
+  glow: undefined,
+  glowPt: undefined,
+  softEdgePt: undefined,
+  bevel: undefined,
+  textOutline: undefined,
+  textShadow: undefined,
+  textGlow: undefined,
   borders: undefined,
 };
 
@@ -1062,20 +1079,7 @@ export function LayoutEditor({
             </select>
           )}
           {selection?.kind === "part" && (
-            <select
-              className="ribbon-select"
-              title={t.layoutShape}
-              aria-label={t.layoutShape}
-              value={own.shape ?? ""}
-              onChange={(event) => apply({ shape: (event.target.value || undefined) as HeadingShape | undefined })}
-            >
-              <option value="">{t.layoutShape}: {t.layoutShapes.rect}</option>
-              {HEADING_SHAPES.filter((value) => value !== "rect").map((value) => (
-                <option key={value} value={value}>
-                  {t.layoutShape}: {t.layoutShapes[value]}
-                </option>
-              ))}
-            </select>
+            <RibbonButton icon="⬠" label={`${t.layoutShape} …`} onClick={() => setTab("shape")} />
           )}
         </div>
       </Group>
@@ -1161,6 +1165,193 @@ export function LayoutEditor({
     delete layout.page;
     change(layout);
   };
+
+  const theme = themeOf(draft.theme);
+  const partSelected = selection?.kind === "part";
+  const shapeLabel = (id: ShapeId): string => {
+    const info = shapeInfo(id);
+    return language === "en" ? info.labelEn : info.labelGu;
+  };
+  const presets = shapeStylePresets().map((preset) => ({
+    id: preset.id,
+    label: `${TABLE_THEMES.find((each) => each.id === preset.theme)!.labelGu} – ${t.shapeStyleLevels[preset.level]}`,
+    patch: preset.patch,
+  }));
+  /** A ready-made style replaces the colours, outline and effects - not the shape. */
+  const PRESET_CLEARS: StylePatch = {
+    fill: undefined, fill2: undefined, gradientAngle: undefined, lineColour: undefined, outlinePt: undefined,
+    outlineDash: undefined, colour: undefined, shadow: undefined, bevel: undefined, glow: undefined, glowPt: undefined,
+  };
+  const currentShape = (own.shape ?? "rect") as ShapeId;
+  const adjustable = own.shape !== undefined && shapeInfo(currentShape).adjust !== undefined;
+  const shapeTab = !partSelected ? (
+    <Group label={t.shapeTab}>
+      <span className="ribbon-note">{t.shapeNeedsHeading}</span>
+    </Group>
+  ) : (
+    <>
+      <Group label={t.shapeInsert}>
+        <ShapeGallery
+          value={own.shape}
+          paint={shapePaint(own, theme)}
+          label={t.shapeInsert}
+          groupLabels={t.shapeGroups}
+          shapeLabel={shapeLabel}
+          noneLabel={t.shapeNone}
+          onPick={(shape) => apply(shape === undefined ? { shape: undefined, shapeAdjust: undefined } : { shape })}
+        />
+        {adjustable && (
+          <div className="ribbon-rows">
+            <label className="ribbon-slider" title={t.shapeAdjust}>
+              {t.shapeAdjust}
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={own.shapeAdjust ?? shapeInfo(currentShape).adjust ?? 50}
+                onChange={(event) => apply({ shapeAdjust: Number(event.target.value) })}
+              />
+            </label>
+            <span className="ribbon-note">{shapeLabel(currentShape)}</span>
+          </div>
+        )}
+      </Group>
+
+      <Group label={t.shapeStyles}>
+        <ShapeStyleGallery
+          shape={currentShape}
+          presets={presets}
+          label={t.shapeStyles}
+          paintOf={(patch) => shapePaint(patch, theme)}
+          onPick={(patch) => apply({ ...PRESET_CLEARS, ...patch })}
+        />
+      </Group>
+
+      <Group label={t.shapeFill}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
+            <ColourButton icon="🪣" title={t.shapeFill} value={own.fill} noneValue={NO_FILL} noneLabel={t.layoutFillBlank} onChange={(fill) => apply({ fill })} />
+            <ColourButton
+              icon="◐"
+              title={t.shapeFill2}
+              value={own.fill2}
+              noneValue=""
+              noneLabel={t.shapeGradientNone}
+              onChange={(fill2) => apply({ fill2: fill2 || undefined })}
+            />
+          </div>
+          <select
+            className="ribbon-select"
+            title={t.shapeGradientAngle}
+            aria-label={t.shapeGradientAngle}
+            disabled={!own.fill2}
+            value={String(own.gradientAngle ?? 90)}
+            onChange={(event) => apply({ gradientAngle: Number(event.target.value) })}
+          >
+            {(Object.keys(t.shapeGradientAngles) as (keyof typeof t.shapeGradientAngles)[]).map((angle) => (
+              <option key={angle} value={angle}>
+                {t.shapeGradientAngles[angle]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Group>
+
+      <Group label={t.shapeOutline}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
+            <ColourButton icon="▭" title={t.shapeOutline} value={own.lineColour} onChange={(lineColour) => apply({ lineColour })} />
+            <select
+              className="ribbon-select"
+              title={t.shapeOutlineWeight}
+              aria-label={t.shapeOutlineWeight}
+              value={String(own.outlinePt ?? 1)}
+              onChange={(event) => apply({ outlinePt: Number(event.target.value) })}
+            >
+              {[0.5, 0.75, 1, 1.5, 2, 3, 4, 6].map((pt) => (
+                <option key={pt} value={pt}>
+                  {pt} pt
+                </option>
+              ))}
+            </select>
+          </div>
+          <select
+            className="ribbon-select"
+            title={t.shapeOutlineDash}
+            aria-label={t.shapeOutlineDash}
+            value={own.outlineDash ?? "solid"}
+            onChange={(event) => apply({ outlineDash: event.target.value === "solid" ? undefined : (event.target.value as OutlineDash) })}
+          >
+            {OUTLINE_DASHES.map((dash) => (
+              <option key={dash} value={dash}>
+                {t.shapeDashes[dash]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Group>
+
+      <Group label={t.shapeEffects}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
+            <select
+              className="ribbon-select"
+              title={t.shapeShadow}
+              aria-label={t.shapeShadow}
+              value={own.shadow ?? ""}
+              onChange={(event) => apply({ shadow: (event.target.value || undefined) as ShadowPreset | undefined })}
+            >
+              <option value="">{t.shapeShadows.none}</option>
+              {SHADOWS.map((shadow) => (
+                <option key={shadow} value={shadow}>
+                  {t.shapeShadow}: {t.shapeShadows[shadow]}
+                </option>
+              ))}
+            </select>
+            <select
+              className="ribbon-select"
+              title={t.shapeBevel}
+              aria-label={t.shapeBevel}
+              value={own.bevel ?? ""}
+              onChange={(event) => apply({ bevel: (event.target.value || undefined) as BevelPreset | undefined })}
+            >
+              <option value="">{t.shapeBevels.none}</option>
+              {BEVELS.map((bevel) => (
+                <option key={bevel} value={bevel}>
+                  {t.shapeBevel}: {t.shapeBevels[bevel]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="ribbon-row">
+            <ColourButton icon="✷" title={t.shapeGlow} value={own.glow} noneValue="" noneLabel={t.shapeShadows.none} onChange={(glow) => apply({ glow: glow || undefined })} />
+            <MiniStepper label={t.shapeGlowSize} value={own.glowPt} placeholder={4} step={1} min={0} max={12} onChange={(glowPt) => apply({ glowPt })} />
+            <MiniStepper label={t.shapeSoftEdge} value={own.softEdgePt} placeholder={0} step={0.5} min={0} max={10} onChange={(softEdgePt) => apply({ softEdgePt: softEdgePt || undefined })} />
+            {shapeInfo(currentShape).group === "decorative" && own.shape !== undefined && (
+              <ColourButton icon="✦" title={t.shapeAccent} value={own.accent} onChange={(accent) => apply({ accent })} />
+            )}
+          </div>
+        </div>
+      </Group>
+
+      <Group label={t.shapeText}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
+            <ColourButton icon={<span className="font-colour-a">A</span>} title={t.layoutTextColour} value={own.colour} onChange={(colour) => apply({ colour })} />
+            <ColourButton icon={<span className="text-outline-a">A</span>} title={t.shapeTextOutline} value={own.textOutline} noneValue="" noneLabel={t.shapeDashes.none} onChange={(textOutline) => apply({ textOutline: textOutline || undefined })} />
+            <ColourButton icon={<span className="text-glow-a">A</span>} title={t.shapeTextGlow} value={own.textGlow} noneValue="" noneLabel={t.shapeShadows.none} onChange={(textGlow) => apply({ textGlow: textGlow || undefined })} />
+          </div>
+          <label className="ribbon-check">
+            <input type="checkbox" checked={own.textShadow === true} onChange={(event) => apply({ textShadow: event.target.checked || undefined })} />
+            {t.shapeTextShadow}
+          </label>
+        </div>
+      </Group>
+      <Group label="Excel">
+        <span className="ribbon-note">{t.shapeExcelNote}</span>
+      </Group>
+    </>
+  );
 
   const pageTab = (
     <>
@@ -1428,13 +1619,14 @@ export function LayoutEditor({
             ["page", t.excelTabPage],
             ["report", t.layoutWholeReport],
             ["view", t.excelTabView],
+            ["shape", t.shapeTab],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             role="tab"
             aria-selected={tab === id}
-            className={tab === id ? "chosen" : ""}
+            className={`${tab === id ? "chosen" : ""}${id === "shape" ? " contextual" : ""}${id === "shape" && selection?.kind === "part" ? " ready" : ""}`}
             onClick={() => setTab(id)}
           >
             {label}
@@ -1443,7 +1635,7 @@ export function LayoutEditor({
       </div>
 
       <div className="excel-ribbon">
-        {tab === "home" ? homeTab : tab === "page" ? pageTab : tab === "report" ? reportTab : viewTab}
+        {tab === "home" ? homeTab : tab === "page" ? pageTab : tab === "report" ? reportTab : tab === "shape" ? shapeTab : viewTab}
       </div>
 
       <div className="excel-namebar">

@@ -762,7 +762,18 @@ function heightOfRow(layout: ReportLayout, key: string, group: string | null): n
 /** One cell as a school's layout has it. Blank (NO_FILL) is Excel's default. */
 function applyStyle(cell: ExcelJS.Cell, style: CellStyle, excelSize: (pt: number) => number): void {
   if (style.fill && style.fill !== NO_FILL) {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(style.fill) } };
+    // A shaped heading's two-colour gradient is Excel's own gradient fill.
+    cell.fill = style.fill2
+      ? {
+          type: "gradient",
+          gradient: "angle",
+          degree: style.gradientAngle ?? 90,
+          stops: [
+            { position: 0, color: { argb: argb(style.fill) } },
+            { position: 1, color: { argb: argb(style.fill2) } },
+          ],
+        }
+      : { type: "pattern", pattern: "solid", fgColor: { argb: argb(style.fill) } };
     if (!style.colour && !style.underline) {
       cell.font = { ...cell.font, color: { argb: "FF1A0DAB" }, underline: false };
     }
@@ -795,6 +806,17 @@ function applyStyle(cell: ExcelJS.Cell, style: CellStyle, excelSize: (pt: number
       // Wrapping and shrinking to fit cannot both be on.
       ...(style.wrap !== undefined ? { wrapText: style.wrap, shrinkToFit: !style.wrap } : {}),
     };
+  }
+  // A shaped heading's outline: Excel draws no shape, so its box gets the
+  // outline's colour, weight and dashes all round.
+  if (style.shape && style.shape !== "rect" && style.outlineDash !== "none") {
+    const pt = style.outlinePt ?? 1;
+    const weight: ExcelJS.BorderStyle =
+      style.outlineDash === "dashed" ? "dashed" : style.outlineDash === "dotted" ? "dotted" : pt >= 2 ? "thick" : pt >= 1.5 ? "medium" : "thin";
+    const line: Partial<ExcelJS.Border> = style.lineColour
+      ? { style: weight, color: { argb: argb(style.lineColour) } }
+      : { style: weight };
+    cell.border = { top: line, right: line, bottom: line, left: line };
   }
   if (style.lineColour || style.borders) {
     // Each edge: the school's own line for it, else the cell's line in the
@@ -1264,7 +1286,7 @@ export async function buildWorkbook(
   report: ExcelReportId,
 ): Promise<ExcelJS.Workbook> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "SMC હિસાબ";
+  workbook.creator = "SMCE હિસાબ";
   workbook.created = new Date();
 
   const school = await api.getSchool();

@@ -58,6 +58,8 @@ export function Schools({
   const [lock, setLock] = useState<LockPrompt | null>(null);
   const [found, setFound] = useState<FolderInspectionDto | null>(null);
   const [restore, setRestore] = useState<RestorePanel | null>(null);
+  const [deleting, setDeleting] = useState<{ school: SchoolListItemDto; password: string } | null>(null);
+  const [deletedNotice, setDeletedNotice] = useState<string[] | null>(null);
 
   const load = useCallback(async () => {
     setList(await api.listSchools());
@@ -161,6 +163,26 @@ export function Schools({
     });
   }
 
+  /** The whole school, gone: the account password first, then the cloud, then its folder. */
+  function deleteSchool(): Promise<void> {
+    const panel = deleting;
+    if (!panel) return Promise.resolve();
+    return busyWith(async () => {
+      setDeletedNotice(null);
+      const result = await api.deleteSchool(panel.school.profileId, panel.password);
+      if (!result.ok) {
+        setIssues(result.issues);
+        return;
+      }
+      setDeleting(null);
+      setList(result.data.list);
+      setDeletedNotice([
+        t.schoolDeleted(panel.school.schoolNameGu),
+        result.data.folderRemoved ? t.schoolDeletedFolder(result.data.folderRemoved) : t.schoolDeletedNoFolder,
+      ]);
+    });
+  }
+
   async function signOut(): Promise<void> {
     await endSuggestionSession();
     await api.signOut();
@@ -201,6 +223,16 @@ export function Schools({
         {issues.length > 0 && (
           <div className="card">
             <IssueList issues={issues} />
+          </div>
+        )}
+
+        {deletedNotice && (
+          <div className="issue success">
+            <div>
+              {deletedNotice.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -299,6 +331,9 @@ export function Schools({
                   {school.lastOpenedAt && ` · ${t.schoolsLastOpened} ${formatDateTime(school.lastOpenedAt)}`}
                 </div>
                 <span className={`badge ${school.availability}`}>{availability[school.availability]}</span>
+                {school.availability === "notConnected" && (
+                  <div className="muted school-hint">{t.schoolsFindFolderHint}</div>
+                )}
               </div>
               <div className="row-actions">
                 {school.availability === "ready" && (
@@ -326,10 +361,56 @@ export function Schools({
                     {t.schoolsForget}
                   </button>
                 )}
+                <button
+                  className="danger"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setIssues([]);
+                    setDeletedNotice(null);
+                    setDeleting({ school, password: "" });
+                  }}
+                >
+                  {t.schoolDelete}
+                </button>
               </div>
             </div>
           ))}
         </div>
+
+        {deleting && (
+          <form
+            className="card delete-school-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void deleteSchool();
+            }}
+          >
+            <h3>{t.schoolDeleteTitle(deleting.school.schoolNameGu)}</h3>
+            <div className="issue error">
+              <div>{t.schoolDeleteWarning}</div>
+            </div>
+            <div className="field">
+              <label htmlFor="delete-school-password">{t.schoolDeletePassword}</label>
+              <input
+                id="delete-school-password"
+                type="password"
+                autoComplete="current-password"
+                autoFocus
+                value={deleting.password}
+                onChange={(event) => setDeleting({ ...deleting, password: event.target.value })}
+              />
+            </div>
+            <div className="form-actions">
+              <button className="danger" type="submit" disabled={busy || deleting.password.trim() === ""}>
+                {busy ? t.working : t.schoolDeleteConfirm}
+              </button>
+              <button className="ghost" type="button" disabled={busy} onClick={() => setDeleting(null)}>
+                {t.cancel}
+              </button>
+            </div>
+          </form>
+        )}
 
         {restore && (
           <div className="card">

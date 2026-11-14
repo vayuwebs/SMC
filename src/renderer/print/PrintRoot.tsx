@@ -27,6 +27,7 @@ import { ReportLayoutContext, layoutFontsReady, type ReportLayoutValue } from ".
 import {
   columnWidths,
   layoutCss,
+  paintShapes,
   MARGIN_EDGES,
   resolvePage,
   type ReportLayout,
@@ -582,6 +583,9 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
         fitCells();
         spillCells();
         spreadBlocks();
+        // Shaped headings are drawn last, at the size the report settled on.
+        const root = document.getElementById(LAYOUT_ROOT_ID);
+        if (root && layoutValue) paintShapes(root, layoutValue.layout);
         onChecked?.({ sheets: overflowingSheets(), cells: overflowingCells() + overflowingSpills() });
         window.__printReady = true;
       });

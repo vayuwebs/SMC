@@ -543,6 +543,32 @@ export interface CloudBackupDto {
 
 export type FolderPurpose = "newSchool" | "openSchool" | "restoreSchool";
 
+/** Why "apply this layout to all schools" left a school out. */
+export type LayoutSkipReason =
+  /** Its pen drive or folder is not reachable from this PC. */
+  | "notConnected"
+  /** Another PC has its books open. */
+  | "openElsewhere"
+  /** Its key is not on this PC and the cloud could not be asked for it. */
+  | "noKey"
+  /** Its books were saved by a newer version of the software. */
+  | "newerData"
+  /** It has no financial year yet. */
+  | "notSetUp"
+  | "failed";
+
+export interface ApplyLayoutResultDto {
+  /** The schools that now print this report in the same layout. */
+  applied: string[];
+  skipped: { profileId: string; schoolNameGu: string; reason: LayoutSkipReason }[];
+}
+
+export interface DeleteSchoolResultDto {
+  list: SchoolListDto;
+  /** The data folder that was deleted from this PC or pen drive, if it was reachable. */
+  folderRemoved: string | null;
+}
+
 /**
  * Everything before and around a school's books: the account on this PC, the
  * list of schools, where their data lives, and their cloud backups.
@@ -588,6 +614,22 @@ export interface SessionApi {
   restoreSchool(profileId: string, backupId: string, folder: string): Promise<ApiResult<AppStateDto>>;
   /** Encrypt the pre-profile books into a school folder inside `folder`, and open it. */
   moveLegacyBooks(folder: string): Promise<ApiResult<AppStateDto>>;
+
+  /**
+   * Delete a whole school: removed from the account in the cloud, and its data
+   * folder deleted if it is reachable. Needs the account password and the internet.
+   */
+  deleteSchool(profileId: string, password: string): Promise<ApiResult<DeleteSchoolResultDto>>;
+  /**
+   * Copy the open school's saved layout of one report - its look, page setup,
+   * columns and cells - into every other school of the account this PC can reach.
+   */
+  applyLayoutToAllSchools(report: PrintableReportId): Promise<ApiResult<ApplyLayoutResultDto>>;
+  /**
+   * Rename the folder the open school's data is kept in ("SMC Accounts" unless
+   * changed). Every school in that folder moves with it.
+   */
+  renameDataFolder(newName: string): Promise<ApiResult<AppStateDto>>;
 }
 
 // --------------------------------------------------------------- the contract
@@ -774,6 +816,9 @@ export const SESSION_METHODS = [
   "restoreBackup",
   "restoreSchool",
   "moveLegacyBooks",
+  "deleteSchool",
+  "applyLayoutToAllSchools",
+  "renameDataFolder",
 ] as const satisfies readonly (keyof SessionApi)[];
 
 /**

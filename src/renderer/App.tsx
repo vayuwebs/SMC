@@ -296,11 +296,14 @@ function Shell({
                 <button
                   key={item.id}
                   className="nav-item"
+                  data-screen={item.id}
                   aria-current={screen === item.id}
                   onClick={() => setScreen(item.id)}
                 >
                   <span className="nav-item-left">
-                    <NavIcon id={item.id} />
+                    <span className="nav-item-chip" aria-hidden="true">
+                      <NavIcon id={item.id} />
+                    </span>
                     <span>{screenLabel(item.id, t)}</span>
                   </span>
                   {count !== "" && <span className="count">{count}</span>}

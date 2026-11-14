@@ -1,7 +1,7 @@
 {
   "name": "smc-accounts",
   "version": "0.3.1",
-  "description": "SMC grant accounts and audit registers",
+  "description": "SMCE grant accounts and audit registers",
   "author": "SMC Accounts",
   "private": true,
   "type": "module",
@@ -126,7 +126,7 @@
       "include": "build/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SMC Accounts",
+      "shortcutName": "SMCE Accounts",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },

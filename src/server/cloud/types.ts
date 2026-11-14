@@ -74,6 +74,8 @@ export type CloudErrorCode =
   /** The account exists but its owner has not (or no longer) let it use the app. */
   | "not-approved"
   | "not-found"
+  /** The cloud project is missing a newer migration this call needs (supabase/migrations). */
+  | "needs-update"
   | "server";
 
 export class CloudError extends Error {
@@ -119,6 +121,13 @@ export interface CloudBackend {
     input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string },
   ): Promise<CloudProfile>;
   getProfileKey(session: CloudSession, profileId: string): Promise<string>;
+  /**
+   * Take a school out of the account. It no longer lists, opens on a new PC or
+   * takes backups. Its key and backups are kept on the server, out of the
+   * account's reach, so a stolen login can hide a school but never destroy it:
+   * the software's owner can bring it back or purge it (docs/SUPABASE_SETUP.md).
+   */
+  deleteProfile(session: CloudSession, profileId: string): Promise<void>;
 
   // ---------------------------------------------------------------- backups
   uploadBackup(session: CloudSession, backup: NewBackup): Promise<CloudBackup>;

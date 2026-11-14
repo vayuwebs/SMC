@@ -11,7 +11,11 @@ import "@fontsource/noto-sans-gujarati/700.css";
 // The other faces a school may choose for its reports (LAYOUT_FONTS in
 // shared/report-layout.ts), bundled for the same reason and under the same
 // licence. The browser fetches one only when a report actually uses it.
+// Every screen is set in Noto Serif Gujarati (styles.css, --gujarati): all four
+// weights the interface uses, so 500 and 600 are not faked from the others.
 import "@fontsource/noto-serif-gujarati/400.css";
+import "@fontsource/noto-serif-gujarati/500.css";
+import "@fontsource/noto-serif-gujarati/600.css";
 import "@fontsource/noto-serif-gujarati/700.css";
 import "@fontsource/hind-vadodara/400.css";
 import "@fontsource/hind-vadodara/700.css";

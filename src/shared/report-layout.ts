@@ -23,6 +23,16 @@
  * PARTS (`REPORT_PARTS`), styled the same way.
  */
 import { z } from "zod";
+import {
+  BEVELS,
+  OUTLINE_DASHES,
+  SHADOWS,
+  SHAPE_IDS,
+  shapeInfo,
+  shapeSvg,
+  type ShapeId,
+  type ShapePaint,
+} from "./shapes.js";
 import type { PrintableReportId } from "./api.js";
 
 // ------------------------------------------------------------------- fonts
@@ -144,13 +154,9 @@ export type TextRotation = (typeof TEXT_ROTATIONS)[number];
 export const NUMBER_DATE_ARRANGEMENTS = ["inline", "stacked", "dateFirst"] as const;
 export type NumberDateArrangement = (typeof NUMBER_DATE_ARRANGEMENTS)[number];
 
-/**
- * The shapes a heading can take. `rect` is the form's own box. The plain
- * shapes are CSS; the framed ones (plaque, badge, floral) are drawn frames
- * whose corners keep their shape however wide the heading is.
- */
-export const HEADING_SHAPES = ["rect", "rounded", "pill", "banner", "ribbon", "double", "plaque", "badge", "floral"] as const;
-export type HeadingShape = (typeof HEADING_SHAPES)[number];
+/** The shapes a heading can take: see src/shared/shapes.ts, after Excel's gallery. */
+export const HEADING_SHAPES = SHAPE_IDS;
+export type HeadingShape = ShapeId;
 
 /**
  * Ready-made colour sets for a whole report, like Excel's table styles: the
@@ -205,8 +211,28 @@ export const cellStyleSchema = z
     rotate: z.enum(TEXT_ROTATIONS).optional(),
     /** A number-and-date cell: side by side, or one under the other. */
     arrange: z.enum(NUMBER_DATE_ARRANGEMENTS).optional(),
-    /** A heading's shape (HEADING_SHAPES). */
-    shape: z.enum(HEADING_SHAPES).optional(),
+    /** A heading's shape (HEADING_SHAPES), drawn behind its words. */
+    shape: z.enum(SHAPE_IDS).optional(),
+    /** The shape's adjustment, like Excel's yellow handle: 0..100. */
+    shapeAdjust: z.number().min(0).max(100).optional(),
+    /** With `fill`, a two-colour gradient: the second colour and its direction in degrees. */
+    fill2: hexColour.optional(),
+    gradientAngle: z.number().int().min(0).max(359).optional(),
+    /** The shape's outline: its weight in points and its dashes. Its colour is `lineColour`. */
+    outlinePt: z.number().min(0).max(8).optional(),
+    outlineDash: z.enum(OUTLINE_DASHES).optional(),
+    /** A decorated frame's ornament colour (gold by default). */
+    accent: hexColour.optional(),
+    /** Excel's Shape Effects that print. */
+    shadow: z.enum(SHADOWS).optional(),
+    glow: hexColour.optional(),
+    glowPt: z.number().min(0).max(12).optional(),
+    softEdgePt: z.number().min(0).max(10).optional(),
+    bevel: z.enum(BEVELS).optional(),
+    /** WordArt's text outline, shadow and glow. */
+    textOutline: hexColour.optional(),
+    textShadow: z.boolean().optional(),
+    textGlow: hexColour.optional(),
     /** Excel's borders: each edge its own line style and colour. */
     borders: z
       .object({ top: borderEdge.optional(), right: borderEdge.optional(), bottom: borderEdge.optional(), left: borderEdge.optional() })
@@ -1415,89 +1441,32 @@ function arrangeRules(selector: string, arrange: NumberDateArrangement): string[
   ];
 }
 
-const GOLD = "#d4a017";
-
-/** An SVG as a CSS url(). */
-function svgUrl(svg: string): string {
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+/** A heading's words, as WordArt sets them: outlined, shadowed, glowing. */
+function textEffectDeclarations(style: CellStyle): string[] {
+  const out: string[] = [];
+  if (style.textOutline) out.push(`-webkit-text-stroke: 0.45pt ${style.textOutline}`, "paint-order: stroke fill");
+  const shadows: string[] = [];
+  if (style.textShadow) shadows.push("0.7pt 0.7pt 1pt rgba(0, 0, 0, 0.45)");
+  if (style.textGlow) shadows.push(`0 0 2pt ${style.textGlow}`, `0 0 3.5pt ${style.textGlow}`);
+  if (shadows.length > 0) out.push(`text-shadow: ${shadows.join(", ")}`);
+  return out;
 }
 
 /**
- * The framed shapes, drawn on a 120 x 60 frame and laid round the heading as a
- * border image: the corners keep their shape, the edges stretch with the
- * heading, the middle fills it. `frame` is the outer band, `inner` the panel the
- * words sit on.
+ * A shaped heading: the box gives way to the shape drawn behind it (see
+ * `paintShapes`) - its own background and lines go, and it keeps room inside
+ * for the words. The shape layer is the box's first child, behind the words.
  */
-export function framedShapeSvg(shape: "plaque" | "badge" | "floral", frame: string, inner: string): string {
-  const open = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" preserveAspectRatio="none">`;
-  if (shape === "plaque") {
-    return (
-      open +
-      `<path d="M1 30 L13 9 Q19 3 26 5 L94 5 Q101 3 107 9 L119 30 L107 51 Q101 57 94 55 L26 55 Q19 57 13 51 Z" fill="${frame}" stroke="${GOLD}" stroke-width="2"/>` +
-      `<path d="M11 30 L21 14 L99 14 L109 30 L99 46 L21 46 Z" fill="${inner}" stroke="${GOLD}" stroke-width="1.6"/>` +
-      `<circle cx="7" cy="30" r="2" fill="${GOLD}"/><circle cx="113" cy="30" r="2" fill="${GOLD}"/>` +
-      `</svg>`
-    );
-  }
-  if (shape === "badge") {
-    return (
-      open +
-      `<rect x="1.5" y="1.5" width="117" height="57" rx="11" fill="${frame}" stroke="${GOLD}" stroke-width="2.4"/>` +
-      `<rect x="8" y="8" width="104" height="44" rx="7" fill="${inner}" stroke="${GOLD}" stroke-width="1.6"/>` +
-      `<path d="M3 14 L9 8 M3 46 L9 52 M117 14 L111 8 M117 46 L111 52" stroke="${GOLD}" stroke-width="1.6"/>` +
-      `</svg>`
-    );
-  }
-  const flower = (x: number, y: number): string =>
-    [0, 72, 144, 216, 288]
-      .map((angle) => {
-        const rad = (angle * Math.PI) / 180;
-        return `<circle cx="${(x + Math.cos(rad) * 3.4).toFixed(2)}" cy="${(y + Math.sin(rad) * 3.4).toFixed(2)}" r="2.6" fill="${frame}" opacity="0.85"/>`;
-      })
-      .join("") + `<circle cx="${x}" cy="${y}" r="1.6" fill="${GOLD}"/>`;
-  return (
-    open +
-    `<rect x="2" y="2" width="116" height="56" rx="14" fill="${inner}" stroke="${frame}" stroke-width="3"/>` +
-    `<rect x="7" y="7" width="106" height="46" rx="10" fill="none" stroke="${GOLD}" stroke-width="1.2"/>` +
-    flower(10, 10) +
-    flower(110, 10) +
-    flower(10, 50) +
-    flower(110, 50) +
-    `</svg>`
-  );
-}
-
-/** What a heading's shape adds to its rules. `frame` is the line colour, `inner` the fill. */
-function shapeRules(selector: string, shape: HeadingShape, frame: string, inner: string | null): string[] {
-  const filled = inner ?? "#fff8e7";
-  switch (shape) {
-    case "rect":
-      return [];
-    case "rounded":
-      return [`${selector} { border-radius: 3mm; overflow: hidden; }`];
-    case "pill":
-      return [`${selector} { border-radius: 999px; overflow: hidden; padding-left: 6mm; padding-right: 6mm; }`];
-    case "double":
-      return [`${selector} { border: 2.4pt double ${frame}; border-radius: 2mm; }`];
-    case "banner":
-      return [
-        `${selector} { clip-path: polygon(0 50%, 4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%); background: ${filled}; padding-left: 8mm; padding-right: 8mm; border-color: transparent; }`,
-      ];
-    case "ribbon":
-      return [
-        `${selector} { clip-path: polygon(0 0, 100% 0, 96% 50%, 100% 100%, 0 100%, 4% 50%); background: ${filled}; padding-left: 9mm; padding-right: 9mm; border-color: transparent; }`,
-      ];
-    case "plaque":
-    case "badge":
-    case "floral": {
-      const slice = shape === "plaque" ? "16 30 16 30" : "14 16 14 16";
-      const width = shape === "plaque" ? "3mm 8mm" : "2.6mm 3.6mm";
-      return [
-        `${selector} { border-style: solid; border-color: transparent; border-width: ${width}; border-image: ${svgUrl(framedShapeSvg(shape, frame, filled))} ${slice} fill / ${width} stretch; background: transparent; box-sizing: border-box; }`,
-        `${selector} * { background: transparent; border-color: transparent; }`,
-      ];
-    }
-  }
+function shapedPartRules(selector: string, style: CellStyle): string[] {
+  const info = shapeInfo(style.shape!);
+  const padding = `padding: ${info.padYMm}mm ${info.padXMm}mm ${info.padYMm + (info.padBottomMm ?? 0)}mm`;
+  return [
+    `${selector} { position: relative; isolation: isolate; background: transparent; border-color: transparent; ${padding}; }`,
+    `${selector} :is(td, th, div, span) { background: transparent; border-color: transparent; }`,
+    `${selector} > .shape-layer { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; overflow: visible; background: transparent; }`,
+    // A theme colours everything inside the title; never the drawing itself.
+    `${selector} > .shape-layer > svg, ${selector} > .shape-layer > svg * { display: block; overflow: visible; background: transparent; }`,
+  ];
 }
 
 /**
@@ -1521,14 +1490,20 @@ function partRules(
   if (inherited.length > 0) rules.push(`${all} { ${inherited.join("; ")}; }`);
   const box = boxDeclarations(style);
   if (box.length > 0) rules.push(`${selector} { ${box.join("; ")}; }`);
-  const framed = style.shape === "plaque" || style.shape === "badge" || style.shape === "floral";
-  if (style.fill && !framed) {
-    rules.push(`${all} { background: ${style.fill === NO_FILL ? "transparent" : style.fill}; }`);
+  const shaped = style.shape !== undefined && style.shape !== "rect";
+  if (style.fill && !shaped) {
+    const gradient = style.fill2 && style.fill !== NO_FILL;
+    const background = style.fill === NO_FILL
+      ? "transparent"
+      : gradient
+        ? `linear-gradient(${(style.gradientAngle ?? 90) + 90}deg, ${style.fill}, ${style.fill2})`
+        : style.fill;
+    rules.push(`${all} { background: ${background}; }`);
+    if (gradient) rules.push(`${selector} * { background: transparent; }`);
   }
-  if (style.shape) {
-    const fill = style.fill && style.fill !== NO_FILL ? style.fill : null;
-    rules.push(...shapeRules(selector, style.shape, style.lineColour ?? theme?.title ?? "#8b1a1a", fill));
-  }
+  if (shaped) rules.push(...shapedPartRules(selector, style));
+  const effects = textEffectDeclarations(style);
+  if (effects.length > 0) rules.push(`${all} { ${effects.join("; ")}; }`);
   if (style.rotate) rules.push(`${all} { ${ROTATE_CSS[style.rotate]}; }`);
   if (style.align) rules.push(`${selector} { justify-content: ${FLEX_ALIGN[style.align]}; }`);
   if (style.widthMm !== undefined) {
@@ -1727,4 +1702,98 @@ export function widthScale(report: PrintableReportId, layout: ReportLayout, cols
   const now = columnWidths(report, layout);
   const before = columnWidths(report, emptyLayout());
   return known.reduce((sum, id) => sum + now[id]! / before[id]!, 0) / known.length;
+}
+
+// ------------------------------------------------------------------ shapes
+
+/** How a heading's shape is painted, from its style and the report's theme. */
+export function shapePaint(style: CellStyle, theme: TableTheme | null): ShapePaint {
+  const fill = style.fill === NO_FILL ? null : (style.fill ?? (theme ? theme.band : "#ffffff"));
+  return {
+    fill,
+    ...(style.fill2 && fill !== null ? { fill2: style.fill2, gradientAngle: style.gradientAngle ?? 90 } : {}),
+    outline: style.lineColour ?? theme?.title ?? "#7b1d1d",
+    ...(style.outlinePt !== undefined ? { outlinePt: style.outlinePt } : {}),
+    ...(style.outlineDash ? { outlineDash: style.outlineDash } : {}),
+    ...(style.accent ? { accent: style.accent } : {}),
+    ...(style.shadow ? { shadow: style.shadow } : {}),
+    ...(style.glow ? { glow: style.glow, glowPt: style.glowPt ?? 4 } : {}),
+    ...(style.softEdgePt ? { softEdgePt: style.softEdgePt } : {}),
+    ...(style.bevel ? { bevel: style.bevel } : {}),
+  };
+}
+
+/**
+ * Draw every shaped heading of a rendered report behind its words, at the
+ * heading's real size. Run after the report is laid out (PrintRoot) and again
+ * whenever the layout changes; a heading that no longer has a shape loses its
+ * layer. Sizes are the box's own CSS pixels, which the sheet's zoom then
+ * scales together with the words.
+ */
+export function paintShapes(root: HTMLElement, layout: ReportLayout): void {
+  const theme = themeOf(layout.theme);
+  const shaped = new Map<string, CellStyle>();
+  for (const [key, style] of Object.entries(layout.styles)) {
+    const target = parseTargetKey(key);
+    if (target?.kind === "part" && style.shape && style.shape !== "rect") shaped.set(target.part, style);
+  }
+  const wanted = new Set<Element>();
+  let uid = 0;
+  for (const element of root.querySelectorAll<HTMLElement>("[data-part]")) {
+    const style = shaped.get(element.dataset["part"] ?? "");
+    if (!style) continue;
+    const width = element.offsetWidth;
+    const height = element.offsetHeight;
+    if (width === 0 || height === 0) continue;
+    uid += 1;
+    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme), style.shapeAdjust, `shape${uid}`);
+    let layer = element.querySelector<HTMLElement>(":scope > .shape-layer");
+    if (!layer) {
+      layer = document.createElement("span");
+      layer.className = "shape-layer";
+      layer.setAttribute("aria-hidden", "true");
+      element.insertBefore(layer, element.firstChild);
+    }
+    if (layer.dataset["markup"] !== markup) {
+      layer.innerHTML = markup;
+      layer.dataset["markup"] = markup;
+    }
+    layer.style.width = `${width}px`;
+    layer.style.height = `${height}px`;
+    wanted.add(layer);
+  }
+  for (const layer of root.querySelectorAll(".shape-layer")) {
+    if (!wanted.has(layer)) layer.remove();
+  }
+}
+
+/** Excel's Shape Styles: four looks in each theme colour, from subtle to bold. */
+export const SHAPE_STYLE_LEVELS = ["subtle", "moderate", "intense", "outline"] as const;
+export type ShapeStyleLevel = (typeof SHAPE_STYLE_LEVELS)[number];
+
+export interface ShapeStylePreset {
+  id: string;
+  theme: TableThemeId;
+  level: ShapeStyleLevel;
+  /** What the preset sets on the heading; everything else it clears. */
+  patch: Pick<
+    CellStyle,
+    "fill" | "fill2" | "gradientAngle" | "lineColour" | "outlinePt" | "outlineDash" | "colour" | "shadow" | "bevel" | "glow"
+  >;
+}
+
+export function shapeStylePresets(): ShapeStylePreset[] {
+  return SHAPE_STYLE_LEVELS.flatMap((level) =>
+    TABLE_THEMES.map((theme): ShapeStylePreset => {
+      const patch: ShapeStylePreset["patch"] =
+        level === "subtle"
+          ? { fill: theme.band, lineColour: theme.head, outlinePt: 1, colour: theme.head }
+          : level === "moderate"
+            ? { fill: theme.band, fill2: theme.total, gradientAngle: 90, lineColour: theme.head, outlinePt: 1.5, colour: theme.head }
+            : level === "intense"
+              ? { fill: theme.title, fill2: theme.head, gradientAngle: 90, lineColour: theme.head, outlinePt: 1, colour: theme.titleText, bevel: "soft", shadow: "outer" }
+              : { fill: NO_FILL, lineColour: theme.head, outlinePt: 2, colour: theme.head };
+      return { id: `${level}:${theme.id}`, theme: theme.id, level, patch };
+    }),
+  );
 }

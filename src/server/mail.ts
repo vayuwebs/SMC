@@ -25,7 +25,7 @@ export async function sendMail(toEmail: string, subject: string, text: string) {
 
   try {
     const info = await transporter.sendMail({
-      from: `"SMC Accounts App" <${GMAIL_USER}>`, // Sender name and your email
+      from: `"SMCE Accounts App" <${GMAIL_USER}>`, // Sender name and your email
       to: toEmail,
       subject: subject,
       text: text,

@@ -53,6 +53,8 @@ const stateSchema = z.object({
       schoolNameGu: z.string(),
       diseCode: z.string(),
       createdAt: z.string(),
+      /** Set when the account deleted the school; hidden from it from then on. */
+      deletedAt: z.string().optional(),
     }),
   ),
   keys: z.record(z.object({ ownerId: z.string(), keyHex: z.string() })),
@@ -216,8 +218,8 @@ export class FakeCloud implements CloudBackend {
   async listProfiles(session: CloudSession): Promise<CloudProfile[]> {
     const { state, userId } = this.authorised(session);
     return state.profiles
-      .filter((profile) => profile.ownerId === userId)
-      .map(({ ownerId: _owner, ...profile }) => profile);
+      .filter((profile) => profile.ownerId === userId && !profile.deletedAt)
+      .map(({ ownerId: _owner, deletedAt: _deleted, ...profile }) => profile);
   }
 
   async createProfile(
@@ -245,15 +247,29 @@ export class FakeCloud implements CloudBackend {
   async getProfileKey(session: CloudSession, profileId: string): Promise<string> {
     const { state, userId } = this.authorised(session);
     const key = state.keys[profileId];
-    if (!key || key.ownerId !== userId) throw new CloudError("not-found", "no key for this school");
+    if (!key || key.ownerId !== userId || !this.live(state, profileId, userId)) {
+      throw new CloudError("not-found", "no key for this school");
+    }
     return key.keyHex;
+  }
+
+  async deleteProfile(session: CloudSession, profileId: string): Promise<void> {
+    const { state, userId } = this.authorised(session);
+    const profile = state.profiles.find((item) => item.id === profileId && item.ownerId === userId && !item.deletedAt);
+    if (!profile) throw new CloudError("not-found", "no such school for this account");
+    profile.deletedAt = new Date(this.now()).toISOString();
+    this.write(state);
+  }
+
+  private live(state: State, profileId: string, userId: string): boolean {
+    return state.profiles.some((p) => p.id === profileId && p.ownerId === userId && !p.deletedAt);
   }
 
   // ---------------------------------------------------------------- backups
 
   async uploadBackup(session: CloudSession, backup: NewBackup): Promise<CloudBackup> {
     const { state, userId } = this.authorised(session);
-    const owned = state.profiles.some((p) => p.id === backup.profileId && p.ownerId === userId);
+    const owned = this.live(state, backup.profileId, userId);
     if (!owned) throw new CloudError("not-found", "no such school for this account");
     if (sha256(backup.bytes) !== backup.sha256) throw new CloudError("server", "checksum mismatch");
 

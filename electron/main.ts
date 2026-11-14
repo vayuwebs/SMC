@@ -279,6 +279,9 @@ function registerSessionApi(): void {
     restoreSchool: (profileId: string, backupId: string, folder: string) =>
       requireController().restoreSchool(profileId, backupId, folder),
     moveLegacyBooks: (folder: string) => requireController().moveLegacyBooks(folder),
+    deleteSchool: (profileId: string, password: string) => requireController().deleteSchool(profileId, password),
+    applyLayoutToAllSchools: (report: PrintableReportId) => requireController().applyLayoutToAllSchools(report),
+    renameDataFolder: (newName: string) => requireController().renameDataFolder(newName),
   };
 
   for (const method of SESSION_METHODS) {
@@ -596,7 +599,7 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 700,
     show: false,
-    title: "SMC હિસાબ",
+    title: "SMCE હિસાબ",
     webPreferences: {
       preload: preloadPath(),
       // The renderer gets no Node access. Everything it may do is the explicit

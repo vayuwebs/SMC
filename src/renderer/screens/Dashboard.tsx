@@ -45,6 +45,25 @@ export function Dashboard({
         <Tile variant="spent" label={t.totalSpent} paise={annexure10.totals.totalOutPaise} />
       </div>
 
+      {/* One button per kind of entry, in that kind's colour (styles.css, .quick-action). */}
+      <div className="quick-actions">
+        {(
+          [
+            ["receipts", t.navReceipts],
+            ["bills", t.navBills],
+            ["cheques", t.navCheques],
+            ["bankCharges", t.navBankCharges],
+          ] as const
+        ).map(([id, label]) => (
+          <button key={id} type="button" className={`quick-action qa-${id}`} onClick={() => onNavigate(id)}>
+            <span className="qa-chip" aria-hidden="true">
+              +
+            </span>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="dash-grid">
         <div className="card">
           <h3>{t.annexure10Title}</h3>
@@ -69,13 +88,13 @@ export function Dashboard({
                     <td className="num">
                       <Money paise={row.openingPaise} />
                     </td>
-                    <td className="num">
+                    <td className="num figure-in">
                       <Money paise={row.receivedPaise} />
                     </td>
                     <td className="num">
                       <Money paise={row.totalPaise} />
                     </td>
-                    <td className="num">
+                    <td className="num figure-out">
                       <Money paise={row.spentPaise} />
                     </td>
                     <td className="num">

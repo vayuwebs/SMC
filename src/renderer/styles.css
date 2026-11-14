@@ -9,45 +9,75 @@
  * is unreadable in an account book.
  *
  * The look is deliberately quiet: warm off-white canvas, white surfaces, hair-
- * line borders, almost no shadow, and the maroon accent kept for the one thing
+ * line borders, almost no shadow, and the blue accent kept for the one thing
  * on a screen that matters (the main button, the current page, focus).
  */
 
+/*
+ * The "Modern Multicolour" look (design direction B, November 2026): a cool
+ * light canvas, white surfaces, one blue accent for actions and the current
+ * page, and each kind of entry in its own colour - receipts green, bills
+ * orange, cheques blue, bank charges red, opening balances purple - carried
+ * through the menu, the dashboard and the quick actions.
+ *
+ * Every screen is set in Noto Serif Gujarati, figures too. The printed
+ * reports are not: print.css and the report layouts set their own faces.
+ */
 :root {
-  --ink: #1d1d1b;
-  --ink-soft: #55554f;
-  --ink-faint: #8a8a83;
-  --line: #e6e5e1;
-  --line-strong: #cfcec8;
-  --line-subtle: #f0efeb;
+  --ink: #1c2333;
+  --ink-soft: #4b5468;
+  --ink-faint: #5f6880;
+  --line: #e3e7f0;
+  --line-strong: #cbd2e0;
+  --line-subtle: #edf0f6;
   --paper: #ffffff;
-  --canvas: #f7f7f5;
-  --hover: #f3f2ef;
-  --accent: #7b1d1d;
-  --accent-hover: #922424;
-  --accent-soft: #faf1f0;
-  --accent-border: #ecd3d0;
-  --credit: #2f6b4a;
-  --credit-soft: #f0f6f2;
-  --credit-border: #cfe3d6;
-  --debit: #9b2c22;
-  --debit-soft: #fbf1ef;
-  --debit-border: #efd2cc;
-  --warn-bg: #fbf6ea;
-  --warn-line: #d9b45a;
-  --warn-ink: #6b5214;
-  --error-bg: #fbf1ef;
-  --error-line: #b4402f;
+  --canvas: #f4f6fb;
+  --hover: #eef2fa;
+  --accent: #1a56db;
+  --accent-hover: #1442a8;
+  --accent-soft: #e8f0fe;
+  --accent-border: #c5d7fb;
+  --credit: #157f3d;
+  --credit-soft: #e6f6ec;
+  --credit-border: #bfe5cc;
+  --debit: #b4530a;
+  --debit-soft: #fff1e6;
+  --debit-border: #f7d3b5;
+  --warn-bg: #fff4e5;
+  --warn-line: #e9a23b;
+  --warn-ink: #7a3e00;
+  --error-bg: #fdecec;
+  --error-line: #c2362f;
 
-  --radius: 10px;
-  --radius-sm: 7px;
+  /* Each kind of entry's own colour: the ink, and its soft tint. */
+  --c-dashboard: #1a56db;
+  --c-dashboard-soft: #dce7fd;
+  --c-opening: #6b3fc4;
+  --c-opening-soft: #eae4fb;
+  --c-receipts: #157f3d;
+  --c-receipts-soft: #dcf3e4;
+  --c-bills: #b4530a;
+  --c-bills-soft: #fde9d9;
+  --c-cheques: #0b6baf;
+  --c-cheques-soft: #dceefb;
+  --c-charges: #b42344;
+  --c-charges-soft: #fbe2e6;
+  --c-recon: #0f766e;
+  --c-recon-soft: #dcf0ee;
+  --c-reports: #6b3fc4;
+  --c-reports-soft: #f1ebfd;
+  --c-settings: #4b5468;
+  --c-settings-soft: #eef0f4;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-card: none;
-  --shadow-elevated: 0 8px 28px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+  --radius: 12px;
+  --radius-sm: 8px;
 
-  --gujarati: "Noto Sans Gujarati", "Shruti", "Nirmala UI", "Lohit Gujarati", sans-serif;
-  --numeric: "Inter", "Segoe UI", system-ui, sans-serif;
+  --shadow-sm: 0 1px 2px rgba(28, 35, 51, 0.05);
+  --shadow-card: 0 1px 2px rgba(28, 35, 51, 0.04);
+  --shadow-elevated: 0 10px 30px rgba(28, 35, 51, 0.1), 0 1px 3px rgba(28, 35, 51, 0.06);
+
+  --gujarati: "Noto Serif Gujarati", "Noto Sans Gujarati", "Shruti", "Nirmala UI", "Lohit Gujarati", serif;
+  --numeric: "Noto Serif Gujarati", "Noto Sans Gujarati", "Segoe UI", serif;
 }
 
 * {
@@ -144,11 +174,12 @@ body {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--ink-soft);
   text-align: left;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -178,21 +209,39 @@ body {
   white-space: nowrap;
 }
 
+/* Each menu item's icon sits on a chip of its own colour (data-screen). */
+.nav-item-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: var(--nav-soft, var(--c-settings-soft));
+  color: var(--nav-ink, var(--c-settings));
+}
+
 .nav-item-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-faint);
+  color: inherit;
   flex-shrink: 0;
-  transition: color 0.12s ease;
 }
 
-.nav-item:hover .nav-item-icon {
-  color: var(--ink-soft);
-}
+.nav-item[data-screen="dashboard"] { --nav-ink: var(--c-dashboard); --nav-soft: var(--c-dashboard-soft); }
+.nav-item[data-screen="opening"] { --nav-ink: var(--c-opening); --nav-soft: var(--c-opening-soft); }
+.nav-item[data-screen="receipts"] { --nav-ink: var(--c-receipts); --nav-soft: var(--c-receipts-soft); }
+.nav-item[data-screen="bills"] { --nav-ink: var(--c-bills); --nav-soft: var(--c-bills-soft); }
+.nav-item[data-screen="cheques"] { --nav-ink: var(--c-cheques); --nav-soft: var(--c-cheques-soft); }
+.nav-item[data-screen="bankCharges"] { --nav-ink: var(--c-charges); --nav-soft: var(--c-charges-soft); }
+.nav-item[data-screen="reconciliation"] { --nav-ink: var(--c-recon); --nav-soft: var(--c-recon-soft); }
+.nav-item[data-screen="reports"] { --nav-ink: var(--c-reports); --nav-soft: var(--c-reports-soft); }
 
-.nav-item[aria-current="true"] .nav-item-icon {
-  color: var(--accent);
+.nav-item[aria-current="true"] .nav-item-chip {
+  background: var(--nav-ink, var(--accent));
+  color: #ffffff;
 }
 
 .nav-item .count {
@@ -335,33 +384,105 @@ body {
 /* The dashboard's figures: one strip, divided, rather than four boxes. */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  margin-bottom: 20px;
-  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
+/* A balance card, tinted in the colour of what it counts (tile-bank ...). */
 .tile {
-  padding: 18px 22px;
-  border-left: 1px solid var(--line-subtle);
-  margin-left: -1px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--tile-soft, var(--paper));
+  border: 1px solid var(--tile-line, var(--line));
 }
+
+.tile-bank { --tile-soft: #e8f0fe; --tile-ink: #1442a8; --tile-line: #d3e1fc; }
+.tile-cash { --tile-soft: #f1ebfd; --tile-ink: #5a2fb0; --tile-line: #e0d5f8; }
+.tile-received { --tile-soft: #e6f6ec; --tile-ink: #0f6b33; --tile-line: #c9ead5; }
+.tile-spent { --tile-soft: #fff1e6; --tile-ink: #9a4508; --tile-line: #f8dcc4; }
 
 .tile .label {
-  font-size: 12.5px;
-  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tile-ink, var(--ink-faint));
+}
+
+.tile .label::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .tile .value {
   font-family: var(--numeric);
   font-variant-numeric: tabular-nums;
-  font-size: 24px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  margin-top: 4px;
+  font-size: 27px;
+  font-weight: 700;
+  margin-top: 6px;
   color: var(--ink);
+}
+
+/* The dashboard's quick actions: one button per kind of entry, in its colour. */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.quick-action:hover {
+  border-color: var(--qa-ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-action .qa-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--qa-soft);
+  color: var(--qa-ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.quick-action.qa-receipts { --qa-ink: var(--c-receipts); --qa-soft: var(--c-receipts-soft); }
+.quick-action.qa-bills { --qa-ink: var(--c-bills); --qa-soft: var(--c-bills-soft); }
+.quick-action.qa-cheques { --qa-ink: var(--c-cheques); --qa-soft: var(--c-cheques-soft); }
+.quick-action.qa-bankCharges { --qa-ink: var(--c-charges); --qa-soft: var(--c-charges-soft); }
+
+td.num.figure-in {
+  color: var(--credit);
+}
+
+td.num.figure-out {
+  color: var(--debit);
 }
 
 .dash-grid {
@@ -586,7 +707,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(123, 29, 29, 0.1);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.1);
 }
 
 input:disabled,
@@ -654,7 +775,7 @@ button.danger:hover:not(:disabled) {
 }
 
 button:focus-visible {
-  outline: 2px solid rgba(123, 29, 29, 0.35);
+  outline: 2px solid rgba(26, 86, 219, 0.35);
   outline-offset: 2px;
 }
 
@@ -1256,6 +1377,11 @@ button.school-action:hover:not(:disabled) {
 
 .school-row .row-actions {
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.school-row .row-actions button {
+  white-space: nowrap;
 }
 
 .badge {
@@ -1700,7 +1826,7 @@ tr.clickable {
   color: var(--accent);
   background: var(--accent-soft);
   font-weight: 600;
-  box-shadow: 0 2px 12px rgba(123, 29, 29, 0.25);
+  box-shadow: 0 2px 12px rgba(26, 86, 219, 0.25);
 }
 
 .phonetic-toggle.on .phonetic-glyph {
@@ -1835,11 +1961,24 @@ tr.clickable {
   margin-top: 6px;
 }
 
+.print-dialog-top {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
+  margin: -16px -18px 8px;
+  padding: 16px 18px 12px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.print-dialog-top .print-dialog-head {
+  margin-bottom: 10px;
+}
+
 .print-dialog-actions {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin-top: 14px;
 }
 
 .print-dialog-view {
@@ -3007,15 +3146,37 @@ button.primary:disabled {
   gap: 5px;
 }
 
-.report-back {
-  display: inline-block;
-  font-size: 13px;
-  text-decoration: none;
-  margin-bottom: 10px;
+/* A report's own page: Back, Edit layout, the exports and Print stay pinned
+   under the top bar while the pages of the preview scroll beneath them. The
+   negative margins take it to the edges of .content, so nothing shows through
+   at its sides. */
+.report-sticky-head {
+  position: sticky;
+  top: var(--topbar-height, 54px);
+  z-index: 40;
+  margin: -28px -32px 18px;
+  padding: 10px 32px 12px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 6px 12px -10px rgba(0, 0, 0, 0.18);
 }
 
-.report-back:hover {
-  text-decoration: underline;
+.report-sticky-head .page-head {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.report-sticky-head .page-head h2 {
+  font-size: 19px;
+}
+
+.report-sticky-head .page-head p {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.report-back {
+  margin-bottom: 8px;
 }
 
 .report-preview-frame.standalone {
@@ -3108,4 +3269,137 @@ button.primary:disabled {
 .theme-swatch.active {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* The Shape Format tab: Excel's shape gallery and shape styles. */
+.excel-tabs button.contextual {
+  color: var(--accent);
+}
+.excel-tabs button.contextual.ready:not(.chosen) {
+  background: var(--accent-soft);
+}
+.shape-thumb {
+  display: inline-block;
+  line-height: 0;
+}
+.shape-thumb svg {
+  overflow: visible;
+}
+.shape-gallery-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.shape-gallery-popover {
+  width: 340px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #c6c6c6;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  color: #1f1f1f;
+}
+.shape-group + .shape-group {
+  margin-top: 6px;
+}
+.shape-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+.shape-grid.styles {
+  grid-template-columns: repeat(8, 1fr);
+}
+.shape-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.shape-tile:hover {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+.shape-tile.chosen {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.shape-tile.wide {
+  width: 100%;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+.shape-style-strip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.shape-style-tile,
+.shape-style-more {
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  cursor: pointer;
+}
+.shape-style-tile:hover,
+.shape-style-more:hover {
+  border-color: var(--accent-border);
+}
+.ribbon-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.ribbon-note {
+  max-width: 220px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: normal;
+}
+.text-outline-a {
+  font-weight: 700;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--ink);
+}
+.text-glow-a {
+  font-weight: 700;
+  text-shadow: 0 0 3px #f5c542, 0 0 5px #f5c542;
+}
+
+/* The school list: what to do when a school's folder was renamed or moved. */
+.school-hint {
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
+/* Deleting a whole school: the password panel. */
+.delete-school-card {
+  border-color: var(--debit-border);
+}
+
+.delete-school-card .field {
+  max-width: 340px;
+  margin-top: 12px;
+}
+
+/* Settings: renaming the data folder, in place under its path. */
+.rename-folder {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.rename-folder .field {
+  margin: 0;
+  min-width: 240px;
 }
