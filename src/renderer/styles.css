@@ -3054,3 +3054,58 @@ button.primary:disabled {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Quick picks under a text field: the bank charges that come back every year. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chip-row .chip {
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip-row .chip:hover {
+  background: var(--hover);
+}
+.chip-row .chip.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.form-grid .field-wide {
+  grid-column: 1 / -1;
+}
+
+.page-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The report themes, as small swatches beside their list. */
+.theme-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 190px;
+}
+.theme-swatch {
+  width: 20px;
+  height: 16px;
+  padding: 0;
+  border: 1.5px solid;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.theme-swatch.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

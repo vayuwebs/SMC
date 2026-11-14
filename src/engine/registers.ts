@@ -133,7 +133,7 @@ export function billRegister(book: YearBook): BillRegisterRow[] {
       row: {
         voucherNo: cheque.voucherNo ?? 0,
         billNo: null,
-        billDate: cheque.chequeDate,
+        billDate: cheque.voucherDate ?? cheque.chequeDate,
         descriptionGu: "બચત ગ્રાન્ટ પરત",
         vendorGu: cheque.payeeGu,
         amountPaise: chequeAmount(cheque),
@@ -175,6 +175,8 @@ export interface Voucher {
   /** The cheque this voucher was paid by, when there is one. */
   chequeNo: number | null;
   chequeDate: string | null;
+  /** The voucher's own date - for a reissued cheque, the returned cheque's date. */
+  voucherDate: string | null;
   payeeGu: string | null;
   /**
    * What the cheque register says the cheque paid for (its બિલની વિગત) - the
@@ -214,6 +216,7 @@ export function vouchers(book: YearBook): Voucher[] {
       voucherNo,
       chequeNo: cheque?.chequeNo ?? null,
       chequeDate: cheque?.chequeDate ?? null,
+      voucherDate: cheque ? (cheque.voucherDate ?? cheque.chequeDate) : null,
       payeeGu: cheque?.payeeGu ?? null,
       purposeGu: cheque?.purposeGu ?? null,
       chequeType: cheque?.type ?? null,

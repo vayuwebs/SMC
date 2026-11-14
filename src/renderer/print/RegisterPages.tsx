@@ -284,7 +284,7 @@ export function VoucherPages({
                     <td className="label" data-part="metaPrincipalLabel"><Text id="voucher.principal">આચાર્યશ્રીનું નામ –:</Text></td>
                     <td data-part="metaPrincipal">{school.memberSecretaryGu}</td>
                     <td className="label" data-part="metaDateLabel"><Text id="voucher.date">તારીખ –:</Text></td>
-                    <td className="centre" data-part="metaDate">{voucher.chequeDate ? date(voucher.chequeDate) : ""}</td>
+                    <td className="centre" data-part="metaDate">{voucher.voucherDate ? date(voucher.voucherDate) : ""}</td>
                   </tr>
                   <tr>
                     {/* The cheque register's બિલની વિગત for this cheque. */}

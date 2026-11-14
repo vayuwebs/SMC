@@ -22,6 +22,33 @@ export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element 
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [headFilter, setHeadFilter] = useState<number | "all">("all");
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
+
+  async function exportShare(): Promise<void> {
+    const result = await api.exportGrantShare();
+    if (!result.ok) {
+      setIssues(result.issues);
+      return;
+    }
+    if (result.data) setShareNotice(t.shareReceiptsSaved(result.data));
+  }
+
+  async function importShare(): Promise<void> {
+    const result = await api.importGrantShare();
+    if (!result.ok) {
+      setIssues(result.issues);
+      return;
+    }
+    if (!result.data) return;
+    const done = result.data;
+    setIssues([]);
+    setShareNotice(
+      t.shareReceiptsImported(done.fromSchoolGu, done.added, done.skipped) +
+        (done.headsCreated.length > 0 ? ` ${t.shareReceiptsHeadsAdded(done.headsCreated.join(", "))}` : ""),
+    );
+    await reload();
+    onChanged();
+  }
 
   async function reload(): Promise<void> {
     const [nextReceipts, nextHeads] = await Promise.all([api.listReceipts(), api.listGrantHeads()]);
@@ -86,10 +113,24 @@ export function Receipts({ onChanged }: { onChanged: () => void }): JSX.Element 
           </h2>
           <p>{t.receiptsSubtitle}</p>
         </div>
-        <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
-          {t.newReceipt}
-        </button>
+        <div className="page-head-actions">
+          <button className="ghost" title={t.shareReceiptsHint} onClick={() => void importShare()}>
+            {t.shareReceiptsImport}
+          </button>
+          <button className="ghost" title={t.shareReceiptsHint} disabled={receipts.length === 0} onClick={() => void exportShare()}>
+            {t.shareReceiptsExport}
+          </button>
+          <button className="primary" onClick={() => { setEditing("new"); setIssues([]); }}>
+            {t.newReceipt}
+          </button>
+        </div>
       </div>
+
+      {shareNotice !== null && (
+        <div className="issue success">
+          <div>{shareNotice}</div>
+        </div>
+      )}
 
       {issues.length > 0 && (
         <div className="card">

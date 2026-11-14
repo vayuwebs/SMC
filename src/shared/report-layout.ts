@@ -128,6 +128,53 @@ const borderEdge = z
   .object({ style: z.enum(BORDER_STYLES), colour: hexColour.optional() })
   .strict();
 
+/**
+ * Which way a cell's text runs, as Excel's Orientation offers: turned to read
+ * upwards, turned to read downwards, or its letters stacked one under another.
+ * Left out, the text runs across as usual.
+ */
+export const TEXT_ROTATIONS = ["up", "down", "stacked"] as const;
+export type TextRotation = (typeof TEXT_ROTATIONS)[number];
+
+/**
+ * How a cell that joins a number and its date (ARRANGEMENTS) sets the two out:
+ * side by side, the date under the number, or the date above it. Set on a
+ * column it is that column's; on a row or a single cell, only there.
+ */
+export const NUMBER_DATE_ARRANGEMENTS = ["inline", "stacked", "dateFirst"] as const;
+export type NumberDateArrangement = (typeof NUMBER_DATE_ARRANGEMENTS)[number];
+
+/**
+ * The shapes a heading can take. `rect` is the form's own box. The plain
+ * shapes are CSS; the framed ones (plaque, badge, floral) are drawn frames
+ * whose corners keep their shape however wide the heading is.
+ */
+export const HEADING_SHAPES = ["rect", "rounded", "pill", "banner", "ribbon", "double", "plaque", "badge", "floral"] as const;
+export type HeadingShape = (typeof HEADING_SHAPES)[number];
+
+/**
+ * Ready-made colour sets for a whole report, like Excel's table styles: the
+ * heading row, every other body row, the total row, the ruled lines and the
+ * report's title. A school's own colours still win over them.
+ */
+export const TABLE_THEMES = [
+  { id: "maroon", labelGu: "મરૂન અને સોનેરી", head: "#7b1d1d", headText: "#fff8e1", band: "#fdf3e7", total: "#f6e3c3", line: "#b8902a", title: "#7b1d1d", titleText: "#fff8e1" },
+  { id: "blue", labelGu: "વાદળી", head: "#1f4e79", headText: "#ffffff", band: "#ddebf7", total: "#bdd7ee", line: "#5b9bd5", title: "#2f75b5", titleText: "#ffffff" },
+  { id: "green", labelGu: "લીલો", head: "#375623", headText: "#ffffff", band: "#e2efda", total: "#c6e0b4", line: "#70ad47", title: "#548235", titleText: "#ffffff" },
+  { id: "orange", labelGu: "નારંગી", head: "#c65911", headText: "#ffffff", band: "#fce4d6", total: "#f8cbad", line: "#ed7d31", title: "#c65911", titleText: "#ffffff" },
+  { id: "purple", labelGu: "જાંબલી", head: "#5b2c6f", headText: "#ffffff", band: "#efe4f5", total: "#dccbe8", line: "#8e5ea2", title: "#7d3c98", titleText: "#ffffff" },
+  { id: "teal", labelGu: "દરિયાઈ લીલો", head: "#0e6655", headText: "#ffffff", band: "#d8f3ec", total: "#a9e4d5", line: "#1abc9c", title: "#117a65", titleText: "#ffffff" },
+  { id: "pink", labelGu: "ગુલાબી", head: "#ad1457", headText: "#ffffff", band: "#fce4ec", total: "#f8bbd0", line: "#d4a017", title: "#c2185b", titleText: "#ffffff" },
+  { id: "grey", labelGu: "રાખોડી", head: "#404040", headText: "#ffffff", band: "#ededed", total: "#d9d9d9", line: "#7f7f7f", title: "#595959", titleText: "#ffffff" },
+] as const;
+export type TableThemeId = (typeof TABLE_THEMES)[number]["id"];
+export type TableTheme = (typeof TABLE_THEMES)[number];
+const THEME_IDS = TABLE_THEMES.map((theme) => theme.id) as [TableThemeId, ...TableThemeId[]];
+
+export function themeOf(id: TableThemeId | undefined): TableTheme | null {
+  return TABLE_THEMES.find((theme) => theme.id === id) ?? null;
+}
+
 export const cellStyleSchema = z
   .object({
     /** Highlight colour, "#rrggbb" - or NO_FILL for blank. */
@@ -154,6 +201,12 @@ export const cellStyleSchema = z
     /** Space inside the cell, left and right / above and below. */
     paddingXMm: z.number().min(0).max(15).optional(),
     paddingYMm: z.number().min(0).max(15).optional(),
+    /** Which way the text runs (TEXT_ROTATIONS). */
+    rotate: z.enum(TEXT_ROTATIONS).optional(),
+    /** A number-and-date cell: side by side, or one under the other. */
+    arrange: z.enum(NUMBER_DATE_ARRANGEMENTS).optional(),
+    /** A heading's shape (HEADING_SHAPES). */
+    shape: z.enum(HEADING_SHAPES).optional(),
     /** Excel's borders: each edge its own line style and colour. */
     borders: z
       .object({ top: borderEdge.optional(), right: borderEdge.optional(), bottom: borderEdge.optional(), left: borderEdge.optional() })
@@ -269,6 +322,8 @@ export const reportLayoutSchema = z
      * cell can still say otherwise (CellStyle.wrap). Left out, the form decides.
      */
     wrap: z.literal(true).optional(),
+    /** A ready-made colour set for the tables and the title (TABLE_THEMES). */
+    theme: z.enum(THEME_IDS).optional(),
     /** Paper, orientation, margin and zoom. */
     page: pageSetupSchema.optional(),
     /** Column id -> share of the table's width. Normalised when used. */
@@ -310,6 +365,7 @@ export function isEmptyLayout(layout: ReportLayout): boolean {
     layout.underline === undefined &&
     layout.vAlign === undefined &&
     layout.wrap === undefined &&
+    layout.theme === undefined &&
     (layout.page === undefined || Object.keys(layout.page).length === 0) &&
     Object.keys(layout.widths).length === 0 &&
     Object.keys(layout.rowGapsMm).length === 0 &&
@@ -1005,6 +1061,28 @@ export function arrangeLines(
     .filter((line) => line.length > 0);
 }
 
+/**
+ * A cell's own arrangement (CellStyle.arrange) over the lines of its column's:
+ * every figure and word on one line, or each figure on a line of its own -
+ * the number first, or the date first.
+ */
+export function applyArrangement(
+  lines: ArrangedSegment[][],
+  arrange: NumberDateArrangement | undefined,
+): ArrangedSegment[][] {
+  if (!arrange) return lines;
+  const all = lines.flat();
+  if (arrange === "inline") return all.length > 0 ? [all] : [];
+  const figures = all.filter((segment) => segment.part !== null);
+  const words = all.filter((segment) => segment.part === null);
+  const number = figures.filter((segment) => segment.part === "નંબર");
+  const others = figures.filter((segment) => segment.part !== "નંબર");
+  const ordered = arrange === "dateFirst" ? [...others, ...number] : [...number, ...others];
+  const out = ordered.map((segment) => [segment]);
+  if (words.length > 0) out.push(words);
+  return out;
+}
+
 export function isGroupKey(row: string): boolean {
   return row.startsWith(ROW_GROUPS.prefix);
 }
@@ -1268,9 +1346,17 @@ function textDeclarations(style: CellStyle): string[] {
   return out;
 }
 
+/** Which way the text runs: CSS writing modes, which a table cell takes in Chromium. */
+const ROTATE_CSS: Record<TextRotation, string> = {
+  up: "writing-mode: sideways-lr; text-orientation: mixed",
+  down: "writing-mode: vertical-rl; text-orientation: mixed",
+  stacked: "writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 0",
+};
+
 /** The box itself: its padding, vertical alignment and borders - never its contents'. */
 function boxDeclarations(style: CellStyle): string[] {
   const out: string[] = [];
+  if (style.rotate) out.push(ROTATE_CSS[style.rotate]);
   if (style.vAlign) out.push(`vertical-align: ${style.vAlign}`);
   if (style.paddingXMm !== undefined) {
     out.push(`padding-left: ${style.paddingXMm}mm`, `padding-right: ${style.paddingXMm}mm`);
@@ -1314,11 +1400,117 @@ function wrapRules(selector: string, wrap: boolean): string[] {
 
 const FLEX_ALIGN: Record<Alignment, string> = { left: "flex-start", center: "center", right: "flex-end" };
 
+/** A number-and-date cell set out its own way (CellStyle.arrange). */
+function arrangeRules(selector: string, arrange: NumberDateArrangement): string[] {
+  if (arrange === "inline") {
+    return [
+      `${selector} .arranged { flex-direction: row; gap: 1.2mm; }`,
+      `${selector} .arranged-line { flex-direction: row; }`,
+    ];
+  }
+  const direction = arrange === "stacked" ? "column" : "column-reverse";
+  return [
+    `${selector} .arranged { flex-direction: ${direction}; }`,
+    `${selector} .arranged-line { flex-direction: ${direction}; gap: 0; }`,
+  ];
+}
+
+const GOLD = "#d4a017";
+
+/** An SVG as a CSS url(). */
+function svgUrl(svg: string): string {
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+/**
+ * The framed shapes, drawn on a 120 x 60 frame and laid round the heading as a
+ * border image: the corners keep their shape, the edges stretch with the
+ * heading, the middle fills it. `frame` is the outer band, `inner` the panel the
+ * words sit on.
+ */
+export function framedShapeSvg(shape: "plaque" | "badge" | "floral", frame: string, inner: string): string {
+  const open = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" preserveAspectRatio="none">`;
+  if (shape === "plaque") {
+    return (
+      open +
+      `<path d="M1 30 L13 9 Q19 3 26 5 L94 5 Q101 3 107 9 L119 30 L107 51 Q101 57 94 55 L26 55 Q19 57 13 51 Z" fill="${frame}" stroke="${GOLD}" stroke-width="2"/>` +
+      `<path d="M11 30 L21 14 L99 14 L109 30 L99 46 L21 46 Z" fill="${inner}" stroke="${GOLD}" stroke-width="1.6"/>` +
+      `<circle cx="7" cy="30" r="2" fill="${GOLD}"/><circle cx="113" cy="30" r="2" fill="${GOLD}"/>` +
+      `</svg>`
+    );
+  }
+  if (shape === "badge") {
+    return (
+      open +
+      `<rect x="1.5" y="1.5" width="117" height="57" rx="11" fill="${frame}" stroke="${GOLD}" stroke-width="2.4"/>` +
+      `<rect x="8" y="8" width="104" height="44" rx="7" fill="${inner}" stroke="${GOLD}" stroke-width="1.6"/>` +
+      `<path d="M3 14 L9 8 M3 46 L9 52 M117 14 L111 8 M117 46 L111 52" stroke="${GOLD}" stroke-width="1.6"/>` +
+      `</svg>`
+    );
+  }
+  const flower = (x: number, y: number): string =>
+    [0, 72, 144, 216, 288]
+      .map((angle) => {
+        const rad = (angle * Math.PI) / 180;
+        return `<circle cx="${(x + Math.cos(rad) * 3.4).toFixed(2)}" cy="${(y + Math.sin(rad) * 3.4).toFixed(2)}" r="2.6" fill="${frame}" opacity="0.85"/>`;
+      })
+      .join("") + `<circle cx="${x}" cy="${y}" r="1.6" fill="${GOLD}"/>`;
+  return (
+    open +
+    `<rect x="2" y="2" width="116" height="56" rx="14" fill="${inner}" stroke="${frame}" stroke-width="3"/>` +
+    `<rect x="7" y="7" width="106" height="46" rx="10" fill="none" stroke="${GOLD}" stroke-width="1.2"/>` +
+    flower(10, 10) +
+    flower(110, 10) +
+    flower(10, 50) +
+    flower(110, 50) +
+    `</svg>`
+  );
+}
+
+/** What a heading's shape adds to its rules. `frame` is the line colour, `inner` the fill. */
+function shapeRules(selector: string, shape: HeadingShape, frame: string, inner: string | null): string[] {
+  const filled = inner ?? "#fff8e7";
+  switch (shape) {
+    case "rect":
+      return [];
+    case "rounded":
+      return [`${selector} { border-radius: 3mm; overflow: hidden; }`];
+    case "pill":
+      return [`${selector} { border-radius: 999px; overflow: hidden; padding-left: 6mm; padding-right: 6mm; }`];
+    case "double":
+      return [`${selector} { border: 2.4pt double ${frame}; border-radius: 2mm; }`];
+    case "banner":
+      return [
+        `${selector} { clip-path: polygon(0 50%, 4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%); background: ${filled}; padding-left: 8mm; padding-right: 8mm; border-color: transparent; }`,
+      ];
+    case "ribbon":
+      return [
+        `${selector} { clip-path: polygon(0 0, 100% 0, 96% 50%, 100% 100%, 0 100%, 4% 50%); background: ${filled}; padding-left: 9mm; padding-right: 9mm; border-color: transparent; }`,
+      ];
+    case "plaque":
+    case "badge":
+    case "floral": {
+      const slice = shape === "plaque" ? "16 30 16 30" : "14 16 14 16";
+      const width = shape === "plaque" ? "3mm 8mm" : "2.6mm 3.6mm";
+      return [
+        `${selector} { border-style: solid; border-color: transparent; border-width: ${width}; border-image: ${svgUrl(framedShapeSvg(shape, frame, filled))} ${slice} fill / ${width} stretch; background: transparent; box-sizing: border-box; }`,
+        `${selector} * { background: transparent; border-color: transparent; }`,
+      ];
+    }
+  }
+}
+
 /**
  * A heading part: its text properties go to everything inside it too, because
  * the form's own rules size and colour the pieces of a heading one by one.
  */
-function partRules(root: string, partId: string, style: CellStyle, part?: ReportPart): string[] {
+function partRules(
+  root: string,
+  partId: string,
+  style: CellStyle,
+  part?: ReportPart,
+  theme: TableTheme | null = null,
+): string[] {
   const attribute = `[data-part=${cssString(partId)}]`;
   const selector = `${root} ${attribute}`;
   /** The part when it is this kind of element, e.g. `#r table[data-part="x"]`. */
@@ -1329,9 +1521,15 @@ function partRules(root: string, partId: string, style: CellStyle, part?: Report
   if (inherited.length > 0) rules.push(`${all} { ${inherited.join("; ")}; }`);
   const box = boxDeclarations(style);
   if (box.length > 0) rules.push(`${selector} { ${box.join("; ")}; }`);
-  if (style.fill) {
+  const framed = style.shape === "plaque" || style.shape === "badge" || style.shape === "floral";
+  if (style.fill && !framed) {
     rules.push(`${all} { background: ${style.fill === NO_FILL ? "transparent" : style.fill}; }`);
   }
+  if (style.shape) {
+    const fill = style.fill && style.fill !== NO_FILL ? style.fill : null;
+    rules.push(...shapeRules(selector, style.shape, style.lineColour ?? theme?.title ?? "#8b1a1a", fill));
+  }
+  if (style.rotate) rules.push(`${all} { ${ROTATE_CSS[style.rotate]}; }`);
   if (style.align) rules.push(`${selector} { justify-content: ${FLEX_ALIGN[style.align]}; }`);
   if (style.widthMm !== undefined) {
     // A piece of a heading row takes exactly this width; the others share the
@@ -1400,6 +1598,24 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   }
 
   const table = `${root} table[data-layout]`;
+
+  // A ready-made colour set: before the school's own colours, which win.
+  const theme = themeOf(layout.theme);
+  if (theme) {
+    const head = `${table} tr[data-row="head"] > :is(td, th)`;
+    rules.push(`${head} { background: ${theme.head}; color: ${theme.headText}; }`);
+    rules.push(`${head} * { color: inherit; background: transparent; }`);
+    rules.push(
+      `${table} > tbody > tr:not([data-row="head"]):not([data-row="total"]):not(.layout-gap):not(.block-gap):nth-of-type(even) > td { background: ${theme.band}; }`,
+    );
+    rules.push(`${table} tr[data-row="total"] > td { background: ${theme.total}; }`);
+    if (!layout.lineColour) {
+      rules.push(`${root} .sheet table, ${root} .sheet table :is(td, th), ${root} [data-part] { border-color: ${theme.line}; }`);
+    }
+    const title = `${root} [data-part=${cssString(EXCEL_TITLE_PART[report])}]`;
+    rules.push(`${title}, ${title} * { background: ${theme.title}; color: ${theme.titleText}; }`);
+  }
+
   const padding: string[] = [];
   if (layout.paddingYMm !== undefined) {
     padding.push(`padding-top: ${layout.paddingYMm}mm`, `padding-bottom: ${layout.paddingYMm}mm`);
@@ -1457,7 +1673,7 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   for (const { target, style } of targets) {
     if (target.kind === "part") {
       const part = REPORT_PARTS[report].find((each) => each.id === target.part);
-      rules.push(...partRules(root, target.part, style, part));
+      rules.push(...partRules(root, target.part, style, part, theme));
       continue;
     }
     const body = declarations(style, report);
@@ -1466,7 +1682,7 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
     if (target.kind === "row" && style.heightMm !== undefined) {
       rules.push(`${table} ${rowSelector(target.row)} > td { height: ${style.heightMm}mm; }`);
     }
-    if (body.length === 0) continue;
+    if (body.length === 0 && !style.arrange) continue;
     const selector =
       target.kind === "col"
         ? `${table} :is(td, th)[data-col=${cssString(target.col)}]`
@@ -1475,8 +1691,9 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
           : isLineKey(target.row)
             ? `${table} tr > :is(td, th)[data-col=${cssString(target.col)}][data-line=${cssString(target.row)}]`
             : `${table} ${rowSelector(target.row)} > :is(td, th)[data-col=${cssString(target.col)}]`;
-    rules.push(`${selector} { ${body.join("; ")}; }`);
+    if (body.length > 0) rules.push(`${selector} { ${body.join("; ")}; }`);
     if (style.wrap !== undefined) rules.push(...wrapRules(selector, style.wrap));
+    if (style.arrange) rules.push(...arrangeRules(selector, style.arrange));
     if (report === "rojmel" && style.fill && style.fill !== NO_FILL && !style.colour) {
       rules.push(`${selector} * { color: inherit; text-decoration: none; }`);
     }

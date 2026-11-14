@@ -17,6 +17,7 @@
  *
  * Money is always an integer of paise. Dates are always ISO "YYYY-MM-DD".
  */
+import type { GrantShareFile } from "./grant-share.js";
 import type {
   Annexure9,
   Annexure10,
@@ -102,9 +103,33 @@ export interface BankChargeDto {
   date: string;
   grantHeadId: number;
   headNameGu: string;
+  /** The whole charge. */
   amountPaise: number;
+  /** The second head that bears what the first could not, or null. */
+  otherGrantHeadId: number | null;
+  otherHeadNameGu: string | null;
+  /** The part charged to the second head; the first bears the rest. */
+  otherAmountPaise: number;
   descriptionGu: string;
   remarksGu: string | null;
+}
+
+/** What importing another school's grant receipts did. */
+export interface GrantShareImportDto {
+  fromSchoolGu: string;
+  added: number;
+  /** Already here: same date, head and amount. */
+  skipped: number;
+  /** Heads this school did not have, added for the import. */
+  headsCreated: string[];
+}
+
+/** What the interest (વ્યાજ) head can still bear on a date, for splitting a bank charge. */
+export interface InterestAvailableDto {
+  /** The વ્યાજ head, or null when the year has none. */
+  grantHeadId: number | null;
+  /** Its balance on the date, never below zero. */
+  availablePaise: number;
 }
 
 export interface BillDto {
@@ -300,6 +325,9 @@ export interface BankChargeInput {
   date: string;
   grantHeadId: number;
   amountPaise: number;
+  /** A second head for the part the first cannot bear. */
+  otherGrantHeadId?: number | null;
+  otherAmountPaise?: number;
   descriptionGu: string;
   remarksGu?: string | null;
 }
@@ -603,6 +631,17 @@ export interface BooksApi {
   createBankCharge(input: BankChargeInput): Promise<ApiResult<BankChargeDto>>;
   updateBankCharge(id: number, input: BankChargeInput): Promise<ApiResult<BankChargeDto>>;
   deleteBankCharge(id: number): Promise<ApiResult<null>>;
+  // sharing grant receipts between schools (src/shared/grant-share.ts)
+  /** This year's receipts, as a file another school can import. */
+  grantShareFile(): Promise<GrantShareFile>;
+  /** Add another school's receipts to this year. Heads are matched by name, then code. */
+  applyGrantShare(file: GrantShareFile): Promise<ApiResult<GrantShareImportDto>>;
+  /** Save this year's receipts to a file. Null when the user cancelled. */
+  exportGrantShare(): Promise<ApiResult<string | null>>;
+  /** Pick a shared file and import it. Null when the user cancelled. */
+  importGrantShare(): Promise<ApiResult<GrantShareImportDto | null>>;
+  /** The interest balance on `date`, leaving out the charge being edited. */
+  interestAvailable(date: string, excludeChargeId: number | null): Promise<InterestAvailableDto>;
 
   // bills
   listBills(): Promise<BillDto[]>;
@@ -793,6 +832,9 @@ export const API_METHODS = [
   "createBankCharge",
   "updateBankCharge",
   "deleteBankCharge",
+  "interestAvailable",
+  "exportGrantShare",
+  "importGrantShare",
   "listBills",
   "createBill",
   "updateBill",

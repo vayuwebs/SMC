@@ -28,7 +28,7 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
         },
         orderBy: { chequeNo: "asc" },
       },
-      bankCharges: { include: { grantHead: true }, orderBy: [{ date: "asc" }, { id: "asc" }] },
+      bankCharges: { include: { grantHead: true, otherGrantHead: true }, orderBy: [{ date: "asc" }, { id: "asc" }] },
       reconciliation: true,
     },
   });
@@ -107,8 +107,11 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
       chequeNo: cheque.chequeNo,
       chequeDate: cheque.chequeDate,
       cashbookDate: cheque.cashbookDate,
-      cashedDate: cheque.cashedDate,
+      // The client's rule: a cheque is encashed on its rojmel date, always.
+      // The stored column is ignored so older files with a stray date agree.
+      cashedDate: cheque.cashbookDate,
       voucherNo: first.voucherNo,
+      voucherDate: first.chequeDate,
       payeeGu: cheque.payeeGu,
       purposeGu: cheque.purposeGu,
       type: first.type as ChequeType,
@@ -213,14 +216,32 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
 
     returnedCheques,
 
-    bankCharges: year.bankCharges.map((charge) => ({
-      id: String(charge.id),
-      date: charge.date,
-      headCode: charge.grantHead.code,
-      amountPaise: paise(charge.amountPaise),
-      descriptionGu: charge.descriptionGu,
-      remarksGu: charge.remarksGu,
-    })),
+    // A charge split between two heads is one line per head in the rojmel and
+    // in each head's ledger: the first head's part, then the second head's.
+    bankCharges: year.bankCharges.flatMap((charge) => {
+      const other = charge.otherGrantHead && charge.otherAmountPaise > 0 ? charge.otherAmountPaise : 0;
+      const parts = [
+        {
+          id: String(charge.id),
+          date: charge.date,
+          headCode: charge.grantHead.code,
+          amountPaise: paise(charge.amountPaise - other),
+          descriptionGu: charge.descriptionGu,
+          remarksGu: charge.remarksGu,
+        },
+      ];
+      if (other > 0 && charge.otherGrantHead) {
+        parts.push({
+          id: `${charge.id}-2`,
+          date: charge.date,
+          headCode: charge.otherGrantHead.code,
+          amountPaise: paise(other),
+          descriptionGu: charge.descriptionGu,
+          remarksGu: charge.remarksGu,
+        });
+      }
+      return parts.filter((part) => part.amountPaise > 0);
+    }),
 
     reconciliation: year.reconciliation
       ? {

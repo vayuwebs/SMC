@@ -94,6 +94,12 @@ export interface BookCheque {
   /** The date the cheque enters the rojmel; may differ from chequeDate. */
   cashbookDate: string;
   cashedDate: string | null;
+  /**
+   * The voucher's own date. A cheque written again for a returned one keeps the
+   * returned cheque's voucher, and with it the voucher's date: the first
+   * cheque's date. Absent means the cheque's own date.
+   */
+  voucherDate?: string;
   voucherNo: number | null;
   payeeGu: string;
   purposeGu: string;

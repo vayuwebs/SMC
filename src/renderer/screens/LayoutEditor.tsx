@@ -13,6 +13,11 @@ import {
   BORDER_STYLES,
   LAYOUT_FONTS,
   LINE_WEIGHTS,
+  HEADING_SHAPES,
+  TABLE_THEMES,
+  TEXT_ROTATIONS,
+  NUMBER_DATE_ARRANGEMENTS,
+  ARRANGEMENTS,
   MAX_SCALE_PCT,
   MIN_SCALE_PCT,
   NO_FILL,
@@ -46,6 +51,10 @@ import {
   type LayoutFontId,
   type LayoutTarget,
   type LineWeight,
+  type HeadingShape,
+  type TableThemeId,
+  type TextRotation,
+  type NumberDateArrangement,
   type PageSetup,
   type PaperId,
   type ReportLayout,
@@ -233,6 +242,9 @@ const CLEARED: StylePatch = {
   lineColour: undefined,
   paddingXMm: undefined,
   paddingYMm: undefined,
+  rotate: undefined,
+  arrange: undefined,
+  shape: undefined,
   borders: undefined,
 };
 
@@ -385,6 +397,12 @@ export function LayoutEditor({
   // ------------------------------------------------------------- targets
 
   const columns = REPORT_COLUMNS[report];
+  /** The columns whose cells join a number and its date (ARRANGEMENTS). */
+  const arrangedColumns = new Set(
+    report === "rojmel"
+      ? Object.values(ARRANGEMENTS).map((arrangement) => arrangement.id.replace(/^arrange:/, ""))
+      : [],
+  );
   const columnIndex = (id: string): number => columns.findIndex((column) => column.id === id);
   const cellSelection = selection?.kind === "cell" ? selection : null;
   const anchorHasRow = cellSelection !== null && cellSelection.anchor.row !== null;
@@ -1008,6 +1026,60 @@ export function LayoutEditor({
         </div>
       </Group>
 
+      <Group label={t.layoutGroupDirection}>
+        <div className="ribbon-rows">
+          <select
+            className="ribbon-select"
+            title={needsSelection ?? t.layoutRotate}
+            aria-label={t.layoutRotate}
+            disabled={reportMode}
+            value={own.rotate ?? ""}
+            onChange={(event) => apply({ rotate: (event.target.value || undefined) as TextRotation | undefined })}
+          >
+            <option value="">{t.layoutRotate}: {t.layoutRotations.none}</option>
+            {TEXT_ROTATIONS.map((value) => (
+              <option key={value} value={value}>
+                {t.layoutRotate}: {t.layoutRotations[value]}
+              </option>
+            ))}
+          </select>
+          {cellSelection && arrangedColumns.has(cellSelection.anchor.col) && (
+            <select
+              className="ribbon-select"
+              title={t.layoutArrange}
+              aria-label={t.layoutArrange}
+              value={own.arrange ?? ""}
+              onChange={(event) =>
+                apply({ arrange: (event.target.value || undefined) as NumberDateArrangement | undefined })
+              }
+            >
+              <option value="">{t.layoutArrange}: {t.layoutArrangements.column}</option>
+              {NUMBER_DATE_ARRANGEMENTS.map((value) => (
+                <option key={value} value={value}>
+                  {t.layoutArrange}: {t.layoutArrangements[value]}
+                </option>
+              ))}
+            </select>
+          )}
+          {selection?.kind === "part" && (
+            <select
+              className="ribbon-select"
+              title={t.layoutShape}
+              aria-label={t.layoutShape}
+              value={own.shape ?? ""}
+              onChange={(event) => apply({ shape: (event.target.value || undefined) as HeadingShape | undefined })}
+            >
+              <option value="">{t.layoutShape}: {t.layoutShapes.rect}</option>
+              {HEADING_SHAPES.filter((value) => value !== "rect").map((value) => (
+                <option key={value} value={value}>
+                  {t.layoutShape}: {t.layoutShapes[value]}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </Group>
+
       <Group label={t.excelGroupCells}>
         <div className="ribbon-rows">
           <div className="ribbon-row">
@@ -1200,6 +1272,38 @@ export function LayoutEditor({
                 title={value === "left" ? t.layoutAlignLeft : value === "center" ? t.layoutAlignCenter : t.layoutAlignRight}
                 active={draft.align === value}
                 onClick={() => change(withReport(draft, { align: draft.align === value ? undefined : value }))}
+              />
+            ))}
+          </div>
+        </div>
+      </Group>
+      <Group label={t.layoutTheme}>
+        <div className="ribbon-rows" title={t.layoutThemeHint}>
+          <select
+            className="ribbon-select"
+            aria-label={t.layoutTheme}
+            value={draft.theme ?? ""}
+            onChange={(event) =>
+              change(withReport(draft, { theme: (event.target.value || undefined) as TableThemeId | undefined }))
+            }
+          >
+            <option value="">{t.layoutThemeNone}</option>
+            {TABLE_THEMES.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.labelGu}
+              </option>
+            ))}
+          </select>
+          <div className="theme-swatches">
+            {TABLE_THEMES.map((theme) => (
+              <button
+                key={theme.id}
+                type="button"
+                className={draft.theme === theme.id ? "theme-swatch active" : "theme-swatch"}
+                title={theme.labelGu}
+                aria-label={theme.labelGu}
+                style={{ background: `linear-gradient(${theme.head} 0 40%, ${theme.band} 40% 70%, #fff 70%)`, borderColor: theme.line }}
+                onClick={() => change(withReport(draft, { theme: draft.theme === theme.id ? undefined : theme.id }))}
               />
             ))}
           </div>

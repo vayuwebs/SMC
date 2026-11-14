@@ -334,7 +334,6 @@ function ChequeForm({
   const [chequeNo, setChequeNo] = useState(String(cheque?.chequeNo ?? nextChequeNo));
   const [chequeDate, setChequeDate] = useState(cheque?.chequeDate ?? "");
   const [cashbookDate, setCashbookDate] = useState(cheque?.cashbookDate ?? "");
-  const [cashedDate, setCashedDate] = useState(cheque?.cashedDate ?? "");
   const [voucherNo, setVoucherNo] = useState(cheque?.voucherNo?.toString() ?? "");
   const [payee, setPayee] = useState(cheque?.payeeGu ?? "");
   const [purpose, setPurpose] = useState(cheque?.purposeGu ?? "");
@@ -436,7 +435,6 @@ function ChequeForm({
         chequeNo: Number(chequeNo),
         chequeDate,
         cashbookDate,
-        cashedDate: cashedDate === "" ? null : cashedDate,
         voucherNo: voucherNo === "" ? null : Number(voucherNo),
         payeeGu: payee,
         purposeGu: purpose,
@@ -540,10 +538,6 @@ function ChequeForm({
         <div className="field">
           <label htmlFor="cbdate">{t.cashbookDate}</label>
           <DateInput id="cbdate" value={cashbookDate} onChange={setCashbookDate} required />
-        </div>
-        <div className="field">
-          <label htmlFor="cashed">{t.cashedDate}</label>
-          <DateInput id="cashed" value={cashedDate} onChange={setCashedDate} />
         </div>
         <div className="field">
           <label htmlFor="returned">{t.returnedDate}</label>

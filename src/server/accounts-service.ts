@@ -33,6 +33,7 @@ import {
   yearEndBalance,
   type YearBook,
 } from "../engine/index.js";
+import { headBalanceOn } from "../engine/balances.js";
 import type {
   Annexure9,
   Annexure10,
@@ -58,6 +59,7 @@ import {
   type ReportLayout,
 } from "../shared/report-layout.js";
 import { PRINTABLE_REPORTS } from "../shared/api.js";
+import { GRANT_SHARE_FORMAT, type GrantShareFile } from "../shared/grant-share.js";
 import { fingerprint, fold, mergeRows, validRows, type SuggestionRow } from "../shared/suggestions.js";
 import type {
   ApiResult,
@@ -76,6 +78,8 @@ import type {
   ReceiptDto,
   BankChargeDto,
   BankChargeInput,
+  InterestAvailableDto,
+  GrantShareImportDto,
   PrintableReportId,
   ReceiptInput,
   ReconciliationDto,
@@ -378,15 +382,17 @@ export class AccountsService implements BooksApi {
    * school-level master.
    */
   private async headUsage(grantHeadId: number): Promise<string | null> {
-    const [receipts, bills, allocations] = await Promise.all([
+    const [receipts, bills, allocations, charges] = await Promise.all([
       this.prisma.receipt.count({ where: { grantHeadId } }),
       this.prisma.bill.count({ where: { grantHeadId } }),
       this.prisma.chequeAllocation.count({ where: { grantHeadId } }),
+      this.prisma.bankCharge.count({ where: { OR: [{ grantHeadId }, { otherGrantHeadId: grantHeadId }] } }),
     ]);
     const parts: string[] = [];
     if (receipts > 0) parts.push(`${receipts} આવક`);
     if (bills > 0) parts.push(`${bills} બિલ`);
     if (allocations > 0) parts.push(`${allocations} ચેક`);
+    if (charges > 0) parts.push(`${charges} બેન્ક ચાર્જ`);
     return parts.length === 0 ? null : parts.join(", ");
   }
 
@@ -1145,7 +1151,7 @@ export class AccountsService implements BooksApi {
   async listBankCharges(): Promise<BankChargeDto[]> {
     const charges = await this.prisma.bankCharge.findMany({
       where: { financialYearId: this.financialYearId },
-      include: { grantHead: true },
+      include: { grantHead: true, otherGrantHead: true },
       orderBy: [{ date: "asc" }, { id: "asc" }],
     });
     return charges.map(bankChargeToDto);
@@ -1163,10 +1169,11 @@ export class AccountsService implements BooksApi {
         date: input.date,
         grantHeadId: input.grantHeadId,
         amountPaise: input.amountPaise,
+        ...splitOf(input),
         descriptionGu: input.descriptionGu.trim(),
         remarksGu: input.remarksGu?.trim() || null,
       },
-      include: { grantHead: true },
+      include: { grantHead: true, otherGrantHead: true },
     });
     return { ok: true, data: bankChargeToDto(created) };
   }
@@ -1183,10 +1190,11 @@ export class AccountsService implements BooksApi {
         date: input.date,
         grantHeadId: input.grantHeadId,
         amountPaise: input.amountPaise,
+        ...splitOf(input),
         descriptionGu: input.descriptionGu.trim(),
         remarksGu: input.remarksGu?.trim() || null,
       },
-      include: { grantHead: true },
+      include: { grantHead: true, otherGrantHead: true },
     });
     return { ok: true, data: bankChargeToDto(updated) };
   }
@@ -1198,6 +1206,27 @@ export class AccountsService implements BooksApi {
     return { ok: true, data: null };
   }
 
+  /**
+   * What the interest head can still bear on `date`: its balance after every
+   * receipt, cheque and charge up to that day, less nothing for the charge being
+   * edited (it is left out). Never below zero.
+   */
+  async interestAvailable(date: string, excludeChargeId: number | null): Promise<InterestAvailableDto> {
+    const interest = await this.prisma.grantHead.findFirst({
+      where: { school: { financialYears: { some: { id: this.financialYearId } } }, code: "INTEREST" },
+    });
+    if (!interest || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return { grantHeadId: interest?.id ?? null, availablePaise: 0 };
+    }
+    const book = await this.book();
+    const own = excludeChargeId === null ? null : String(excludeChargeId);
+    const others: YearBook = {
+      ...book,
+      bankCharges: book.bankCharges.filter((charge) => own === null || (charge.id !== own && charge.id !== `${own}-2`)),
+    };
+    return { grantHeadId: interest.id, availablePaise: Math.max(0, headBalanceOn(others, "INTEREST", date)) };
+  }
+
   private checkBankCharge(input: BankChargeInput): ApiResult<never> | null {
     if (!Number.isInteger(input.amountPaise) || input.amountPaise <= 0) {
       return fail("charge_amount_not_positive", "રકમ શૂન્યથી વધુ હોવી જોઈએ", "bank charge amount must be positive");
@@ -1207,6 +1236,22 @@ export class AccountsService implements BooksApi {
     }
     if (input.descriptionGu.trim() === "") {
       return fail("charge_description_missing", "વિગત લખવી જરૂરી છે", "bank charge description is required");
+    }
+    const other = input.otherAmountPaise ?? 0;
+    if (other !== 0) {
+      if (!Number.isInteger(other) || other < 0 || other > input.amountPaise) {
+        return fail(
+          "charge_split_invalid",
+          "બીજી ગ્રાન્ટમાંથી લેવાની રકમ કુલ ચાર્જ કરતાં વધુ ન હોઈ શકે",
+          "the part charged to the second head must be between zero and the whole charge",
+        );
+      }
+      if (!input.otherGrantHeadId) {
+        return fail("charge_split_head_missing", "બાકીની રકમ માટે ગ્રાન્ટ પસંદ કરો", "pick the grant head for the rest of the charge");
+      }
+      if (input.otherGrantHeadId === input.grantHeadId) {
+        return fail("charge_split_same_head", "બંને ગ્રાન્ટ જુદી હોવી જોઈએ", "the two grant heads must differ");
+      }
     }
     return null;
   }
@@ -1418,7 +1463,8 @@ export class AccountsService implements BooksApi {
         chequeNo: input.chequeNo,
         chequeDate: input.chequeDate,
         cashbookDate: input.cashbookDate,
-        cashedDate: input.cashedDate ?? null,
+        // ચેક વટાવ્યાં તારીખ is always the rojmel date; it is no longer typed.
+        cashedDate: input.cashbookDate,
         voucherNo: input.voucherNo ?? null,
         payeeGu: input.payeeGu,
         purposeGu: input.purposeGu,
@@ -1456,7 +1502,8 @@ export class AccountsService implements BooksApi {
         chequeNo: input.chequeNo,
         chequeDate: input.chequeDate,
         cashbookDate: input.cashbookDate,
-        cashedDate: input.cashedDate ?? null,
+        // ચેક વટાવ્યાં તારીખ is always the rojmel date; it is no longer typed.
+        cashedDate: input.cashbookDate,
         voucherNo: input.voucherNo ?? null,
         payeeGu: input.payeeGu,
         purposeGu: input.purposeGu,
@@ -1749,6 +1796,129 @@ export class AccountsService implements BooksApi {
       "આ જગ્યાએથી છાપી શકાતું નથી",
       "Printing is not available in this environment",
     );
+  }
+
+  // ------------------------------------------------ sharing grant receipts
+
+  async grantShareFile(): Promise<GrantShareFile> {
+    const year = await this.prisma.financialYear.findUniqueOrThrow({
+      where: { id: this.financialYearId },
+      include: {
+        school: true,
+        receipts: { include: { grantHead: true }, orderBy: [{ date: "asc" }, { id: "asc" }] },
+      },
+    });
+    return {
+      format: GRANT_SHARE_FORMAT,
+      version: 1,
+      fromSchoolGu: year.school.nameGu,
+      yearLabel: year.label,
+      exportedAt: new Date().toISOString(),
+      receipts: year.receipts.map((receipt) => ({
+        date: receipt.date,
+        headCode: receipt.grantHead.code,
+        headNameGu: receipt.grantHead.nameGu,
+        amountPaise: receipt.amountPaise,
+        receivedFromGu: receipt.receivedFromGu,
+        modeGu: receipt.modeGu,
+        ddChequeNo: receipt.ddChequeNo,
+        ddChequeDate: receipt.ddChequeDate,
+        allotmentOrderNo: receipt.allotmentOrderNo,
+        allotmentOrderDate: receipt.allotmentOrderDate,
+        remarksGu: receipt.remarksGu,
+      })),
+    };
+  }
+
+  /**
+   * Add another school's receipts. Each is matched to this school's head by
+   * name, then by code; a head found by neither is added. A receipt already
+   * here - same date, head and amount - is skipped, so importing the same file
+   * twice adds nothing. Nothing is asked first: the school edits afterwards.
+   */
+  async applyGrantShare(file: GrantShareFile): Promise<ApiResult<GrantShareImportDto>> {
+    const frozen = await this.refuseIfClosed();
+    if (frozen) return frozen;
+    if (file.format !== GRANT_SHARE_FORMAT) {
+      return fail("grant_share_invalid", "આ ગ્રાન્ટ આવકની ફાઈલ નથી", "this is not a shared grant receipts file");
+    }
+
+    const year = await this.prisma.financialYear.findUniqueOrThrow({
+      where: { id: this.financialYearId },
+      include: {
+        school: { include: { grantHeads: true, bankAccounts: true } },
+        receipts: { orderBy: { id: "desc" } },
+      },
+    });
+    const outside = file.receipts.find((receipt) => receipt.date < year.startDate || receipt.date > year.endDate);
+    if (outside) {
+      return fail(
+        "grant_share_other_year",
+        `આ ફાઈલની આવક (${file.yearLabel}) ચાલુ વર્ષ ${year.label} ની નથી`,
+        `the file's receipts (${file.yearLabel}) fall outside the open year ${year.label}`,
+      );
+    }
+
+    const bank = year.school.bankAccounts.find((account) => account.isPrimary) ?? year.school.bankAccounts[0];
+    if (!bank) return fail("no_bank_account", "શાળાનું બેન્ક ખાતું નથી", "the school has no bank account");
+    // This school's own bank, as its last receipt printed it.
+    const bankLabelGu = year.receipts[0]?.bankLabelGu ?? `${bank.bankNameGu} ${bank.branchGu}`.trim();
+
+    const headIdByCode = new Map(year.school.grantHeads.map((head) => [head.code, head.id]));
+    const headIdByName = new Map(year.school.grantHeads.map((head) => [head.nameGu.trim(), head.id]));
+    const headsCreated: string[] = [];
+    const resolveHead = async (code: string, nameGu: string): Promise<number> => {
+      const found = headIdByName.get(nameGu.trim()) ?? headIdByCode.get(code);
+      if (found !== undefined) return found;
+      const created = await this.createGrantHead({ nameGu });
+      if (!created.ok) throw new Error(created.issues[0]?.detail ?? "could not add grant head");
+      headIdByCode.set(created.data.code, created.data.id);
+      headIdByName.set(nameGu.trim(), created.data.id);
+      headsCreated.push(nameGu);
+      return created.data.id;
+    };
+
+    const existing = new Set(year.receipts.map((r) => `${r.date}|${r.grantHeadId}|${r.amountPaise}`));
+    let added = 0;
+    let skipped = 0;
+    for (const receipt of file.receipts) {
+      const grantHeadId = await resolveHead(receipt.headCode, receipt.headNameGu);
+      const key = `${receipt.date}|${grantHeadId}|${receipt.amountPaise}`;
+      if (existing.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      existing.add(key);
+      await this.prisma.receipt.create({
+        data: {
+          financialYearId: this.financialYearId,
+          bankAccountId: bank.id,
+          grantHeadId,
+          date: receipt.date,
+          amountPaise: receipt.amountPaise,
+          receivedFromGu: receipt.receivedFromGu,
+          modeGu: receipt.modeGu,
+          bankLabelGu,
+          ddChequeNo: receipt.ddChequeNo ?? null,
+          ddChequeDate: receipt.ddChequeDate ?? null,
+          allotmentOrderNo: receipt.allotmentOrderNo ?? null,
+          allotmentOrderDate: receipt.allotmentOrderDate ?? null,
+          remarksGu: receipt.remarksGu ?? null,
+        },
+      });
+      added += 1;
+    }
+    return { ok: true, data: { fromSchoolGu: file.fromSchoolGu, added, skipped, headsCreated } };
+  }
+
+  /** Saving needs a file dialog: the main process answers this. */
+  async exportGrantShare(): Promise<ApiResult<string | null>> {
+    return fail("grant_share_not_available", "અહીંથી ફાઈલ સાચવી શકાતી નથી", "saving a file is not available here");
+  }
+
+  /** Opening needs a file dialog: the main process answers this. */
+  async importGrantShare(): Promise<ApiResult<GrantShareImportDto | null>> {
+    return fail("grant_share_not_available", "અહીંથી ફાઈલ ખોલી શકાતી નથી", "opening a file is not available here");
   }
 
   /**
@@ -2053,14 +2223,25 @@ function bookSchoolToDto(book: YearBook): SchoolDto {
   return { ...book.school };
 }
 
+/** The second head's part of a bank charge, as stored: none unless both are given. */
+function splitOf(input: BankChargeInput): { otherGrantHeadId: number | null; otherAmountPaise: number } {
+  const other = input.otherAmountPaise ?? 0;
+  return other > 0 && input.otherGrantHeadId
+    ? { otherGrantHeadId: input.otherGrantHeadId, otherAmountPaise: other }
+    : { otherGrantHeadId: null, otherAmountPaise: 0 };
+}
+
 function bankChargeToDto(charge: {
   id: number;
   date: string;
   grantHeadId: number;
   amountPaise: number;
+  otherGrantHeadId: number | null;
+  otherAmountPaise: number;
   descriptionGu: string;
   remarksGu: string | null;
   grantHead: { nameGu: string };
+  otherGrantHead: { nameGu: string } | null;
 }): BankChargeDto {
   return {
     id: charge.id,
@@ -2068,6 +2249,9 @@ function bankChargeToDto(charge: {
     grantHeadId: charge.grantHeadId,
     headNameGu: charge.grantHead.nameGu,
     amountPaise: charge.amountPaise,
+    otherGrantHeadId: charge.otherGrantHeadId,
+    otherHeadNameGu: charge.otherGrantHead?.nameGu ?? null,
+    otherAmountPaise: charge.otherAmountPaise,
     descriptionGu: charge.descriptionGu,
     remarksGu: charge.remarksGu,
   };

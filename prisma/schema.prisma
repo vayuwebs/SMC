@@ -130,7 +130,8 @@ model GrantHead {
   receipts         Receipt[]
   bills            Bill[]
   allocations      ChequeAllocation[]
-  bankCharges      BankCharge[]
+  bankCharges      BankCharge[] @relation("BankChargeHead")
+  otherBankCharges BankCharge[] @relation("BankChargeOtherHead")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -306,12 +307,19 @@ model BankCharge {
   financialYearId Int
   financialYear   FinancialYear @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
   grantHeadId     Int
-  grantHead       GrantHead     @relation(fields: [grantHeadId], references: [id])
+  grantHead       GrantHead     @relation("BankChargeHead", fields: [grantHeadId], references: [id])
 
   date          String // cash-book date, ISO
-  amountPaise   Int
-  descriptionGu String // "બેન્ક ચાર્જ", as it prints
+  amountPaise   Int // the whole charge, as the passbook shows it
+  descriptionGu String // "બેંક દ્વારા પાસબુક ઇશ્યૂ ચાર્જ કપાયો", as it prints
   remarksGu     String?
+
+  // When the first head (normally વ્યાજ) cannot bear it all, the rest is charged
+  // to a second head: otherAmountPaise of amountPaise goes to otherGrantHeadId.
+  // The rojmel and the ledgers then show the charge as one line per head.
+  otherGrantHeadId Int?
+  otherGrantHead   GrantHead? @relation("BankChargeOtherHead", fields: [otherGrantHeadId], references: [id])
+  otherAmountPaise Int        @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

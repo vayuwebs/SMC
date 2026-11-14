@@ -44,6 +44,14 @@ export interface Strings {
   bankChargeDescription: string;
   bankChargeDefaultDescription: string;
   confirmDeleteBankCharge: (date: string, head: string) => string;
+  bankChargePresets: string;
+  bankChargePresetList: string[];
+  interestAvailableNote: (amount: string) => string;
+  chargeShortfallNote: (amount: string) => string;
+  chargeOtherHead: string;
+  chargeOtherAmount: string;
+  chargeFirstPart: string;
+  chargeSplitPick: string;
   navReports: string;
   navReconciliation: string;
   navMasters: string;
@@ -108,6 +116,12 @@ export interface Strings {
   receiptsTitle: string;
   receiptsSubtitle: string;
   newReceipt: string;
+  shareReceiptsExport: string;
+  shareReceiptsImport: string;
+  shareReceiptsHint: string;
+  shareReceiptsSaved: (path: string) => string;
+  shareReceiptsImported: (school: string, added: number, skipped: number) => string;
+  shareReceiptsHeadsAdded: (heads: string) => string;
   editReceipt: string;
   noReceipts: string;
   cashbookDate: string;
@@ -372,6 +386,16 @@ export interface Strings {
   layoutLineWeight: string;
   layoutLineWeightDefault: string;
   layoutLineWeights: { thin: string; medium: string; thick: string };
+  layoutGroupDirection: string;
+  layoutRotate: string;
+  layoutRotations: { none: string; up: string; down: string; stacked: string };
+  layoutArrange: string;
+  layoutArrangements: { column: string; inline: string; stacked: string; dateFirst: string };
+  layoutShape: string;
+  layoutShapes: Record<"rect" | "rounded" | "pill" | "banner" | "ribbon" | "double" | "plaque" | "badge" | "floral", string>;
+  layoutTheme: string;
+  layoutThemeNone: string;
+  layoutThemeHint: string;
   layoutWholeRegular: string;
   layoutWholeRegularHint: string;
   layoutColourDefault: string;
@@ -697,6 +721,20 @@ export const gu: Strings = {
   bankChargeDescription: "વિગત (રોજમેળ અને ખાતાવહીમાં છપાશે)",
   bankChargeDefaultDescription: "બેન્ક ચાર્જ",
   confirmDeleteBankCharge: (date, head) => `${date} નો ${head} નો બેન્ક ચાર્જ કાઢી નાખવો છે?`,
+  bankChargePresets: "વારંવાર આવતા ચાર્જ",
+  bankChargePresetList: [
+    "બેન્ક ચાર્જ",
+    "બેંક દ્વારા પાસબુક ઇશ્યૂ ચાર્જ કપાયો",
+    "બેંક દ્વારા SMS ચાર્જ કપાયો",
+    "બેંક દ્વારા ચેકબુક ચાર્જ કપાયો",
+    "બેંક દ્વારા સર્વિસ ચાર્જ કપાયો",
+  ],
+  interestAvailableNote: (amount) => `આ તારીખે વ્યાજમાં ${amount} બાકી છે — ચાર્જ પહેલાં વ્યાજમાંથી લેવાશે.`,
+  chargeShortfallNote: (amount) => `વ્યાજ પૂરતું નથી: બાકીના ${amount} કઈ ગ્રાન્ટમાંથી લેવા તે પસંદ કરો.`,
+  chargeOtherHead: "બાકીની રકમ કઈ ગ્રાન્ટમાંથી",
+  chargeOtherAmount: "બીજી ગ્રાન્ટમાંથી રકમ",
+  chargeFirstPart: "પહેલી ગ્રાન્ટમાંથી",
+  chargeSplitPick: "— ગ્રાન્ટ પસંદ કરો —",
   navReports: "રિપોર્ટ",
   navReconciliation: "પરિશિષ્ટ ૯ મેળવણું",
   navMasters: "શાળા અને ગ્રાન્ટ હેડ",
@@ -757,6 +795,13 @@ export const gu: Strings = {
   receiptsTitle: "ગ્રાન્ટ આવક",
   receiptsSubtitle: "બેન્કમાં જમા થયેલ ગ્રાન્ટ અને વ્યાજ",
   newReceipt: "+ નવી આવક",
+  shareReceiptsExport: "બીજી શાળા માટે ફાઈલ બનાવો",
+  shareReceiptsImport: "બીજી શાળાની ફાઈલમાંથી ઉમેરો",
+  shareReceiptsHint: "એક જ ક્લસ્ટરની શાળાઓમાં ગ્રાન્ટ આવક સરખી હોય છે: એક શાળા ફાઈલ બનાવે, બીજી શાળા તે ઉમેરે. ઉમેર્યા પછી જે જુદું હોય તે અહીં સુધારી લો.",
+  shareReceiptsSaved: (path) => `ફાઈલ સાચવી: ${path}`,
+  shareReceiptsImported: (school, added, skipped) =>
+    `${school} ની ફાઈલમાંથી ${added} આવક ઉમેરી` + (skipped > 0 ? `, ${skipped} પહેલેથી હતી તે છોડી.` : "."),
+  shareReceiptsHeadsAdded: (heads) => `નવા ગ્રાન્ટ હેડ ઉમેર્યા: ${heads}`,
   editReceipt: "આવકમાં ફેરફાર",
   noReceipts: "હજુ કોઈ આવક નોંધાઈ નથી.",
   cashbookDate: "તારીખ (રોજમેળ)",
@@ -1024,6 +1069,26 @@ export const gu: Strings = {
   layoutLineWeight: "આખા પત્રકની લાઈનની જાડાઈ",
   layoutLineWeightDefault: "જાડાઈ: પત્રક પ્રમાણે",
   layoutLineWeights: { thin: "પાતળી", medium: "મધ્યમ", thick: "જાડી" },
+  layoutGroupDirection: "દિશા અને આકાર",
+  layoutRotate: "લખાણની દિશા",
+  layoutRotations: { none: "આડું (સામાન્ય)", up: "ઊભું — નીચેથી ઉપર", down: "ઊભું — ઉપરથી નીચે", stacked: "અક્ષરો એક નીચે એક" },
+  layoutArrange: "નંબર અને તારીખ",
+  layoutArrangements: { column: "કોલમ પ્રમાણે", inline: "બાજુ-બાજુમાં", stacked: "તારીખ નંબરની નીચે", dateFirst: "તારીખ નંબરની ઉપર" },
+  layoutShape: "મથાળાનો આકાર",
+  layoutShapes: {
+    rect: "સાદું ખાનું",
+    rounded: "ગોળ ખૂણા",
+    pill: "ગોળ છેડા",
+    banner: "બેનર (અણીદાર છેડા)",
+    ribbon: "રિબન",
+    double: "બેવડી કિનારી",
+    plaque: "તકતી (સોનેરી ફ્રેમ)",
+    badge: "બેજ (સોનેરી કિનારી)",
+    floral: "ફૂલવાળી ફ્રેમ",
+  },
+  layoutTheme: "થીમ (રંગ)",
+  layoutThemeNone: "થીમ વગર (ફોર્મ મુજબ)",
+  layoutThemeHint: "મથાળું, કોલમનાં મથાળાં, એક છોડીને એક હરોળ અને કુલની હરોળ એક સાથે રંગાય. તમે જાતે આપેલા રંગ તેના પર રહે.",
   layoutWholeRegular: "બધું સાદું (બોલ્ડ નહીં)",
   layoutWholeRegularHint: "પત્રકના પોતાના બોલ્ડ લખાણ પણ સાદા છપાશે",
   layoutColourDefault: "મૂળ પ્રમાણે (કાળો)",
@@ -1372,6 +1437,20 @@ export const en: Strings = {
   bankChargeDescription: "Description (printed in the rojmel and the ledger)",
   bankChargeDefaultDescription: "બેન્ક ચાર્જ",
   confirmDeleteBankCharge: (date, head) => `Delete the ${head} bank charge dated ${date}?`,
+  bankChargePresets: "Frequent charges",
+  bankChargePresetList: [
+    "બેન્ક ચાર્જ",
+    "બેંક દ્વારા પાસબુક ઇશ્યૂ ચાર્જ કપાયો",
+    "બેંક દ્વારા SMS ચાર્જ કપાયો",
+    "બેંક દ્વારા ચેકબુક ચાર્જ કપાયો",
+    "બેંક દ્વારા સર્વિસ ચાર્જ કપાયો",
+  ],
+  interestAvailableNote: (amount) => `Interest has ${amount} left on this date — the charge is taken from interest first.`,
+  chargeShortfallNote: (amount) => `Interest is not enough: pick the grant that bears the remaining ${amount}.`,
+  chargeOtherHead: "Grant for the rest",
+  chargeOtherAmount: "Amount from the second grant",
+  chargeFirstPart: "From the first grant",
+  chargeSplitPick: "— pick a grant —",
   navReports: "Reports",
   navReconciliation: "Reconciliation",
   navMasters: "School & grant heads",
@@ -1433,6 +1512,13 @@ export const en: Strings = {
   receiptsTitle: "Grant receipts",
   receiptsSubtitle: "Grants and interest credited to the bank",
   newReceipt: "+ New receipt",
+  shareReceiptsExport: "Make a file for another school",
+  shareReceiptsImport: "Add from another school's file",
+  shareReceiptsHint: "Schools of one cluster get the same grants: one school makes the file, another adds it. Correct whatever differs here afterwards.",
+  shareReceiptsSaved: (path) => `File saved: ${path}`,
+  shareReceiptsImported: (school, added, skipped) =>
+    `Added ${added} receipts from ${school}'s file` + (skipped > 0 ? `; skipped ${skipped} already here.` : "."),
+  shareReceiptsHeadsAdded: (heads) => `New grant heads added: ${heads}`,
   editReceipt: "Edit receipt",
   noReceipts: "No receipts recorded yet.",
   cashbookDate: "Date (cash book)",
@@ -1701,6 +1787,26 @@ export const en: Strings = {
   layoutLineWeight: "Thickness of every line in the report",
   layoutLineWeightDefault: "Thickness: as the form",
   layoutLineWeights: { thin: "Thin", medium: "Medium", thick: "Thick" },
+  layoutGroupDirection: "Direction and shape",
+  layoutRotate: "Text direction",
+  layoutRotations: { none: "Across (normal)", up: "Rotate up", down: "Rotate down", stacked: "Letters stacked" },
+  layoutArrange: "Number and date",
+  layoutArrangements: { column: "As the column", inline: "Side by side", stacked: "Date under number", dateFirst: "Date above number" },
+  layoutShape: "Heading shape",
+  layoutShapes: {
+    rect: "Plain box",
+    rounded: "Rounded corners",
+    pill: "Rounded ends",
+    banner: "Banner (pointed ends)",
+    ribbon: "Ribbon",
+    double: "Double border",
+    plaque: "Plaque (gold frame)",
+    badge: "Badge (gold edge)",
+    floral: "Floral frame",
+  },
+  layoutTheme: "Theme (colours)",
+  layoutThemeNone: "No theme (as the form)",
+  layoutThemeHint: "Colours the title, the column headings, every other row and the total row at once. Colours you set yourself stay on top.",
   layoutWholeRegular: "All regular (no bold)",
   layoutWholeRegularHint: "Even the form's own bold text prints regular",
   layoutColourDefault: "Default (black)",

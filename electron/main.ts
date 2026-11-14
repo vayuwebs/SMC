@@ -21,6 +21,7 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electro
 import path from "node:path";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import { GRANT_SHARE_EXTENSION, parseGrantShare } from "../src/shared/grant-share.js";
 import { fileURLToPath } from "node:url";
 import { AppController } from "../src/server/app-controller.js";
 import type { SecretBox } from "../src/server/cloud/account.js";
@@ -374,6 +375,61 @@ function registerBooksApi(): void {
     }
   });
 
+  // Sharing grant receipts with another school: a small file, saved and opened
+  // through dialogs here; the service builds and applies it.
+  handle(channelFor("exportGrantShare"), async () => {
+    try {
+      const current = requireController();
+      const api = current.books;
+      if (!api) throw new Error("no school's books are open");
+      const outputPath = await saveDialog({
+        title: "ગ્રાન્ટ આવકની ફાઈલ સાચવો",
+        defaultPath: `grant-aavak-${current.yearLabel}.${GRANT_SHARE_EXTENSION}`,
+        filters: [{ name: "ગ્રાન્ટ આવક", extensions: [GRANT_SHARE_EXTENSION] }],
+      });
+      if (!outputPath) return { ok: true, data: null };
+      const file = await api.grantShareFile();
+      await writeFile(outputPath, JSON.stringify(file, null, 2), "utf8");
+      return { ok: true, data: outputPath };
+    } catch (error) {
+      return internalFailure("grant_share_export_failed", "ફાઈલ સાચવી શકાઈ નહીં.", "The file could not be saved.", error);
+    }
+  });
+
+  handle(channelFor("importGrantShare"), async () => {
+    try {
+      const current = requireController();
+      const api = current.books;
+      if (!api) throw new Error("no school's books are open");
+      const inputPath = await openDialog({
+        title: "બીજી શાળાની ગ્રાન્ટ આવકની ફાઈલ પસંદ કરો",
+        properties: ["openFile"],
+        filters: [{ name: "ગ્રાન્ટ આવક", extensions: [GRANT_SHARE_EXTENSION] }],
+      });
+      if (!inputPath) return { ok: true, data: null };
+      const file = parseGrantShare(await readFile(inputPath, "utf8"));
+      if (!file) {
+        return {
+          ok: false,
+          issues: [
+            {
+              severity: "error",
+              code: "grant_share_invalid",
+              messageGu: "આ ગ્રાન્ટ આવકની ફાઈલ નથી, અથવા ફાઈલ બગડેલી છે.",
+              messageEn: "This is not a shared grant receipts file, or it is damaged.",
+              detail: inputPath,
+            },
+          ],
+        };
+      }
+      const result = await api.applyGrantShare(file);
+      if (result.ok) current.onBooksChanged();
+      return result;
+    } catch (error) {
+      return internalFailure("grant_share_import_failed", "ફાઈલ ઉમેરી શકાઈ નહીં.", "The file could not be imported.", error);
+    }
+  });
+
   // Choosing the old workbook to import: another dialog.
   handle(channelFor("pickLegacyFile"), async () => ({
     ok: true,
@@ -410,6 +466,8 @@ function registerBooksApi(): void {
     "printReport",
     "exportExcel",
     "pickLegacyFile",
+    "exportGrantShare",
+    "importGrantShare",
     "deleteYear",
   ]);
 

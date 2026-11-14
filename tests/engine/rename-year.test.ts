@@ -155,7 +155,8 @@ describe("renaming a year", () => {
     expect(bill).toMatchObject({ billDate: "2025-07-01", billNo: "1/2" });
 
     const [cheque] = await accounts.listCheques();
-    expect(cheque).toMatchObject({ chequeDate: "2025-07-02", cashbookDate: "2025-07-03", cashedDate: "2025-07-05" });
+    // ચેક વટાવ્યાં તારીખ is the rojmel date, whatever was sent.
+    expect(cheque).toMatchObject({ chequeDate: "2025-07-02", cashbookDate: "2025-07-03", cashedDate: "2025-07-03" });
 
     const [charge] = await accounts.listBankCharges();
     expect(charge!.date).toBe("2026-02-28");

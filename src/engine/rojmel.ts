@@ -20,6 +20,7 @@
  * Pagination matters beyond looks: the ખાતાવહી prints the rojmel page number of
  * every entry, so `pageResolver()` here is what fills in those references.
  */
+import { isShopVendor, rojmelPayeeName } from "./payee.js";
 import { add, formatAmount, paise, sum, type Paise, ZERO } from "../lib/money.js";
 import { paidForGu, withNa } from "../lib/gujarati.js";
 import { addDays, endOfMonth, formatDate, formatDateShort, startOfMonth } from "../lib/dates.js";
@@ -367,83 +368,7 @@ function nilBlock(from: string, to: string, cash: Paise, bank: Paise): RojmelBlo
   });
 }
 
-const SHOP_KEYWORDS = [
-  "સ્ટોર્સ",
-  "સ્ટોર",
-  "ટ્રેડર્સ",
-  "ટ્રેડર",
-  "બજાર",
-  "સુપરબજાર",
-  "સુપર બજાર",
-  "મેડીકલ",
-  "મેડિકલ",
-  "એજન્સી",
-  "એન્ટરપ્રાઈઝ",
-  "ડેપો",
-  "સેન્ટર",
-  "ફાર્મસી",
-  "કંપની",
-  "માર્ટ",
-  "હાર્ડવેર",
-  "સ્ટેશનર્સ",
-  "સ્ટેશનરી",
-  "બુક સ્ટોલ",
-  "બુકસ્ટોલ",
-  "નોવેલ્ટી",
-  "ઇલેક્ટ્રિક",
-  "ઈલેક્ટ્રીક",
-  "સાવરણીવાલા",
-  "પ્રેસ",
-  "પ્રિન્ટર્સ",
-  "ઝેરોક્ષ",
-  "ઝેરોક્સ",
-  "સ્ટીલ",
-  "ગૃહ ઉદ્યોગ",
-  "સોસાયટી",
-  "મંડળ",
-  "હોસ્પિટલ",
-  "લેબોરેટરી",
-  "ક્લિનિક",
-];
-
-const SHOP_LATIN_KEYWORDS = [
-  "store",
-  "stores",
-  "trader",
-  "traders",
-  "enterprise",
-  "enterprises",
-  "agency",
-  "agencies",
-  "medical",
-  "mart",
-  "center",
-  "centre",
-  "bazar",
-  "bazaar",
-  "press",
-  "printers",
-  "hardware",
-  "co",
-  "company",
-  "pvt",
-  "ltd",
-  "super",
-  "stationery",
-  "stationers",
-];
-
-export function isShopVendor(vendor: string): boolean {
-  const trimmed = vendor.trim();
-  const lower = trimmed.toLowerCase();
-  for (const kw of SHOP_KEYWORDS) {
-    if (trimmed.includes(kw)) return true;
-  }
-  for (const kw of SHOP_LATIN_KEYWORDS) {
-    if (new RegExp(`\\b${kw}\\b`, "i").test(lower)) return true;
-  }
-  return false;
-}
+export { isShopVendor } from "./payee.js";
 
 export function formatRojmelBillDescription(bill: { vendorGu: string; descriptionGu: string }): string {
   const vendor = bill.vendorGu.trim();
@@ -467,8 +392,8 @@ export function formatRojmelBillDescription(bill: { vendorGu: string; descriptio
     return `${vendor}ને બિલ મુજબ`;
   }
 
-  // Individual person: extract first name only to conserve cell space in rojmel
-  const firstToken = vendor.split(/\s+/)[0] ?? vendor;
+  // A person: first name only, to save space in the rojmel's narrow column.
+  const firstToken = rojmelPayeeName(vendor);
   const firstName = firstToken.endsWith("ને") ? firstToken : `${firstToken}ને`;
 
   // Work description (e.g. "સફાઈકામ મજૂરી" -> "સફાઈકામ", "વાલીસંમેલન સરભરા ખર્ચ")
@@ -549,7 +474,11 @@ function activeBlock(
     const amount = chequeAmount(cheque);
     const ownDate = ` ${formatDate(cheque.chequeDate)}`;
     const chequeText = `${cheque.chequeNo}${ownDate}`;
-    const voucherText = cheque.voucherNo === null ? "" : `${cheque.voucherNo}${ownDate}`;
+    // A reissued cheque keeps the returned cheque's voucher, and its date.
+    const voucherText =
+      cheque.voucherNo === null
+        ? ""
+        : `${cheque.voucherNo} ${formatDate(cheque.voucherDate ?? cheque.chequeDate)}`;
 
     if (isReimbursement(cheque.type)) {
       // Each bill goes in one column: a bill paid in cash (રોકડ) in the cash
@@ -640,9 +569,7 @@ function activeBlock(
         headingOnly: false,
         source: { kind: "cheque", chequeNo: cheque.chequeNo },
       });
-      const payeeToken = isShopVendor(cheque.payeeGu)
-        ? cheque.payeeGu.trim()
-        : (cheque.payeeGu.trim().split(/\s+/)[0] ?? cheque.payeeGu.trim());
+      const payeeToken = rojmelPayeeName(cheque.payeeGu);
       const payee = payeeToken.endsWith("ને") ? payeeToken : `${payeeToken}ને`;
       paymentLines.push({
         side: "payment",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, JSX } from "react";
 import { api } from "../api.js";
 import type { BankChargeDto, BankChargeInput, GrantHeadDto } from "../../shared/api.js";
@@ -94,6 +94,7 @@ export function BankCharges({ onChanged }: { onChanged: () => void }): JSX.Eleme
         <BankChargeForm
           t={t}
           heads={heads}
+          usedDescriptions={charges.map((charge) => charge.descriptionGu)}
           charge={editing === "new" ? null : editing}
           onCancel={() => {
             setEditing(null);
@@ -125,7 +126,17 @@ export function BankCharges({ onChanged }: { onChanged: () => void }): JSX.Eleme
                 {charges.map((charge) => (
                   <tr key={charge.id}>
                     <td className="num">{formatDate(charge.date)}</td>
-                    <td style={{ fontWeight: 600 }}>{charge.headNameGu}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {charge.otherHeadNameGu === null ? (
+                        charge.headNameGu
+                      ) : (
+                        <>
+                          {charge.headNameGu} <Money paise={charge.amountPaise - charge.otherAmountPaise} />
+                          <br />
+                          {charge.otherHeadNameGu} <Money paise={charge.otherAmountPaise} />
+                        </>
+                      )}
+                    </td>
                     <td>{charge.descriptionGu}</td>
                     <td>{charge.remarksGu ?? ""}</td>
                     <td className="num" style={{ fontWeight: 600 }}>
@@ -181,6 +192,7 @@ export function BankCharges({ onChanged }: { onChanged: () => void }): JSX.Eleme
 function BankChargeForm({
   t,
   heads,
+  usedDescriptions,
   charge,
   onCancel,
   onSave,
@@ -188,20 +200,63 @@ function BankChargeForm({
 }: {
   t: Strings;
   heads: GrantHeadDto[];
+  /** What earlier charges said, offered again alongside the usual ones. */
+  usedDescriptions: string[];
   charge: BankChargeDto | null;
   onCancel: () => void;
   onSave: (input: BankChargeInput, id: number | null) => Promise<void>;
   onHeadCreated: (head: GrantHeadDto) => void;
 }): JSX.Element {
+  const interestHead = heads.find((head) => head.code === "INTEREST") ?? null;
   const [date, setDate] = useState(charge?.date ?? "");
-  const [grantHeadId, setGrantHeadId] = useState(charge?.grantHeadId ?? heads[0]?.id ?? 0);
+  // A new charge goes to વ્યાજ first, when the school has that head.
+  const [grantHeadId, setGrantHeadId] = useState(charge?.grantHeadId ?? interestHead?.id ?? heads[0]?.id ?? 0);
   const [amount, setAmount] = useState(charge ? amountToInput(charge.amountPaise) : "");
   const [description, setDescription] = useState(charge?.descriptionGu ?? t.bankChargeDefaultDescription);
   const [remarks, setRemarks] = useState(charge?.remarksGu ?? "");
+  const [otherHeadId, setOtherHeadId] = useState<number>(charge?.otherGrantHeadId ?? 0);
+  // What વ્યાજ can still bear on the date; null until known.
+  const [interestLeft, setInterestLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setInterestLeft(null);
+      return;
+    }
+    let live = true;
+    void api.interestAvailable(date, charge?.id ?? null).then((result) => {
+      if (live) setInterestLeft(result.availablePaise);
+    });
+    return () => {
+      live = false;
+    };
+  }, [date, charge?.id]);
+
+  const presets = useMemo(() => {
+    const seen = new Set<string>();
+    return [...t.bankChargePresetList, ...usedDescriptions].filter((text) => {
+      const key = text.trim();
+      if (key === "" || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [t.bankChargePresetList, usedDescriptions]);
 
   const amountPaise = tryParseAmount(amount);
+  const fromInterest = interestHead !== null && grantHeadId === interestHead.id;
+  // Interest bears what it can; the rest goes to the head the school picks.
+  const shortfall =
+    fromInterest && interestLeft !== null && amountPaise !== null && amountPaise > interestLeft
+      ? amountPaise - interestLeft
+      : 0;
+  const otherChoices = heads.filter((head) => head.id !== grantHeadId && head.active);
   const valid =
-    date !== "" && grantHeadId > 0 && amountPaise !== null && amountPaise > 0 && description.trim() !== "";
+    date !== "" &&
+    grantHeadId > 0 &&
+    amountPaise !== null &&
+    amountPaise > 0 &&
+    description.trim() !== "" &&
+    (shortfall === 0 || otherHeadId > 0);
 
   function submit(event: FormEvent): void {
     event.preventDefault();
@@ -211,6 +266,8 @@ function BankChargeForm({
         date,
         grantHeadId,
         amountPaise,
+        otherGrantHeadId: shortfall > 0 ? otherHeadId : null,
+        otherAmountPaise: shortfall,
         descriptionGu: description.trim(),
         remarksGu: remarks.trim() === "" ? null : remarks.trim(),
       },
@@ -267,7 +324,54 @@ function BankChargeForm({
             onChange={(event) => setDescription(event.target.value)}
             required
           />
+          <div className="chip-row" aria-label={t.bankChargePresets}>
+            {presets.map((text) => (
+              <button
+                key={text}
+                type="button"
+                className={text === description.trim() ? "chip active" : "chip"}
+                onClick={() => setDescription(text)}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
         </div>
+        {fromInterest && interestLeft !== null && amountPaise !== null && amountPaise > 0 && (
+          <div className="field field-wide">
+            <div className={shortfall > 0 ? "issue warning" : "issue success"}>
+              <div>
+                {t.interestAvailableNote(`₹ ${amountToInput(interestLeft)}`)}
+                {shortfall > 0 && (
+                  <>
+                    <br />
+                    {t.chargeShortfallNote(`₹ ${amountToInput(shortfall)}`)}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        {shortfall > 0 && (
+          <div className="field">
+            <label htmlFor="charge-other-head">
+              {t.chargeOtherHead} (₹ {amountToInput(shortfall)})
+            </label>
+            <select
+              id="charge-other-head"
+              value={otherHeadId}
+              onChange={(event) => setOtherHeadId(Number(event.target.value))}
+              required
+            >
+              <option value={0}>{t.chargeSplitPick}</option>
+              {otherChoices.map((head) => (
+                <option key={head.id} value={head.id}>
+                  {head.nameGu}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="charge-remarks">{t.remarks}</label>
           <input

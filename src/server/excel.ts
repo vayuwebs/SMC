@@ -70,6 +70,10 @@ import {
   rowGapMm,
   textOf,
   arrangeLines,
+  applyArrangement,
+  themeOf,
+  type TableTheme,
+  type NumberDateArrangement,
   emptyLayout,
   ARRANGEMENTS,
   fontFamily,
@@ -197,6 +201,17 @@ function ruledIn(colour: string | undefined, weight: LineWeight | undefined = un
   return { top: line, left: line, bottom: line, right: line };
 }
 
+/** Paint one cell in a theme's colours: its fill, and its text in `text` when given. */
+function paint(target: ExcelJS.Cell, fill: string, text?: string): void {
+  target.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(fill) } };
+  if (text) target.font = { ...target.font, color: { argb: argb(text) } };
+}
+
+/** The colour of a theme's ruled lines, unless the school chose its own. */
+function themeLine(layout: ReportLayout, theme: TableTheme | null): string | undefined {
+  return layout.lineColour ?? theme?.line;
+}
+
 /** The whole report's text colour, weight, slant and underline (આખું પત્રક), for every font. */
 function wholeReportFont(layout: ReportLayout): Partial<ExcelJS.Font> {
   return {
@@ -229,6 +244,7 @@ function sheet(
   look: Look | null = null,
 ): ExcelJS.Worksheet {
   const layout = look?.layout ?? emptyLayout();
+  const theme = themeOf(layout.theme);
   const defaultPt = look ? REPORT_DEFAULTS[look.report].sizePt : REPORT_FONT_SIZE;
   // A size on the form becomes the same proportion of Excel's 14: the rojmel
   // prints at 12, so 13 there is 15 here.
@@ -298,7 +314,7 @@ function sheet(
     if (row.cellCount === 0) continue;
     for (let col = 1; col <= columns.length; col += 1) {
       const target = row.getCell(col);
-      target.border = ruledIn(layout.lineColour, layout.lineWeight);
+      target.border = ruledIn(themeLine(layout, theme), layout.lineWeight);
       target.font = { ...target.font, ...colour };
       const value = target.value;
       const figure = typeof value === "number" || (typeof value === "string" && latinText.test(value));
@@ -310,6 +326,20 @@ function sheet(
   }
   /** One cell as the school's layout has it. Blank (NO_FILL) is Excel's default. */
   const apply = (cell: ExcelJS.Cell, style: CellStyle): void => applyStyle(cell, style, excelSize);
+
+  // The report's colour set, before the school's own colours, which win.
+  if (theme) {
+    paint(worksheet.getRow(1).getCell(1), theme.title, theme.titleText);
+    let body = 0;
+    for (const { excelRow, key } of placed) {
+      const row = worksheet.getRow(excelRow);
+      const fill = key === ROW_KEYS.head ? theme.head : key === ROW_KEYS.total ? theme.total : (body += 1) % 2 === 0 ? theme.band : null;
+      if (!fill) continue;
+      for (let col = 1; col <= columns.length; col += 1) {
+        paint(row.getCell(col), fill, key === ROW_KEYS.head ? theme.headText : undefined);
+      }
+    }
+  }
 
   if (look) {
     // The title row is the form's title part.
@@ -402,8 +432,11 @@ function rojmelSheet(
     size,
     ...colour,
   };
-  const ruling = ruledIn(layout.lineColour, layout.lineWeight);
+  const theme = themeOf(layout.theme);
+  const ruling = ruledIn(themeLine(layout, theme), layout.lineWeight);
   const latinBold: Partial<ExcelJS.Font> = { ...latin, bold: layout.bold ?? true };
+  /** The number-and-date cells, so a row's or a cell's own arrangement can set them out again. */
+  const arrangedCells = new Map<ExcelJS.Cell, { value: string; id: string; template: string }>();
   const last = ROJMEL_HEADINGS.length;
   const colOf = new Map(ROJMEL_HEADINGS.map(([id], index) => [id, index + 1]));
 
@@ -445,6 +478,38 @@ function rojmelSheet(
     target.alignment = { horizontal: "center", vertical: "middle", shrinkToFit: shrink, wrapText: !shrink };
   };
 
+  /**
+   * "1/3 11/07/24": the number in bold and its date - on one line, or one under
+   * the other, as the school arranged them for the column (ARRANGEMENTS), or
+   * for this row or cell (`arrange`).
+   */
+  const writeArranged = (
+    target: ExcelJS.Cell,
+    value: string,
+    id: string,
+    template: string,
+    arrange?: NumberDateArrangement,
+  ): void => {
+    const space = value.indexOf(" ");
+    const lines = applyArrangement(
+      arrangeLines(layout, id, template, {
+        "નંબર": space > 0 ? value.slice(0, space) : value,
+        "તારીખ": space > 0 ? value.slice(space).trim() : "",
+      }),
+      arrange,
+    );
+    target.value = {
+      richText: lines.flatMap((line, index) => [
+        ...(index > 0 ? [{ text: "\n", font: latin }] : []),
+        ...line.map((segment, at) => ({
+          text: at > 0 ? ` ${segment.text}` : segment.text,
+          font: segment.part === "નંબર" ? latinBold : latin,
+        })),
+      ]),
+    };
+    target.alignment = { ...target.alignment, horizontal: "center", vertical: "middle", wrapText: lines.length > 1 };
+  };
+
   const half = (row: ExcelJS.Row, side: "r" | "p", line: RojmelLine | null): void => {
     if (!line) return;
     const dateCell = cell(row, `${side}.date`);
@@ -461,21 +526,8 @@ function rojmelSheet(
     // "1/3 11/07/24": the number in bold and its date - on one line, or one
     // under the other, as the school arranged them (ARRANGEMENTS).
     const arranged = (target: ExcelJS.Cell, value: string, id: string, template: string): void => {
-      const space = value.indexOf(" ");
-      const lines = arrangeLines(layout, id, template, {
-        "નંબર": space > 0 ? value.slice(0, space) : value,
-        "તારીખ": space > 0 ? value.slice(space).trim() : "",
-      });
-      target.value = {
-        richText: lines.flatMap((line, index) => [
-          ...(index > 0 ? [{ text: "\n", font: latin }] : []),
-          ...line.map((segment, at) => ({
-            text: at > 0 ? ` ${segment.text}` : segment.text,
-            font: segment.part === "નંબર" ? latinBold : latin,
-          })),
-        ]),
-      };
-      target.alignment = { horizontal: "center", vertical: "middle", wrapText: lines.length > 1 };
+      arrangedCells.set(target, { value, id, template });
+      writeArranged(target, value, id, template);
     };
     if (side === "p" && line.referenceText !== "") {
       arranged(ref, line.referenceText, ARRANGEMENTS.rojmelRef.id, ARRANGEMENTS.rojmelRef.template);
@@ -640,6 +692,17 @@ function rojmelSheet(
   closing.font = bold;
   closing.alignment = { horizontal: "center" };
 
+  // The report's colour set: the title and the column headings, before the
+  // school's own colours, which win.
+  if (theme) {
+    for (const { row, key } of keyed) {
+      if (key === "") paint(row.getCell(1), theme.title, theme.titleText);
+      if (key === ROW_KEYS.head) {
+        for (let col = 1; col <= last; col += 1) paint(row.getCell(col), theme.head, theme.headText);
+      }
+    }
+  }
+
   // The school's own layout: highlights, bold, fonts, sizes, alignment.
   const titleStyle = layout.styles[targetKey({ kind: "part", part: EXCEL_TITLE_PART.rojmel })];
   for (const { row, key, group = null, lines } of keyed) {
@@ -653,6 +716,11 @@ function rojmelSheet(
       const line = lines?.[id.startsWith("r.") ? "r" : "p"] ?? null;
       const target = cell(row, id);
       const style = withReportWrap(layout, target, styleAt(layout, key, id, group, line));
+      // A row's or a single cell's own arrangement of its number and date.
+      const arrangedHere = arrangedCells.get(target);
+      if (style.arrange && arrangedHere) {
+        writeArranged(target, arrangedHere.value, arrangedHere.id, arrangedHere.template, style.arrange);
+      }
       if (Object.keys(style).length > 0) applyStyle(target, style, excelSize);
       // Rows here have a set height, which Excel would not grow for wrapped text.
       if (rowHeight === undefined && wrapAt(layout, key, id, group, line) === true) {
@@ -717,11 +785,13 @@ function applyStyle(cell: ExcelJS.Cell, style: CellStyle, excelSize: (pt: number
       ...(style.colour ? { color: { argb: argb(style.colour) } } : {}),
     };
   }
-  if (style.align || style.vAlign || style.wrap !== undefined) {
+  if (style.align || style.vAlign || style.wrap !== undefined || style.rotate) {
     cell.alignment = {
       ...cell.alignment,
       ...(style.align ? { horizontal: style.align } : {}),
       ...(style.vAlign ? { vertical: style.vAlign } : {}),
+      // Excel's Orientation: turned up, turned down, or the letters stacked.
+      ...(style.rotate ? { textRotation: style.rotate === "up" ? 90 : style.rotate === "down" ? -90 : "vertical" } : {}),
       // Wrapping and shrinking to fit cannot both be on.
       ...(style.wrap !== undefined ? { wrapText: style.wrap, shrinkToFit: !style.wrap } : {}),
     };
