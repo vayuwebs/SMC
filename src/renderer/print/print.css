@@ -358,7 +358,8 @@ table.banner td.value {
 .rojmel-band {
   display: flex;
   align-items: stretch;
-  gap: 2mm;
+  --heading-gap: 2mm;
+  gap: var(--heading-gap);
   margin-bottom: 1.5mm;
   font-weight: 700;
   font-size: var(--rojmel-text);
@@ -666,7 +667,8 @@ table.form.rojmel tr.block-gap td {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8mm;
+  --heading-gap: 8mm;
+  gap: var(--heading-gap);
   border: 0.7pt solid #000;
   padding: 1.6mm 3mm;
   margin-bottom: 2.5mm;
@@ -895,7 +897,8 @@ table.form.reconciliation tr.grand td {
   display: flex;
   justify-content: space-between;
   align-items: stretch;
-  gap: 2mm;
+  --heading-gap: 2mm;
+  gap: var(--heading-gap);
   font-size: var(--report-font);
   font-weight: 700;
   box-sizing: border-box;

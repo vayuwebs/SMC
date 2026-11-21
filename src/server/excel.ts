@@ -761,11 +761,6 @@ function heightOfRow(layout: ReportLayout, key: string, group: string | null): n
 
 /** One cell as a school's layout has it. Blank (NO_FILL) is Excel's default. */
 function applyStyle(cell: ExcelJS.Cell, style: CellStyle, excelSize: (pt: number) => number): void {
-  // A heading's outer box colour, where it has no fill of its own: Excel draws
-  // no shape, so the box is the whole cell.
-  if (!style.fill && style.boxFill) {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(style.boxFill) } };
-  }
   if (style.fill && style.fill !== NO_FILL) {
     // A shaped heading's two-colour gradient is Excel's own gradient fill.
     cell.fill = style.fill2

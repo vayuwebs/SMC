@@ -154,9 +154,16 @@ export type TextRotation = (typeof TEXT_ROTATIONS)[number];
 export const NUMBER_DATE_ARRANGEMENTS = ["inline", "stacked", "dateFirst"] as const;
 export type NumberDateArrangement = (typeof NUMBER_DATE_ARRANGEMENTS)[number];
 
-/** How a shape sits in its heading's box: filling it, or in its middle round the words. */
-export const SHAPE_FITS = ["fill", "center"] as const;
-export type ShapeFit = (typeof SHAPE_FITS)[number];
+/**
+ * Where a heading sits: as the form prints it, joined to the table as a row
+ * (its lines are the table's), or as a separate banner above it.
+ */
+export const HEADING_MODES = ["form", "row", "banner"] as const;
+export type HeadingMode = (typeof HEADING_MODES)[number];
+
+/** A heading made of pieces in a row: one cell round all of them, or a cell each. */
+export const CELL_MODES = ["one", "separate"] as const;
+export type CellMode = (typeof CELL_MODES)[number];
 
 /** The shapes a heading can take: see src/shared/shapes.ts, after Excel's gallery. */
 export const HEADING_SHAPES = SHAPE_IDS;
@@ -185,7 +192,28 @@ export function themeOf(id: TableThemeId | undefined): TableTheme | null {
   return TABLE_THEMES.find((theme) => theme.id === id) ?? null;
 }
 
-export const cellStyleSchema = z
+/**
+ * A style saved before headings had placements (2026-11): `joinTable`,
+ * `boxFill`, `shapeFit` and `shapeInsetMm` become the placement that prints
+ * closest to what they did. Anything else passes through unchanged.
+ */
+export function migrateCellStyle(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return raw;
+  const old = raw as Record<string, unknown>;
+  if (!("joinTable" in old || "boxFill" in old || "shapeFit" in old || "shapeInsetMm" in old)) return raw;
+  const { joinTable, boxFill, shapeFit, shapeInsetMm: _inset, ...style } = old;
+  const shaped = typeof style["shape"] === "string" && style["shape"] !== "rect";
+  if (joinTable === true) {
+    style["headingMode"] = "row";
+    if (!shaped && style["fill"] === undefined && typeof boxFill === "string") style["fill"] = boxFill;
+  } else if (shaped && style["headingMode"] === undefined) {
+    style["headingMode"] = "banner";
+    if (shapeFit !== "center") style["bannerFull"] = true;
+  }
+  return style;
+}
+
+const cellStyleObject = z
   .object({
     /** Highlight colour, "#rrggbb" - or NO_FILL for blank. */
     fill: z.union([hexColour, z.literal(NO_FILL)]).optional(),
@@ -237,14 +265,14 @@ export const cellStyleSchema = z
     textOutline: hexColour.optional(),
     textShadow: z.boolean().optional(),
     textGlow: hexColour.optional(),
-    /** A shaped heading's outer box: its own background, behind the shape. */
-    boxFill: hexColour.optional(),
-    /** The heading joins the table: no gap, and its edge drawn on the table's own line. */
-    joinTable: z.boolean().optional(),
-    /** The shape fills its box ("fill", the default) or sits in its middle, round its words ("center"). */
-    shapeFit: z.enum(SHAPE_FITS).optional(),
-    /** Space left between the box's edge and the shape. */
-    shapeInsetMm: z.number().min(0).max(20).optional(),
+    /** Where the heading sits (HEADING_MODES). Left out: as the form, or joined by the heading above it. */
+    headingMode: z.enum(HEADING_MODES).optional(),
+    /** A heading made of pieces: one cell round all of them, or a cell each (CELL_MODES). */
+    cells: z.enum(CELL_MODES).optional(),
+    /** A heading piece: the space before it, from the piece before. */
+    gapMm: z.number().min(0).max(100).optional(),
+    /** A banner as wide as its box, rather than round its words. */
+    bannerFull: z.literal(true).optional(),
     /** Excel's borders: each edge its own line style and colour. */
     borders: z
       .object({ top: borderEdge.optional(), right: borderEdge.optional(), bottom: borderEdge.optional(), left: borderEdge.optional() })
@@ -253,7 +281,9 @@ export const cellStyleSchema = z
   })
   .strict();
 
-export type CellStyle = z.infer<typeof cellStyleSchema>;
+export const cellStyleSchema = z.preprocess(migrateCellStyle, cellStyleObject);
+
+export type CellStyle = z.infer<typeof cellStyleObject>;
 export type BorderEdge = z.infer<typeof borderEdge>;
 export type BorderSide = "top" | "right" | "bottom" | "left";
 export const BORDER_SIDES: readonly BorderSide[] = ["top", "right", "bottom", "left"];
@@ -362,6 +392,8 @@ export const reportLayoutSchema = z
     wrap: z.literal(true).optional(),
     /** A ready-made colour set for the tables and the title (TABLE_THEMES). */
     theme: z.enum(THEME_IDS).optional(),
+    /** Headings take the theme's colours too (the band, shapes, readable words). Off: as before. */
+    matchTheme: z.literal(true).optional(),
     /** Paper, orientation, margin and zoom. */
     page: pageSetupSchema.optional(),
     /** Column id -> share of the table's width. Normalised when used. */
@@ -404,6 +436,7 @@ export function isEmptyLayout(layout: ReportLayout): boolean {
     layout.vAlign === undefined &&
     layout.wrap === undefined &&
     layout.theme === undefined &&
+    layout.matchTheme === undefined &&
     (layout.page === undefined || Object.keys(layout.page).length === 0) &&
     Object.keys(layout.widths).length === 0 &&
     Object.keys(layout.rowGapsMm).length === 0 &&
@@ -564,10 +597,17 @@ export interface ReportPart {
   sizable?: boolean;
   /** A heading that stands on its own line: centred when given a width. */
   block?: boolean;
+  /** Sits directly above the table, or above another joinable heading: it can be a row joined to it. */
+  joinable?: boolean;
+  /** A row of pieces (each its own data-part) that can be one cell or separate cells. */
+  pieced?: boolean;
 }
 
 /** A title-like heading: on its own line, its width and height both settable. */
 const heading = (id: string, labelGu: string): ReportPart => ({ id, labelGu, sizable: true, block: true });
+
+/** A heading that sits on the table (or on another such heading): it can join it as a row. */
+const joinable = (part: ReportPart, pieced = false): ReportPart => ({ ...part, joinable: true, ...(pieced ? { pieced: true } : {}) });
 
 /**
  * The headings and blocks around each form's table that a school can resize or
@@ -575,8 +615,8 @@ const heading = (id: string, labelGu: string): ReportPart => ({ id, labelGu, siz
  */
 export const REPORT_PARTS: Record<PrintableReportId, ReportPart[]> = {
   rojmel: [
-    heading("title", "મથાળું (શાળાનું નામ)"),
-    heading("band", "આવક / જાવક પટ્ટી (આખી)"),
+    joinable(heading("title", "મથાળું (શાળાનું નામ)")),
+    joinable(heading("band", "આવક / જાવક પટ્ટી (આખી)"), true),
     { id: "bandLeft", labelGu: "આવક પટ્ટી (Cash Book)", sizable: true },
     { id: "bandRight", labelGu: "જાવક પટ્ટી (કેશ બુક)", sizable: true },
     { id: "bandPage", labelGu: "પાના નંબર", sizable: true },
@@ -584,30 +624,30 @@ export const REPORT_PARTS: Record<PrintableReportId, ReportPart[]> = {
   ],
   khatavahi: [
     heading("title", "મથાળું (શાળાનું નામ)"),
-    heading("accountKind", "ખાતાવહી પટ્ટી"),
-    heading("accountMeta", "ખાતાનું નામ અને વર્ષ (આખું)"),
+    joinable(heading("accountKind", "ખાતાવહી પટ્ટી")),
+    joinable(heading("accountMeta", "ખાતાનું નામ અને વર્ષ (આખું)"), true),
     { id: "accountName", labelGu: "ખાતાનું નામ", sizable: true },
     { id: "accountYear", labelGu: "વર્ષ", sizable: true },
     heading("footTitle", "નીચેનું નામ"),
   ],
   grantRegister: [
-    heading("title", "મથાળું (આખું)"),
+    joinable(heading("title", "મથાળું (આખું)"), true),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
   chequeRegister: [
-    heading("title", "મથાળું (આખું)"),
+    joinable(heading("title", "મથાળું (આખું)"), true),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
   billRegister: [
-    heading("title", "મથાળું (આખું)"),
+    joinable(heading("title", "મથાળું (આખું)"), true),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
   vouchers: [
-    heading("programme", "મથાળું (યોજના)"),
-    heading("voucherTitle", "વાઉચર પટ્ટી"),
+    joinable(heading("programme", "મથાળું (યોજના)")),
+    joinable(heading("voucherTitle", "વાઉચર પટ્ટી")),
     heading("meta", "વાઉચરની વિગત (આખી)"),
     { id: "metaSchoolLabel", labelGu: "શાળા લેબલ", sizable: true },
     { id: "metaSchool", labelGu: "શાળાનું નામ", sizable: true },
@@ -624,7 +664,7 @@ export const REPORT_PARTS: Record<PrintableReportId, ReportPart[]> = {
     heading("signatures", "સહી"),
   ],
   patrakD: [
-    heading("title", "મથાળું (આખું)"),
+    joinable(heading("title", "મથાળું (આખું)")),
     { id: "titleReport", labelGu: "પત્રક-D શીર્ષક", sizable: true },
     heading("meta", "શાળાની વિગત (આખી)"),
     { id: "metaSchoolLabel", labelGu: "શાળા લેબલ", sizable: true },
@@ -671,6 +711,31 @@ function annexureBannerParts(): ReportPart[] {
     { id: "bannerAccount", labelGu: "ખાતા નંબર", sizable: true },
     heading("bannerDetails", "શાળાની વિગત (કલસ્ટર, તાલુકો, ખાતા નંબર)"),
   ];
+}
+
+/**
+ * Where a heading really sits. Its own choice wins (a row only where it can
+ * join); otherwise a joinable heading under a row heading joins too, so the
+ * stack down to the table reads as one block - the Rojmel's title as a row
+ * takes its band with it. A piece of a heading sits where its heading does.
+ */
+export function headingModeOf(report: PrintableReportId, layout: ReportLayout, part: string): HeadingMode {
+  let joined = false;
+  let current: HeadingMode = "form";
+  for (const each of REPORT_PARTS[report]) {
+    if (each.block) {
+      const own = layout.styles[targetKey({ kind: "part", part: each.id })]?.headingMode;
+      if (!each.joinable) {
+        current = own === "banner" ? "banner" : "form";
+        joined = false;
+      } else {
+        current = own ?? (joined ? "row" : "form");
+        joined = current === "row";
+      }
+    }
+    if (each.id === part) return current;
+  }
+  return "form";
 }
 
 /** The part the first row of the report's Excel sheet stands for - its title. */
@@ -1469,21 +1534,61 @@ function textEffectDeclarations(style: CellStyle): string[] {
  * `paintShapes`) - its own background and lines go, and it keeps room inside
  * for the words. The shape layer is the box's first child, behind the words.
  */
-function shapedPartRules(selector: string, style: CellStyle): string[] {
+function shapedPartRules(root: string, selector: string, style: CellStyle, part?: ReportPart): string[] {
   const info = shapeInfo(style.shape!);
-  const inset = style.shapeInsetMm ?? 0;
-  const padding = `padding: ${info.padYMm + inset}mm ${info.padXMm + inset}mm ${info.padYMm + inset + (info.padBottomMm ?? 0)}mm`;
-  // The box's own background shows round the shape; its lines are the table's
-  // when the heading joins it, else none (the shape is the outline).
-  const background = style.boxFill ?? "transparent";
-  const lines = style.joinTable ? "" : " border-color: transparent;";
-  return [
-    `${selector} { position: relative; isolation: isolate; background: ${background};${lines} ${padding}; }`,
+  const padding = `padding: ${info.padYMm}mm ${info.padXMm}mm ${info.padYMm + (info.padBottomMm ?? 0)}mm`;
+  // The shape is the outline: never a rectangle round it. A joined heading's
+  // bottom edge is the table's own line, laid over it (see placementRules).
+  const rules = [
+    `${selector} { position: relative; isolation: isolate; background: transparent; border-color: transparent; ${padding}; }`,
     `${selector} :is(td, th, div, span) { background: transparent; border-color: transparent; }`,
     `${selector} > .shape-layer { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; overflow: visible; background: transparent; }`,
     // A theme colours everything inside the title; never the drawing itself.
     `${selector} > .shape-layer > svg, ${selector} > .shape-layer > svg * { display: block; overflow: visible; background: transparent; }`,
   ];
+  // A piece of a heading: outrank its heading's lines round every piece.
+  if (part && !part.block) rules.push(`${root} [data-part] > [data-part]${selector.slice(root.length + 1)} { border-color: transparent; }`);
+  return rules;
+}
+
+/** The table's ruled line, which a joined heading shares. */
+interface JoinLine {
+  colour: string;
+  widthPt: number;
+}
+
+/**
+ * Where a heading sits and how its pieces make cells: a row joined to the
+ * table shares the table's line (its bottom laid over the next piece's top,
+ * a heading of pieces drawing only the pieces' lines, never both); one cell
+ * draws one box round all the pieces.
+ */
+function placementRules(selector: string, style: CellStyle, part: ReportPart, mode: HeadingMode, join: JoinLine): string[] {
+  const rules: string[] = [];
+  const line = `${join.widthPt}pt solid ${join.colour}`;
+  const shaped = style.shape !== undefined && style.shape !== "rect";
+  const one = part.pieced === true && style.cells === "one";
+  if (one) {
+    const clear = shaped || (style.fill !== undefined && style.fill !== NO_FILL) ? " background: transparent;" : "";
+    rules.push(
+      `${selector} { --heading-gap: 0mm; gap: 0;${shaped ? "" : ` border: ${line}; box-sizing: border-box;`} }`,
+      `${selector} > [data-part] { border-color: transparent;${clear} }`,
+    );
+  }
+  if (mode !== "row") return rules;
+  rules.push(`${selector} { margin-top: 0; margin-bottom: -${join.widthPt}pt; box-sizing: border-box; --heading-share: ${join.widthPt}pt; }`);
+  if (part.pieced && !one) {
+    rules.push(
+      `${selector} { border: none; --heading-gap: 0mm; gap: 0; }`,
+      `${selector} > [data-part] { border: ${line}; }`,
+      `${selector} > [data-part] + [data-part] { margin-left: -${join.widthPt}pt; }`,
+    );
+  } else if (shaped) {
+    rules.push(`${selector} { border: none; }`);
+  } else if (!one) {
+    rules.push(`${selector} { border: ${line}; }`);
+  }
+  return rules;
 }
 
 /**
@@ -1496,7 +1601,8 @@ function partRules(
   style: CellStyle,
   part?: ReportPart,
   theme: TableTheme | null = null,
-  join: { colour: string; widthPt: number } | null = null,
+  join: JoinLine = { colour: "#000", widthPt: 0.7 },
+  mode: HeadingMode = "form",
 ): string[] {
   const attribute = `[data-part=${cssString(partId)}]`;
   const selector = `${root} ${attribute}`;
@@ -1519,18 +1625,12 @@ function partRules(
     rules.push(`${all} { background: ${background}; }`);
     if (gradient) rules.push(`${selector} * { background: transparent; }`);
   }
-  if (shaped) rules.push(...shapedPartRules(selector, style));
-  else if (style.boxFill) rules.push(`${selector} { background: ${style.boxFill}; }`);
-  if (style.joinTable && join) {
-    // No gap above or below, the table's own line all round, and the bottom
-    // line laid over the next piece's top - heading and table read as one.
-    rules.push(
-      `${selector} { margin-top: 0; margin-bottom: -${join.widthPt}pt; border: ${join.widthPt}pt solid ${join.colour}; box-sizing: border-box; }`,
-      // A heading made of pieces in a row (the rojmel's band): the pieces meet, their lines shared.
-      `${selector} { gap: 0; }`,
-      `${selector} > [data-part] + [data-part] { margin-left: -${join.widthPt}pt; }`,
-      `${selector} > [data-part] { border: ${join.widthPt}pt solid ${join.colour}; }`,
-    );
+  if (shaped) rules.push(...shapedPartRules(root, selector, style, part));
+  if (part?.block) rules.push(...placementRules(selector, style, part, mode, join));
+  if (style.gapMm !== undefined && part && !part.block) {
+    // The space before a piece, over the heading's own; nothing at all shares one line when joined.
+    const share = style.gapMm === 0 ? " - var(--heading-share, 0pt)" : "";
+    rules.push(`${root} [data-part] > [data-part]${attribute} { margin-left: calc(${style.gapMm}mm - var(--heading-gap, 0mm)${share}); }`);
   }
   const effects = textEffectDeclarations(style);
   if (effects.length > 0) rules.push(`${all} { ${effects.join("; ")}; }`);
@@ -1665,7 +1765,13 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   // reach those pieces too: in that order a piece's own choice comes later and wins.
   const partOrder = (target: LayoutTarget): number =>
     target.kind === "part" ? REPORT_PARTS[report].findIndex((part) => part.id === target.part) : 0;
-  const targets = Object.entries(layout.styles)
+  // A heading joined only because the heading above it is a row has no style
+  // of its own: it still needs its row rules.
+  const stacked = REPORT_PARTS[report]
+    .filter((part) => part.block && !(targetKey({ kind: "part", part: part.id }) in layout.styles))
+    .filter((part) => headingModeOf(report, layout, part.id) === "row")
+    .map((part): [string, CellStyle] => [targetKey({ kind: "part", part: part.id }), {}]);
+  const targets = [...Object.entries(layout.styles), ...stacked]
     .map(([key, style]) => ({ target: parseTargetKey(key), style }))
     .filter((entry): entry is { target: LayoutTarget; style: CellStyle } => entry.target !== null)
     .sort(
@@ -1679,10 +1785,18 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
     if (target.kind === "part") {
       const part = REPORT_PARTS[report].find((each) => each.id === target.part);
       rules.push(
-        ...partRules(root, target.part, style, part, theme, {
-          colour: layout.lineColour ?? theme?.line ?? "#000",
-          widthPt: layout.lineWeight ? LINE_WEIGHT_PT[layout.lineWeight] : 0.7,
-        }),
+        ...partRules(
+          root,
+          target.part,
+          style,
+          part,
+          theme,
+          {
+            colour: layout.lineColour ?? theme?.line ?? "#000",
+            widthPt: layout.lineWeight ? LINE_WEIGHT_PT[layout.lineWeight] : 0.7,
+          },
+          headingModeOf(report, layout, target.part),
+        ),
       );
       continue;
     }
@@ -1765,7 +1879,7 @@ export function shapePaint(style: CellStyle, theme: TableTheme | null): ShapePai
  * layer. Sizes are the box's own CSS pixels, which the sheet's zoom then
  * scales together with the words.
  */
-export function paintShapes(root: HTMLElement, layout: ReportLayout): void {
+export function paintShapes(root: HTMLElement, layout: ReportLayout, report: PrintableReportId): void {
   const theme = themeOf(layout.theme);
   const shaped = new Map<string, CellStyle>();
   for (const [key, style] of Object.entries(layout.styles)) {
@@ -1781,7 +1895,9 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout): void {
     if (!box) continue;
     const { width, height } = box;
     uid += 1;
-    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme), style.shapeAdjust, `shape${uid}`);
+    // Joined to the table: a straight bottom, laid on the table's line.
+    const flatBottom = headingModeOf(report, layout, element.dataset["part"] ?? "") === "row";
+    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme), style.shapeAdjust, `shape${uid}`, { flatBottom });
     let layer = element.querySelector<HTMLElement>(":scope > .shape-layer");
     if (!layer) {
       layer = document.createElement("span");
@@ -1849,11 +1965,11 @@ function shapeBox(
   const boxWidth = element.offsetWidth;
   const boxHeight = element.offsetHeight;
   if (boxWidth === 0 || boxHeight === 0) return null;
-  const inset = (style.shapeInsetMm ?? 0) * PX_PER_MM;
+  const inset = 0;
   const height = Math.max(4, boxHeight - 2 * inset);
   let width = Math.max(4, boxWidth - 2 * inset);
 
-  if (style.shapeFit === "center") {
+  if (style.headingMode === "banner" && !style.bannerFull) {
     // The words' extent, measured on screen and brought back to the box's own
     // pixels (the sheet may be zoomed).
     const outer = element.getBoundingClientRect();

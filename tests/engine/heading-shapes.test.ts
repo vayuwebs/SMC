@@ -3,7 +3,7 @@
  * options (fill, gradient, outline, effects, text effects) that go with them.
  */
 import { describe, expect, it } from "vitest";
-import { SHAPES, SHAPE_GROUPS, shade, shapePieces, shapeSvg } from "../../src/shared/shapes.js";
+import { SHAPES, SHAPES_WITHOUT_FLAT_BOTTOM, SHAPE_GROUPS, shade, shapePieces, shapeSvg } from "../../src/shared/shapes.js";
 import {
   emptyLayout,
   layoutCss,
@@ -126,34 +126,25 @@ describe("shape styles and text effects", () => {
   });
 });
 
-describe("a heading's outer box, joined to the table", () => {
-  it("keeps the new settings through the layout schema", () => {
-    const styles = { "part:title": { shape: "plaque" as const, boxFill: "#e8f0fe", joinTable: true, shapeFit: "center" as const, shapeInsetMm: 2 } };
-    expect(reportLayoutSchema.parse({ ...emptyLayout(), styles }).styles).toEqual(styles);
-    expect(() => reportLayoutSchema.parse({ ...emptyLayout(), styles: { "part:title": { shapeFit: "stretch" } } })).toThrow();
+describe("a shape joined to the table", () => {
+  const paint = { fill: "#ddebf7", outline: "#1f4e79" };
+  const flat = SHAPES.map((shape) => shape.id).filter((id) => !SHAPES_WITHOUT_FLAT_BOTTOM.has(id));
+
+  it("leaves out only the callouts, whose point is at the bottom", () => {
+    expect([...SHAPES_WITHOUT_FLAT_BOTTOM].sort()).toEqual(["calloutOval", "calloutRect", "calloutRound"]);
   });
 
-  it("paints the outer box and leaves room for the inner space", () => {
-    const css = layoutCss(
-      "rojmel",
-      { ...emptyLayout(), styles: { "part:title": { shape: "plaque", boxFill: "#e8f0fe", shapeInsetMm: 2 } } },
-      "#r",
-    );
-    expect(css).toMatch(/\[data-part="title"\] \{ position: relative; isolation: isolate; background: #e8f0fe; border-color: transparent; padding: 3\.6mm 11mm/);
+  it.each(flat)("draws %s with a straight bottom, clipped to its box", (id) => {
+    const svg = shapeSvg(id, 900, 40, paint, undefined, "t", { flatBottom: true });
+    expect(svg).toContain('<clipPath id="t-c"><rect x="0" y="0" width="900" height="40"/></clipPath>');
+    expect(svg).toContain('clip-path="url(#t-c)"');
+    expect(svg).not.toMatch(/NaN|Infinity|undefined/);
   });
 
-  it("joins a heading to the table on the table's own line, its pieces meeting", () => {
-    const css = layoutCss(
-      "rojmel",
-      { ...emptyLayout(), lineColour: "#333333", lineWeight: "medium", styles: { "part:band": { joinTable: true } } },
-      "#r",
-    );
-    expect(css).toContain('[data-part="band"] { margin-top: 0; margin-bottom: -1.4pt; border: 1.4pt solid #333333;');
-    expect(css).toContain('[data-part="band"] > [data-part] + [data-part] { margin-left: -1.4pt; }');
-  });
-
-  it("gives an unshaped heading the outer box colour as its background", () => {
-    const css = layoutCss("rojmel", { ...emptyLayout(), styles: { "part:title": { boxFill: "#fff8e1" } } }, "#r");
-    expect(css).toContain('#r [data-part="title"] { background: #fff8e1; }');
+  it("draws as before without the option", () => {
+    for (const id of ["rounded", "ribbon", "plaque"] as const) {
+      expect(shapeSvg(id, 900, 40, paint, undefined, "t", {})).toBe(shapeSvg(id, 900, 40, paint, undefined, "t"));
+      expect(shapeSvg(id, 900, 40, paint, undefined, "t")).not.toContain("clipPath");
+    }
   });
 });

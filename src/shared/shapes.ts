@@ -488,8 +488,33 @@ function escapeAttr(value: string): string {
  * The shape as SVG markup, `w` by `h` pixels, painted. `uid` keeps the
  * gradient and filter ids of one heading apart from another's on the page.
  */
-export function shapeSvg(id: ShapeId, w: number, h: number, paint: ShapePaint, adjust?: number, uid = "s"): string {
-  const pieces = shapePieces(id, w, h, adjust);
+/** Shapes whose point is at the bottom (a callout's tail): they cannot sit flat on a table. */
+export const SHAPES_WITHOUT_FLAT_BOTTOM: ReadonlySet<ShapeId> = new Set<ShapeId>(["calloutRect", "calloutRound", "calloutOval"]);
+
+/** How the bottom of a heading's shape is drawn. */
+export interface ShapeOptions {
+  /**
+   * The heading sits on the table: the shape keeps its top and sides, and its
+   * bottom is straight - drawn taller and cut at the box, so the table's own
+   * line is its bottom edge.
+   */
+  flatBottom?: boolean;
+}
+
+/** How much taller a flat-bottomed shape is drawn before it is cut at its box. */
+const FLAT_BOTTOM_STRETCH = 1.6;
+
+export function shapeSvg(
+  id: ShapeId,
+  w: number,
+  h: number,
+  paint: ShapePaint,
+  adjust?: number,
+  uid = "s",
+  options: ShapeOptions = {},
+): string {
+  const flat = options.flatBottom === true && !SHAPES_WITHOUT_FLAT_BOTTOM.has(id);
+  const pieces = shapePieces(id, w, flat ? h * FLAT_BOTTOM_STRETCH : h, adjust);
   const outlinePx = (paint.outlinePt ?? 1) * PT_TO_PX;
   const dash = paint.outlineDash ?? "solid";
   const accent = paint.accent ?? DEFAULT_ACCENT;
@@ -578,7 +603,9 @@ export function shapeSvg(id: ShapeId, w: number, h: number, paint: ShapePaint, a
     }
   }
 
-  const group = filters.length > 0 ? `<g filter="url(#${uid}-f)">${shapes.join("")}</g>` : shapes.join("");
+  if (flat) defs.push(`<clipPath id="${uid}-c"><rect x="0" y="0" width="${f(w)}" height="${f(h)}"/></clipPath>`);
+  const drawn = filters.length > 0 ? `<g filter="url(#${uid}-f)">${shapes.join("")}</g>` : shapes.join("");
+  const group = flat ? `<g clip-path="url(#${uid}-c)">${drawn}</g>` : drawn;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${f(w)}" height="${f(h)}" viewBox="0 0 ${f(w)} ${f(h)}" overflow="visible">` +
     (defs.length > 0 ? `<defs>${defs.join("")}</defs>` : "") +

@@ -585,7 +585,7 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
         spreadBlocks();
         // Shaped headings are drawn last, at the size the report settled on.
         const root = document.getElementById(LAYOUT_ROOT_ID);
-        if (root && layoutValue) paintShapes(root, layoutValue.layout);
+        if (root && layoutValue) paintShapes(root, layoutValue.layout, report);
         onChecked?.({ sheets: overflowingSheets(), cells: overflowingCells() + overflowingSpills() });
         window.__printReady = true;
       });

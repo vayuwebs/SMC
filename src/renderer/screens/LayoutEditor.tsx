@@ -262,10 +262,10 @@ const CLEARED: StylePatch = {
   textOutline: undefined,
   textShadow: undefined,
   textGlow: undefined,
-  boxFill: undefined,
-  joinTable: undefined,
-  shapeFit: undefined,
-  shapeInsetMm: undefined,
+  headingMode: undefined,
+  cells: undefined,
+  gapMm: undefined,
+  bannerFull: undefined,
   borders: undefined,
 };
 
@@ -1219,51 +1219,6 @@ export function LayoutEditor({
             <span className="ribbon-note">{shapeLabel(currentShape)}</span>
           </div>
         )}
-      </Group>
-
-      <Group label={t.shapeBox}>
-        <div className="ribbon-rows">
-          <div className="ribbon-row">
-            <ColourButton
-              icon="▣"
-              title={t.shapeBoxFill}
-              value={own.boxFill}
-              noneValue=""
-              noneLabel={t.shapeBoxFillNone}
-              onChange={(boxFill) => apply({ boxFill: boxFill || undefined })}
-            />
-            <label className="ribbon-check" title={t.shapeJoinTableHint}>
-              <input
-                type="checkbox"
-                checked={own.joinTable === true}
-                onChange={(event) => apply({ joinTable: event.target.checked || undefined })}
-              />
-              {t.shapeJoinTable}
-            </label>
-          </div>
-          <div className="ribbon-row">
-            <select
-              className="ribbon-select"
-              title={t.shapeFit}
-              aria-label={t.shapeFit}
-              disabled={own.shape === undefined}
-              value={own.shapeFit ?? "fill"}
-              onChange={(event) => apply({ shapeFit: event.target.value === "center" ? "center" : undefined })}
-            >
-              <option value="fill">{t.shapeFit}: {t.shapeFits.fill}</option>
-              <option value="center">{t.shapeFit}: {t.shapeFits.center}</option>
-            </select>
-            <MiniStepper
-              label={`${t.shapeInset} (${t.mm})`}
-              value={own.shapeInsetMm}
-              placeholder={0}
-              step={0.5}
-              min={0}
-              max={20}
-              onChange={(shapeInsetMm) => apply({ shapeInsetMm: shapeInsetMm || undefined })}
-            />
-          </div>
-        </div>
       </Group>
 
       <Group label={t.shapeStyles}>
