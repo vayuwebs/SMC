@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { api } from "../api.js";
 import { endSuggestionSession } from "../suggestions/sync.js";
@@ -16,6 +16,8 @@ import {
 } from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
+import { Modal } from "../components/Modal.js";
+import { Popover } from "../components/Popover.js";
 import { LanguageSwitch } from "../components/LanguageSwitch.js";
 import { formatBytes, formatDateTime, modeLabel } from "../format.js";
 import { useStrings } from "../i18n/index.js";
@@ -172,6 +174,8 @@ export function Schools({
   const [restore, setRestore] = useState<RestorePanel | null>(null);
   const [deleting, setDeleting] = useState<{ school: SchoolListItemDto; password: string } | null>(null);
   const [deletedNotice, setDeletedNotice] = useState<string[] | null>(null);
+  const [query, setQuery] = useState("");
+  const page = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setList(await api.listSchools());
@@ -180,6 +184,20 @@ export function Schools({
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Close whichever window is open; its messages go with it. */
+  function closeWindow(): void {
+    setLock(null);
+    setDeleting(null);
+    setRestore(null);
+    setIssues([]);
+  }
+
+  // A message or a found folder shows at the top of the page: bring it into view.
+  const atTop = (issues.length > 0 && restore === null && deleting === null && lock === null) || found !== null;
+  useEffect(() => {
+    if (atTop) page.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [atTop, issues, found]);
 
   async function busyWith(work: () => Promise<void>): Promise<void> {
     setBusy(true);
@@ -239,8 +257,9 @@ export function Schools({
       setRestore({ school, backups: null, chosen: null });
       const result = await api.listCloudBackups(school.profileId);
       if (!result.ok) {
+        // Stay in the window, with the reason in it.
         setIssues(result.issues);
-        setRestore(null);
+        setRestore({ school, backups: [], chosen: null });
         return;
       }
       setRestore({ school, backups: result.data, chosen: result.data[0]?.id ?? null });
@@ -323,9 +342,18 @@ export function Schools({
     notOnThisPc: t.schoolsNotOnThisPc,
   };
 
+  const needle = query.trim().toLowerCase();
+  const shown =
+    list?.schools.filter(
+      (school) =>
+        needle === "" || school.schoolNameGu.toLowerCase().includes(needle) || school.diseCode.toLowerCase().includes(needle),
+    ) ?? [];
+  // Errors from a window show in it; others at the top of the page, scrolled to.
+  const windowOpen = restore !== null || deleting !== null || lock !== null;
+
   return (
-    <div className="setup">
-      <div className="setup-form">
+    <div className="setup" ref={page}>
+      <div className="setup-form schools-page">
         <header className="setup-head">
           <div>
             <h1>{t.schoolsTitle}</h1>
@@ -360,7 +388,7 @@ export function Schools({
           </div>
         )}
 
-        {issues.length > 0 && (
+        {issues.length > 0 && !windowOpen && (
           <div className="card">
             <IssueList issues={issues} />
           </div>
@@ -376,33 +404,26 @@ export function Schools({
           </div>
         )}
 
-        {lock && (
-          <div className="card lock-card">
-            <p>{t.schoolsLocked(lock.deviceName, formatDateTime(lock.openedAt))}</p>
-            <div className="form-actions">
-              <button
-                className="primary"
-                type="button"
-                disabled={busy}
-                onClick={() => void open(lock.profileId, { folder: lock.folder, force: true })}
-              >
-                {t.schoolsOpenAnyway}
-              </button>
-              <button className="ghost" type="button" onClick={() => setLock(null)}>
-                {t.cancel}
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="schools-actions">
-          <button className="school-action card" type="button" onClick={onNewSchool} disabled={busy}>
-            <strong>{t.schoolsNew}</strong>
-            <span className="muted">{t.schoolsNewHint}</span>
+          <button className="school-action" type="button" onClick={onNewSchool} disabled={busy} title={t.schoolsNewHint}>
+            <span className="school-action-icon" aria-hidden="true">＋</span>
+            <span>
+              <strong>{t.schoolsNew}</strong>
+              <span className="muted">{t.schoolsNewHint}</span>
+            </span>
           </button>
-          <button className="school-action card" type="button" onClick={() => void openFromFolder()} disabled={busy}>
-            <strong>{t.schoolsOpenExisting}</strong>
-            <span className="muted">{t.schoolsOpenExistingHint}</span>
+          <button
+            className="school-action"
+            type="button"
+            onClick={() => void openFromFolder()}
+            disabled={busy}
+            title={t.schoolsOpenExistingHint}
+          >
+            <span className="school-action-icon" aria-hidden="true">📂</span>
+            <span>
+              <strong>{t.schoolsOpenExisting}</strong>
+              <span className="muted">{t.schoolsOpenExistingHint}</span>
+            </span>
           </button>
         </div>
 
@@ -420,9 +441,7 @@ export function Schools({
                 {!school.ownedByMe ? (
                   <span className="badge muted">{t.schoolsOtherAccount}</span>
                 ) : activeMode && school.appMode !== activeMode ? (
-                  <span className="badge muted">
-                    {t.schoolsWrongMode(modeLabel(school.appMode, t))}
-                  </span>
+                  <span className="badge muted">{t.schoolsWrongMode(modeLabel(school.appMode, t))}</span>
                 ) : (
                   <button
                     className="primary"
@@ -452,88 +471,89 @@ export function Schools({
           </div>
         )}
 
-        <div className="card">
-          {list && !list.cloudReachable && (
-            <div className="issue warning">
-              <div>
-                {t.schoolsOffline}{" "}
-                <button className="link" type="button" onClick={() => void load()}>
-                  {t.schoolsRefresh}
-                </button>
-              </div>
+        {list && !list.cloudReachable && (
+          <div className="issue warning">
+            <div>
+              {t.schoolsOffline}{" "}
+              <button className="link" type="button" onClick={() => void load()}>
+                {t.schoolsRefresh}
+              </button>
             </div>
-          )}
-          {list === null && <p className="muted">{t.loading}</p>}
-          {list && list.schools.length === 0 && <p className="muted">{t.schoolsEmpty}</p>}
-          {list?.schools.map((school) => (
-            <div className="school-row" key={school.profileId}>
-              <div>
-                <div className="school-name">{school.schoolNameGu}</div>
-                <div className="muted num-inline">
-                  {school.diseCode}
-                  {school.folder && ` · ${school.folder}`}
-                  {school.lastOpenedAt && ` · ${t.schoolsLastOpened} ${formatDateTime(school.lastOpenedAt)}`}
-                </div>
-                <span className={`badge ${school.availability}`}>{availability[school.availability]}</span>
-                {school.availability === "notConnected" && (
-                  <div className="muted school-hint">{t.schoolsFindFolderHint}</div>
-                )}
-              </div>
-              <div className="row-actions">
-                {school.availability === "ready" && (
-                  <button className="primary" type="button" disabled={busy} onClick={() => void open(school.profileId)}>
-                    {t.schoolsOpen}
-                  </button>
-                )}
-                {school.availability !== "ready" && (
-                  <button className="ghost" type="button" disabled={busy} onClick={() => void openFromFolder(school)}>
-                    {t.schoolsFindFolder}
-                  </button>
-                )}
-                {school.availability !== "ready" && (
-                  <button className="ghost" type="button" disabled={busy} onClick={() => void showRestore(school)}>
-                    {t.schoolsRestore}
-                  </button>
-                )}
-                {school.availability === "notConnected" && (
-                  <button
-                    className="ghost"
-                    type="button"
-                    disabled={busy}
-                    onClick={async () => setList(await api.forgetSchool(school.profileId))}
-                  >
-                    {t.schoolsForget}
-                  </button>
-                )}
-                <button
-                  className="danger"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setIssues([]);
-                    setDeletedNotice(null);
-                    setDeleting({ school, password: "" });
-                  }}
-                >
-                  {t.schoolDelete}
-                </button>
-              </div>
-            </div>
+          </div>
+        )}
+
+        {list && list.schools.length > SEARCH_FROM && (
+          <div className="schools-toolbar">
+            <input
+              type="search"
+              className="schools-search"
+              placeholder={t.schoolsSearch}
+              aria-label={t.schoolsSearch}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <span className="muted num-inline">{t.schoolsCount(shown.length, list.schools.length)}</span>
+          </div>
+        )}
+
+        {list === null && <p className="muted">{t.loading}</p>}
+        {list && list.schools.length === 0 && <div className="card muted">{t.schoolsEmpty}</div>}
+        {list && list.schools.length > 0 && shown.length === 0 && <p className="muted">{t.schoolsNoMatch}</p>}
+
+        <div className="school-grid">
+          {shown.map((school) => (
+            <SchoolCard
+              key={school.profileId}
+              school={school}
+              status={availability[school.availability]}
+              busy={busy}
+              onOpen={() => void open(school.profileId)}
+              onFindFolder={() => void openFromFolder(school)}
+              onRestore={() => void showRestore(school)}
+              onForget={async () => setList(await api.forgetSchool(school.profileId))}
+              onDelete={() => {
+                setIssues([]);
+                setDeletedNotice(null);
+                setDeleting({ school, password: "" });
+              }}
+            />
           ))}
         </div>
+      </div>
 
-        {deleting && (
+      {lock && (
+        <Modal title={t.schoolsOpenAnyway} busy={busy} onClose={closeWindow}>
+          <p>{t.schoolsLocked(lock.deviceName, formatDateTime(lock.openedAt))}</p>
+          {issues.length > 0 && <IssueList issues={issues} />}
+          <div className="form-actions">
+            <button
+              className="primary"
+              type="button"
+              disabled={busy}
+              onClick={() => void open(lock.profileId, { folder: lock.folder, force: true })}
+            >
+              {t.schoolsOpenAnyway}
+            </button>
+            <button className="ghost" type="button" disabled={busy} onClick={closeWindow}>
+              {t.cancel}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {deleting && (
+        <Modal title={t.schoolDeleteTitle(deleting.school.schoolNameGu)} busy={busy} onClose={closeWindow}>
           <form
-            className="card delete-school-card"
+            className="delete-school-card"
             onSubmit={(event) => {
               event.preventDefault();
               void deleteSchool();
             }}
           >
-            <h3>{t.schoolDeleteTitle(deleting.school.schoolNameGu)}</h3>
             <div className="issue error">
               <div>{t.schoolDeleteWarning}</div>
             </div>
+            {issues.length > 0 && <IssueList issues={issues} />}
             <div className="field">
               <label htmlFor="delete-school-password">{t.schoolDeletePassword}</label>
               <input
@@ -549,40 +569,139 @@ export function Schools({
               <button className="danger" type="submit" disabled={busy || deleting.password.trim() === ""}>
                 {busy ? t.working : t.schoolDeleteConfirm}
               </button>
-              <button className="ghost" type="button" disabled={busy} onClick={() => setDeleting(null)}>
+              <button className="ghost" type="button" disabled={busy} onClick={closeWindow}>
                 {t.cancel}
               </button>
             </div>
           </form>
-        )}
+        </Modal>
+      )}
 
-        {restore && (
-          <div className="card">
-            <h3>{t.restoreTitle(restore.school.schoolNameGu)}</h3>
-            <p className="muted">{t.restoreHint}</p>
-            {restore.backups === null && <p className="muted">{t.loading}</p>}
-            {restore.backups?.length === 0 && <p className="muted">{t.restoreNoBackups}</p>}
-            {restore.backups && restore.backups.length > 0 && (
+      {restore && (
+        <Modal title={t.restoreTitle(restore.school.schoolNameGu)} busy={busy} wide onClose={closeWindow}>
+          <p className="muted">{t.restoreHint}</p>
+          {issues.length > 0 && <IssueList issues={issues} />}
+          {restore.backups === null && <p className="muted">{t.loading}</p>}
+          {restore.backups?.length === 0 && issues.length === 0 && <p className="muted">{t.restoreNoBackups}</p>}
+          {restore.backups && restore.backups.length > 0 && (
+            <div className="modal-scroll">
               <BackupPicker
                 backups={restore.backups}
                 chosen={restore.chosen}
                 onChoose={(id) => setRestore({ ...restore, chosen: id })}
               />
-            )}
-            <div className="form-actions">
-              <button
-                className="primary"
-                type="button"
-                disabled={busy || !restore.chosen}
-                onClick={() => void restoreTo()}
-              >
-                {busy ? t.working : t.restoreChooseLocation}
-              </button>
-              <button className="ghost" type="button" onClick={() => setRestore(null)}>
-                {t.cancel}
-              </button>
             </div>
+          )}
+          <div className="form-actions">
+            <button className="primary" type="button" disabled={busy || !restore.chosen} onClick={() => void restoreTo()}>
+              {busy && restore.backups !== null ? t.working : t.restoreChooseLocation}
+            </button>
+            <button className="ghost" type="button" disabled={busy} onClick={closeWindow}>
+              {t.cancel}
+            </button>
           </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/** Search appears once the list is longer than this. */
+const SEARCH_FROM = 6;
+
+/**
+ * One school, compact: name and status on one line, DISE code and when it was
+ * last opened under it; the one thing to do now as a button, the rest in a menu.
+ */
+function SchoolCard({
+  school,
+  status,
+  busy,
+  onOpen,
+  onFindFolder,
+  onRestore,
+  onForget,
+  onDelete,
+}: {
+  school: SchoolListItemDto;
+  status: string;
+  busy: boolean;
+  onOpen: () => void;
+  onFindFolder: () => void;
+  onRestore: () => void;
+  onForget: () => void;
+  onDelete: () => void;
+}): JSX.Element {
+  const t = useStrings();
+  const [menu, setMenu] = useState(false);
+  const more = useRef<HTMLButtonElement>(null);
+  const ready = school.availability === "ready";
+  // Never opened here: bringing it back from the cloud is the likely step. Drive
+  // not plugged in: point at its folder.
+  const kind: "open" | "restore" | "folder" = ready ? "open" : school.availability === "notOnThisPc" ? "restore" : "folder";
+  const main =
+    kind === "open"
+      ? { label: t.schoolsOpen, run: onOpen }
+      : kind === "restore"
+        ? { label: t.schoolsRestore, run: onRestore }
+        : { label: t.schoolsFindFolder, run: onFindFolder };
+  const items: { label: string; run: () => void; danger?: boolean }[] = [
+    ...(kind === "restore" ? [{ label: t.schoolsFindFolder, run: onFindFolder }] : []),
+    ...(kind === "folder" ? [{ label: t.schoolsRestore, run: onRestore }] : []),
+    ...(school.availability === "notConnected" ? [{ label: t.schoolsForget, run: onForget }] : []),
+    { label: t.schoolDelete, run: onDelete, danger: true },
+  ];
+  const where = [
+    school.diseCode,
+    school.lastOpenedAt ? `${t.schoolsLastOpened} ${formatDateTime(school.lastOpenedAt)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className={`school-card ${school.availability}`} title={school.folder ?? undefined}>
+      <div className="school-card-text">
+        <div className="school-card-name">
+          <span className={`status-dot ${school.availability}`} title={status} aria-label={status} />
+          <span className="school-name">{school.schoolNameGu}</span>
+        </div>
+        <div className="muted num-inline school-card-meta">
+          {where.join(" · ")}
+          {!ready && <span className={`school-card-status ${school.availability}`}> · {status}</span>}
+        </div>
+      </div>
+      <div className="school-card-actions">
+        <button className={ready ? "primary" : "ghost"} type="button" disabled={busy} onClick={main.run}>
+          {main.label}
+        </button>
+        <button
+          ref={more}
+          type="button"
+          className="ghost school-card-more"
+          aria-label={t.schoolsMore}
+          title={t.schoolsMore}
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          disabled={busy}
+          onClick={() => setMenu(!menu)}
+        >
+          ⋯
+        </button>
+        {menu && (
+          <Popover anchor={more} onClose={() => setMenu(false)} className="school-card-menu" role="menu">
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                className={item.danger ? "danger-text" : undefined}
+                onClick={() => {
+                  setMenu(false);
+                  item.run();
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </Popover>
         )}
       </div>
     </div>

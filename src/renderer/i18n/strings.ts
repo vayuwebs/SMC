@@ -727,6 +727,10 @@ export interface Strings {
   schoolsOpenAnyway: string;
   schoolsFoundInFolder: string;
   schoolsOtherAccount: string;
+  schoolsSearch: string;
+  schoolsCount: (shown: number, total: number) => string;
+  schoolsNoMatch: string;
+  schoolsMore: string;
   legacyTitle: string;
   legacyHint: string;
   legacyDevNote: string;
@@ -1547,6 +1551,10 @@ export const gu: Strings = {
   schoolsOpenAnyway: "છતાં ખોલો",
   schoolsFoundInFolder: "આ ફોલ્ડરમાં આ શાળાઓ મળી:",
   schoolsOtherAccount: "બીજા ખાતાની",
+  schoolsSearch: "શાળાનું નામ અથવા ડાયસ કોડ શોધો…",
+  schoolsCount: (shown, total) => (shown === total ? `${total} શાળા` : `${total} માંથી ${shown} શાળા`),
+  schoolsNoMatch: "આ નામ કે ડાયસ કોડવાળી કોઈ શાળા નથી.",
+  schoolsMore: "વધુ",
   legacyTitle: "આ PC પર જૂના સંસ્કરણનો ડેટા મળ્યો",
   legacyHint:
     "તેને પેન ડ્રાઈવ અથવા ફોલ્ડરમાં ખસેડો. ખસેડતી વખતે તે એન્ક્રિપ્ટ થશે અને તેનો ક્લાઉડ બેકઅપ થશે.",
@@ -2383,6 +2391,10 @@ export const en: Strings = {
   schoolsOpenAnyway: "Open anyway",
   schoolsFoundInFolder: "These schools were found in the folder:",
   schoolsOtherAccount: "Another account's",
+  schoolsSearch: "Search by school name or DISE code…",
+  schoolsCount: (shown, total) => (shown === total ? `${total} schools` : `${shown} of ${total} schools`),
+  schoolsNoMatch: "No school with that name or DISE code.",
+  schoolsMore: "More",
   legacyTitle: "Books from the earlier version were found on this PC",
   legacyHint:
     "Move them to a pen drive or folder. On the way they are encrypted and backed up to the cloud.",

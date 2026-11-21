@@ -3577,3 +3577,281 @@ button.primary:disabled {
   z-index: 21;
   touch-action: none;
 }
+
+/* ---- Choosing a school: compact cards, two to a row; steps open in a window ---- */
+.schools-page {
+  max-width: 1080px;
+}
+
+.schools-page .schools-actions {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.schools-page button.school-action {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.schools-page button.school-action > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.schools-page button.school-action strong {
+  font-size: 14.5px;
+}
+
+.schools-page button.school-action .muted {
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.school-action-icon {
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 17px;
+}
+
+.schools-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 10px;
+}
+
+.schools-search {
+  flex: 1;
+  max-width: 420px;
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.schools-search:focus {
+  outline: 2px solid var(--accent-border);
+  border-color: var(--accent);
+}
+
+.school-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+  gap: 8px;
+}
+
+.school-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 10px 8px 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.school-card:hover {
+  border-color: var(--line-strong);
+}
+
+.school-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.school-card-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.school-card .school-name {
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.school-card-meta {
+  font-size: 12px;
+  margin-top: 1px;
+  padding-left: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-dot {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.status-dot.ready {
+  background: var(--credit);
+}
+
+.status-dot.notConnected {
+  background: var(--warn-line);
+}
+
+.school-card-status.notConnected {
+  color: var(--warn-ink);
+}
+
+.school-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.school-card-actions button.primary,
+.school-card-actions button.ghost {
+  padding: 5px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.school-card-actions button.school-card-more {
+  padding: 5px 8px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.school-card-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-elevated);
+}
+
+.school-card-menu button {
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.school-card-menu button:hover {
+  background: var(--hover);
+}
+
+.school-card-menu button.danger-text {
+  color: var(--error-line);
+}
+
+/* A window over the page, in the middle of the screen. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(28, 35, 51, 0.35);
+}
+
+.modal-box {
+  width: 480px;
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-elevated);
+  outline: none;
+}
+
+.modal-box.wide {
+  width: 640px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-close {
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.modal-close:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.modal-body {
+  padding: 12px 18px 16px;
+  overflow-y: auto;
+}
+
+.modal-body .form-actions {
+  margin-top: 14px;
+}
+
+.modal-scroll {
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.modal-scroll table {
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  .school-grid {
+    grid-template-columns: 1fr;
+  }
+}
