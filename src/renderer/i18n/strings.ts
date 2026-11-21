@@ -427,14 +427,18 @@ export interface Strings {
   shapeTextGlow: string;
   shapeNeedsHeading: string;
   shapeExcelNote: string;
-  shapeBox: string;
-  shapeBoxFill: string;
-  shapeBoxFillNone: string;
-  shapeJoinTable: string;
-  shapeJoinTableHint: string;
-  shapeFit: string;
-  shapeFits: { fill: string; center: string };
-  shapeInset: string;
+  headingPlacement: string;
+  headingPlacements: { form: string; row: string; banner: string };
+  headingPlacementHints: { form: string; row: string; banner: string };
+  headingCannotJoin: string;
+  headingPieceNote: string;
+  headingCells: string;
+  headingCellModes: { one: string; separate: string };
+  headingBannerFull: string;
+  headingMore: string;
+  headingCalloutJoined: string;
+  layoutMatchTheme: string;
+  layoutMatchThemeHint: string;
   layoutTheme: string;
   layoutThemeNone: string;
   layoutThemeHint: string;
@@ -1144,7 +1148,7 @@ export const gu: Strings = {
   layoutArrange: "નંબર અને તારીખ",
   layoutArrangements: { column: "કોલમ પ્રમાણે", inline: "બાજુ-બાજુમાં", stacked: "તારીખ નંબરની નીચે", dateFirst: "તારીખ નંબરની ઉપર" },
   layoutShape: "મથાળાનો આકાર",
-  shapeTab: "આકાર ફોર્મેટ",
+  shapeTab: "મથાળું",
   shapeInsert: "આકાર",
   shapeNone: "આકાર વગર (ફોર્મ મુજબ)",
   shapeGroups: { rectangles: "લંબચોરસ", basic: "મૂળ આકાર", arrows: "તીર", banners: "બેનર અને રિબન", callouts: "કૉલઆઉટ", decorative: "શણગારેલી ફ્રેમ" },
@@ -1175,14 +1179,22 @@ export const gu: Strings = {
   shapeTextGlow: "લખાણની ચમક",
   shapeNeedsHeading: "આકાર મથાળા (શાળાનું નામ, પટ્ટી, બેનર) માટે છે — પહેલાં કોઈ મથાળા પર ક્લિક કરો.",
   shapeExcelNote: "Excel માં આકાર નથી દોરાતો — ત્યાં ફક્ત રંગ, ગ્રેડિયન્ટ અને કિનારી આવે.",
-  shapeBox: "બહારનું ખાનું",
-  shapeBoxFill: "બહારના ખાનાનો રંગ",
-  shapeBoxFillNone: "રંગ વગર",
-  shapeJoinTable: "કોષ્ટક સાથે જોડો",
-  shapeJoinTableHint: "મથાળું અને કોષ્ટક વચ્ચે જગ્યા નહીં; મથાળાની કિનારી કોષ્ટકની જ લાઈન.",
-  shapeFit: "આકાર ખાનામાં",
-  shapeFits: { fill: "આખું ભરો", center: "વચ્ચે" },
-  shapeInset: "અંદરની જગ્યા",
+  headingPlacement: "મથાળું ક્યાં",
+  headingPlacements: { form: "ફોર્મ મુજબ", row: "કોષ્ટક સાથે જોડેલી હરોળ", banner: "અલગ બેનર" },
+  headingPlacementHints: {
+    form: "પત્રક જેમ છાપે છે તેમ.",
+    row: "મથાળું કોષ્ટકને અડીને: વચ્ચે જગ્યા નહીં, કોષ્ટકની જ લાઈન. આકાર હોય તો તેની નીચેની બાજુ સીધી.",
+    banner: "મથાળું કોષ્ટકથી અલગ, ઉપર વચ્ચે, તેના શબ્દો જેટલું પહોળું.",
+  },
+  headingCannotJoin: "આ મથાળું કોષ્ટકની ઉપર સીધું નથી, એટલે જોડી ન શકાય.",
+  headingPieceNote: "આ મથાળાનો એક ભાગ છે: ક્યાં રાખવું તે આખા મથાળા પર પસંદ કરો.",
+  headingCells: "ખાનાં",
+  headingCellModes: { one: "એક ખાનું", separate: "અલગ ખાનાં" },
+  headingBannerFull: "પૂરી પહોળાઈ",
+  headingMore: "વધુ વિકલ્પો",
+  headingCalloutJoined: "કોષ્ટક સાથે જોડેલા મથાળામાં ન ચાલે",
+  layoutMatchTheme: "થીમના રંગો વાપરો",
+  layoutMatchThemeHint: "મથાળાં, આવક/જાવક પટ્ટી અને આકાર પણ થીમના રંગે; લખાણ આપોઆપ વંચાય તેવા રંગમાં. બંધ: પહેલાં જેવું.",
   layoutTheme: "થીમ (રંગ)",
   layoutThemeNone: "થીમ વગર (ફોર્મ મુજબ)",
   layoutThemeHint: "મથાળું, કોલમનાં મથાળાં, એક છોડીને એક હરોળ અને કુલની હરોળ એક સાથે રંગાય. તમે જાતે આપેલા રંગ તેના પર રહે.",
@@ -1920,7 +1932,7 @@ export const en: Strings = {
   layoutArrange: "Number and date",
   layoutArrangements: { column: "As the column", inline: "Side by side", stacked: "Date under number", dateFirst: "Date above number" },
   layoutShape: "Heading shape",
-  shapeTab: "Shape Format",
+  shapeTab: "Heading",
   shapeInsert: "Shape",
   shapeNone: "No shape (as the form)",
   shapeGroups: { rectangles: "Rectangles", basic: "Basic shapes", arrows: "Block arrows", banners: "Banners and ribbons", callouts: "Callouts", decorative: "Decorated frames" },
@@ -1951,14 +1963,22 @@ export const en: Strings = {
   shapeTextGlow: "Text glow",
   shapeNeedsHeading: "Shapes are for headings (the school name, a band, a banner) - click a heading first.",
   shapeExcelNote: "Excel cannot draw the shape - it gets the colours, the gradient and the outline only.",
-  shapeBox: "Outer box",
-  shapeBoxFill: "Outer box colour",
-  shapeBoxFillNone: "No colour",
-  shapeJoinTable: "Join to the table",
-  shapeJoinTableHint: "No gap between heading and table; the heading's edge is the table's own line.",
-  shapeFit: "Shape in box",
-  shapeFits: { fill: "Fill", center: "Centre" },
-  shapeInset: "Inner space",
+  headingPlacement: "Placement",
+  headingPlacements: { form: "As the form", row: "Joined to the table", banner: "Separate banner" },
+  headingPlacementHints: {
+    form: "As the form prints it.",
+    row: "The heading touches the table: no gap, the table's own line. A shape gets a straight bottom.",
+    banner: "Apart from the table, centred above it, as wide as its words.",
+  },
+  headingCannotJoin: "This heading is not directly above the table, so it cannot join it.",
+  headingPieceNote: "This is a piece of a heading: choose the placement on the whole heading.",
+  headingCells: "Cells",
+  headingCellModes: { one: "One cell", separate: "Separate cells" },
+  headingBannerFull: "Full width",
+  headingMore: "More options",
+  headingCalloutJoined: "not for a heading joined to the table",
+  layoutMatchTheme: "Use theme colours",
+  layoutMatchThemeHint: "Headings, the receipt/payment band and shapes take the theme's colours too, with readable words. Off: as before.",
   layoutTheme: "Theme (colours)",
   layoutThemeNone: "No theme (as the form)",
   layoutThemeHint: "Colours the title, the column headings, every other row and the total row at once. Colours you set yourself stay on top.",

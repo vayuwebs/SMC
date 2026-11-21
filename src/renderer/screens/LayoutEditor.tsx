@@ -13,6 +13,9 @@ import {
   BORDER_STYLES,
   LAYOUT_FONTS,
   LINE_WEIGHTS,
+  HEADING_MODES,
+  CELL_MODES,
+  headingModeOf,
   shapePaint,
   shapeStylePresets,
   themeOf,
@@ -70,7 +73,7 @@ import { MarginsMenu } from "../components/PageMargins.js";
 import { cleanPage } from "./PrintDialog.js";
 import { askConfirm } from "../components/ConfirmDialog.js";
 import { ShapeGallery, ShapeStyleGallery } from "../components/ShapeFormat.js";
-import { BEVELS, OUTLINE_DASHES, SHADOWS, shapeInfo, type BevelPreset, type OutlineDash, type ShadowPreset, type ShapeId } from "../../shared/shapes.js";
+import { BEVELS, OUTLINE_DASHES, SHADOWS, SHAPES_WITHOUT_FLAT_BOTTOM, shapeInfo, type BevelPreset, type OutlineDash, type ShadowPreset, type ShapeId } from "../../shared/shapes.js";
 
 /**
  * The layout editor, shaped like Excel: a ribbon of tabs across the top, the
@@ -345,6 +348,8 @@ export function LayoutEditor({
   const [drag, setDrag] = useState<Drag | null>(null);
   const [overEdge, setOverEdge] = useState(false);
   const [viewZoom, setViewZoom] = useState(100);
+  // The heading tab's rarely used options (gradient, effects, text effects), closed by default.
+  const [moreShapeOptions, setMoreShapeOptions] = useState(false);
   // The format painter: a style picked up, waiting to be put on the next click.
   const [painter, setPainter] = useState<CellStyle | null>(null);
   // The pen the border buttons draw with.
@@ -1187,17 +1192,82 @@ export function LayoutEditor({
     outlineDash: undefined, colour: undefined, shadow: undefined, bevel: undefined, glow: undefined, glowPt: undefined,
   };
   const currentShape = (own.shape ?? "rect") as ShapeId;
-  const adjustable = own.shape !== undefined && shapeInfo(currentShape).adjust !== undefined;
+  const adjustable = own.shape !== undefined && shapeInfo(currentShape).adjust !== undefined && moreShapeOptions;
+  const matchTheme = draft.matchTheme === true;
+  const selectedPart = partSelected ? REPORT_PARTS[report].find((each) => each.id === selection.part) : undefined;
+  const placement = selectedPart ? headingModeOf(report, draft, selectedPart.id) : "form";
+  const joined = placement === "row";
+  const placementGroup = selectedPart?.block ? (
+    <Group label={t.headingPlacement}>
+      <div className="placement-choices" role="radiogroup" aria-label={t.headingPlacement}>
+        {HEADING_MODES.map((mode) => {
+          const blocked = mode === "row" && !selectedPart.joinable;
+          return (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={placement === mode}
+              className={`ribbon-button big placement-choice${placement === mode ? " active" : ""}`}
+              disabled={blocked}
+              title={blocked ? t.headingCannotJoin : t.headingPlacementHints[mode]}
+              onClick={() =>
+                // A callout's point cannot sit on the table: joining drops it.
+                apply(mode === "row" && own.shape && SHAPES_WITHOUT_FLAT_BOTTOM.has(own.shape) ? { headingMode: mode, shape: undefined } : { headingMode: mode })
+              }
+            >
+              <span className={`placement-thumb placement-${mode}`} aria-hidden="true">
+                <span className="placement-head" />
+                <span className="placement-table" />
+              </span>
+              <span className="ribbon-label">{t.headingPlacements[mode]}</span>
+            </button>
+          );
+        })}
+      </div>
+      {placement === "banner" && (
+        <label className="ribbon-check">
+          <input type="checkbox" checked={own.bannerFull === true} onChange={(event) => apply({ bannerFull: event.target.checked || undefined })} />
+          {t.headingBannerFull}
+        </label>
+      )}
+    </Group>
+  ) : selectedPart ? (
+    <Group label={t.headingPlacement}>
+      <span className="ribbon-note">{t.headingPieceNote}</span>
+    </Group>
+  ) : null;
+  const cellsGroup = selectedPart?.pieced ? (
+    <Group label={t.headingCells}>
+      <div className="ribbon-rows" role="radiogroup" aria-label={t.headingCells}>
+        {CELL_MODES.map((mode) => (
+          <label key={mode} className="ribbon-check">
+            <input
+              type="radio"
+              name="heading-cells"
+              checked={(own.cells ?? "separate") === mode}
+              onChange={() => apply({ cells: mode === "separate" ? undefined : mode })}
+            />
+            {t.headingCellModes[mode]}
+          </label>
+        ))}
+      </div>
+    </Group>
+  ) : null;
   const shapeTab = !partSelected ? (
     <Group label={t.shapeTab}>
       <span className="ribbon-note">{t.shapeNeedsHeading}</span>
     </Group>
   ) : (
     <>
+      {placementGroup}
+      {cellsGroup}
       <Group label={t.shapeInsert}>
         <ShapeGallery
           value={own.shape}
-          paint={shapePaint(own, theme)}
+          paint={shapePaint(own, theme, matchTheme)}
+          disabled={joined ? SHAPES_WITHOUT_FLAT_BOTTOM : undefined}
+          disabledNote={t.headingCalloutJoined}
           label={t.shapeInsert}
           groupLabels={t.shapeGroups}
           shapeLabel={shapeLabel}
@@ -1226,7 +1296,7 @@ export function LayoutEditor({
           shape={currentShape}
           presets={presets}
           label={t.shapeStyles}
-          paintOf={(patch) => shapePaint(patch, theme)}
+          paintOf={(patch) => shapePaint(patch, theme, matchTheme)}
           onPick={(patch) => apply({ ...PRESET_CLEARS, ...patch })}
         />
       </Group>
@@ -1235,6 +1305,24 @@ export function LayoutEditor({
         <div className="ribbon-rows">
           <div className="ribbon-row">
             <ColourButton icon="🪣" title={t.shapeFill} value={own.fill} noneValue={NO_FILL} noneLabel={t.layoutFillBlank} onChange={(fill) => apply({ fill })} />
+            <ColourButton icon="▭" title={t.shapeOutline} value={own.lineColour} onChange={(lineColour) => apply({ lineColour })} />
+          </div>
+          <button
+            type="button"
+            className={`ribbon-button${moreShapeOptions ? " active" : ""}`}
+            aria-expanded={moreShapeOptions}
+            onClick={() => setMoreShapeOptions(!moreShapeOptions)}
+          >
+            {t.headingMore} {moreShapeOptions ? "▴" : "▾"}
+          </button>
+        </div>
+      </Group>
+
+      {moreShapeOptions && (
+      <>
+      <Group label={t.shapeFill2}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
             <ColourButton
               icon="◐"
               title={t.shapeFill2}
@@ -1264,7 +1352,6 @@ export function LayoutEditor({
       <Group label={t.shapeOutline}>
         <div className="ribbon-rows">
           <div className="ribbon-row">
-            <ColourButton icon="▭" title={t.shapeOutline} value={own.lineColour} onChange={(lineColour) => apply({ lineColour })} />
             <select
               className="ribbon-select"
               title={t.shapeOutlineWeight}
@@ -1351,6 +1438,8 @@ export function LayoutEditor({
           </label>
         </div>
       </Group>
+      </>
+      )}
       <Group label="Excel">
         <span className="ribbon-note">{t.shapeExcelNote}</span>
       </Group>
@@ -1489,6 +1578,15 @@ export function LayoutEditor({
               </option>
             ))}
           </select>
+          <label className="ribbon-check" title={t.layoutMatchThemeHint}>
+            <input
+              type="checkbox"
+              disabled={!draft.theme}
+              checked={draft.matchTheme === true}
+              onChange={(event) => change(withReport(draft, { matchTheme: event.target.checked ? true : undefined }))}
+            />
+            {t.layoutMatchTheme}
+          </label>
           <div className="theme-swatches">
             {TABLE_THEMES.map((theme) => (
               <button

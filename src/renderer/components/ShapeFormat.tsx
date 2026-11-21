@@ -37,6 +37,8 @@ export function ShapeGallery({
   shapeLabel,
   noneLabel,
   onPick,
+  disabled,
+  disabledNote,
 }: {
   value: ShapeId | undefined;
   paint: ShapePaint;
@@ -45,6 +47,9 @@ export function ShapeGallery({
   shapeLabel: (id: ShapeId) => string;
   noneLabel: string;
   onPick: (shape: ShapeId | undefined) => void;
+  /** Shapes that cannot be picked here, and why (shown as their tooltip). */
+  disabled?: ReadonlySet<ShapeId>;
+  disabledNote?: string;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -84,7 +89,8 @@ export function ShapeGallery({
                     type="button"
                     role="menuitem"
                     className={`shape-tile${value === shape.id ? " chosen" : ""}`}
-                    title={shapeLabel(shape.id)}
+                    disabled={disabled?.has(shape.id)}
+                    title={disabled?.has(shape.id) && disabledNote ? `${shapeLabel(shape.id)} – ${disabledNote}` : shapeLabel(shape.id)}
                     aria-label={shapeLabel(shape.id)}
                     onClick={() => {
                       onPick(shape.id);
