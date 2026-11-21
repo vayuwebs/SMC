@@ -148,3 +148,21 @@ describe("a shape joined to the table", () => {
     }
   });
 });
+
+describe("a joined shape sits on the table's line, at its own size", () => {
+  const paint = { fill: "#fff2cc", outline: "#4caf50" };
+
+  it("cuts its corners as deep as an unjoined one of the same height", () => {
+    const flat = shapeSvg("snip2same", 564, 33, paint, 35, "t", { flatBottom: true });
+    const plain = shapeSvg("snip2same", 564, 33, paint, 35, "t");
+    // The top edge starts at the same snip: 35% of the 33px height, not of a stretched one.
+    const start = (svg: string) => /d="M([\d.]+),0/.exec(svg)?.[1];
+    expect(start(flat)).toBe(start(plain));
+    expect(start(flat)).toBe("11.55");
+  });
+
+  it("stops above the table's line, so the line shows under it", () => {
+    const svg = shapeSvg("snip2same", 564, 33, paint, 35, "t", { flatBottom: true, shareBottomPx: 0.93 });
+    expect(svg).toContain('<rect x="0" y="0" width="564" height="32.07"/>');
+  });
+});

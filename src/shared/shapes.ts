@@ -159,10 +159,12 @@ function ellipse(cx: number, cy: number, rx: number, ry: number): string {
  * The shape's pieces for a heading `w` by `h` pixels, back to front.
  * `adjust` is 0..100; out of range or absent, the shape's own default.
  */
-export function shapePieces(id: ShapeId, w: number, h: number, adjust?: number): ShapePiece[] {
+export function shapePieces(id: ShapeId, w: number, h: number, adjust?: number, cornerBasis?: number): ShapePiece[] {
   const info = shapeInfo(id);
   const a = Math.max(0, Math.min(100, adjust ?? info.adjust ?? 50)) / 100;
-  const m = Math.min(w, h);
+  // What corners, snips and points are sized from: the shorter side, unless a
+  // flat-bottomed shape (drawn taller, then cut) says its real height.
+  const m = cornerBasis ?? Math.min(w, h);
   const body = (d: string): ShapePiece => ({ d, role: "body" });
 
   switch (id) {
@@ -499,6 +501,11 @@ export interface ShapeOptions {
    * line is its bottom edge.
    */
   flatBottom?: boolean;
+  /**
+   * With flatBottom: how much of the box's bottom the table's line takes (the
+   * heading overlaps it by one line). The shape stops above it, so the line shows.
+   */
+  shareBottomPx?: number;
 }
 
 /** How much taller a flat-bottomed shape is drawn before it is cut at its box. */
@@ -514,7 +521,8 @@ export function shapeSvg(
   options: ShapeOptions = {},
 ): string {
   const flat = options.flatBottom === true && !SHAPES_WITHOUT_FLAT_BOTTOM.has(id);
-  const pieces = shapePieces(id, w, flat ? h * FLAT_BOTTOM_STRETCH : h, adjust);
+  const pieces = flat ? shapePieces(id, w, h * FLAT_BOTTOM_STRETCH, adjust, Math.min(w, h)) : shapePieces(id, w, h, adjust);
+  const clipHeight = Math.max(1, h - (options.shareBottomPx ?? 0));
   const outlinePx = (paint.outlinePt ?? 1) * PT_TO_PX;
   const dash = paint.outlineDash ?? "solid";
   const accent = paint.accent ?? DEFAULT_ACCENT;
@@ -603,7 +611,7 @@ export function shapeSvg(
     }
   }
 
-  if (flat) defs.push(`<clipPath id="${uid}-c"><rect x="0" y="0" width="${f(w)}" height="${f(h)}"/></clipPath>`);
+  if (flat) defs.push(`<clipPath id="${uid}-c"><rect x="0" y="0" width="${f(w)}" height="${f(clipHeight)}"/></clipPath>`);
   const drawn = filters.length > 0 ? `<g filter="url(#${uid}-f)">${shapes.join("")}</g>` : shapes.join("");
   const group = flat ? `<g clip-path="url(#${uid}-c)">${drawn}</g>` : drawn;
   return (

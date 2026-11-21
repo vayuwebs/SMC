@@ -1974,7 +1974,11 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout, report: Pri
     // callout, which cannot have one, prints as a plain row instead).
     const flatBottom = headingModeOf(report, layout, element.dataset["part"] ?? "") === "row";
     if (flatBottom && SHAPES_WITHOUT_FLAT_BOTTOM.has(style.shape!)) continue;
-    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme, layout.matchTheme === true), style.shapeAdjust, `shape${uid}`, { flatBottom });
+    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme, layout.matchTheme === true), style.shapeAdjust, `shape${uid}`, {
+      flatBottom,
+      // The heading overlaps the table by one line (placementRules); leave it showing.
+      shareBottomPx: flatBottom ? ((layout.lineWeight ? LINE_WEIGHT_PT[layout.lineWeight] : 0.7) * 96) / 72 : 0,
+    });
     let layer = element.querySelector<HTMLElement>(":scope > .shape-layer");
     if (!layer) {
       layer = document.createElement("span");
