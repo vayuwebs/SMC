@@ -1645,10 +1645,13 @@ interface JoinLine {
 function placementRules(selector: string, style: CellStyle, part: ReportPart, mode: HeadingMode, join: JoinLine): string[] {
   const rules: string[] = [];
   const line = `${join.widthPt}pt solid ${join.colour}`;
-  const shaped = style.shape !== undefined && style.shape !== "rect";
-  const one = part.pieced === true && style.cells === "one";
+  // With an outer border the heading is a plain box (its line), its shape inside it.
+  const framed = style.frame === true && style.shape !== undefined && style.shape !== "rect";
+  const shaped = !framed && style.shape !== undefined && style.shape !== "rect";
+  // A bordered heading's boxes sit inside its shape: like one cell, never boxes of their own.
+  const one = part.pieced === true && (style.cells === "one" || framed);
   if (one) {
-    const clear = shaped || (style.fill !== undefined && style.fill !== NO_FILL) ? " background: transparent;" : "";
+    const clear = shaped || framed || (style.fill !== undefined && style.fill !== NO_FILL) ? " background: transparent;" : "";
     rules.push(
       `${selector} { --heading-gap: 0mm; gap: 0;${shaped ? "" : ` border: ${line}; box-sizing: border-box;`} }`,
       `${selector} > [data-part] { border-color: transparent;${clear} }`,
@@ -1715,7 +1718,7 @@ function partRules(
   const framed = shaped && style.frame === true;
   // A bordered heading sits like a plain box (its shape is inside it), in its own line colour.
   const boxJoin = framed && style.frameLine ? { ...join, colour: style.frameLine } : join;
-  if (part?.block) rules.push(...placementRules(selector, framed ? { ...style, shape: undefined } : style, part, mode, boxJoin));
+  if (part?.block) rules.push(...placementRules(selector, style, part, mode, boxJoin));
   if (framed && mode !== "row") {
     // Apart from the table: its border all round.
     // A piece outranks its heading's lines round every piece.

@@ -323,3 +323,21 @@ describe("the gap between the outer border and the shape", () => {
     expect(() => parse({ frameGapMm: 21 })).toThrow();
   });
 });
+
+describe("a heading of boxes with an outer border", () => {
+  const band = { headingMode: "row" as const, shape: "pill" as const, frame: true as const, frameFill: "#fde4d6", frameLine: "#cc0000" };
+
+  it("draws the border round the whole heading, in its colour, never round the boxes inside the shape", () => {
+    const out = css({ "part:band": band });
+    expect(blocks(out, '#r [data-part="band"]')).toContain("border: 0.7pt solid #cc0000");
+    const pieces = blocks(out, '#r [data-part="band"] > [data-part]');
+    expect(pieces).toContain("border-color: transparent");
+    expect(pieces).not.toMatch(/border: [\d.]+pt solid/);
+  });
+
+  it("the same as a banner", () => {
+    const out = css({ "part:band": { ...band, headingMode: "banner" } });
+    expect(blocks(out, '#r [data-part="band"]')).toContain("border: 0.7pt solid #cc0000");
+    expect(blocks(out, '#r [data-part="band"] > [data-part]')).not.toMatch(/border: [\d.]+pt solid/);
+  });
+});
