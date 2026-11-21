@@ -434,7 +434,14 @@ export interface Strings {
   headingPieceNote: string;
   headingCells: string;
   headingCellModes: { one: string; separate: string };
-  headingBannerFull: string;
+  headingFrame: string;
+  headingFrameHint: string;
+  headingFrameFill: string;
+  headingFrameLine: string;
+  headingShapeSize: string;
+  headingShapeWords: string;
+  headingShapeFull: string;
+  headingShapeWidth: string;
   headingMore: string;
   headingCalloutJoined: string;
   layoutMatchTheme: string;
@@ -1242,7 +1249,14 @@ export const gu: Strings = {
   headingPieceNote: "આ મથાળાનો એક ભાગ છે: ક્યાં રાખવું તે આખા મથાળા પર પસંદ કરો.",
   headingCells: "ખાનાં",
   headingCellModes: { one: "એક ખાનું", separate: "અલગ ખાનાં" },
-  headingBannerFull: "પૂરી પહોળાઈ",
+  headingFrame: "બહારની કિનારી",
+  headingFrameHint: "મથાળું એક સાદું ખાનું બને — પોતાના રંગ અને કિનારી સાથે — અને આકાર તેની અંદર આવે.",
+  headingFrameFill: "બહારના ખાનાનો રંગ",
+  headingFrameLine: "બહારની કિનારીનો રંગ",
+  headingShapeSize: "આકારનું કદ",
+  headingShapeWords: "શબ્દો જેટલું",
+  headingShapeFull: "પૂરી પહોળાઈ",
+  headingShapeWidth: "આકારની પહોળાઈ",
   headingMore: "વધુ વિકલ્પો",
   headingCalloutJoined: "કોષ્ટક સાથે જોડેલા મથાળામાં ન ચાલે",
   layoutMatchTheme: "થીમના રંગો વાપરો",
@@ -2083,7 +2097,14 @@ export const en: Strings = {
   headingPieceNote: "This is a piece of a heading: choose the placement on the whole heading.",
   headingCells: "Cells",
   headingCellModes: { one: "One cell", separate: "Separate cells" },
-  headingBannerFull: "Full width",
+  headingFrame: "Outer border",
+  headingFrameHint: "The heading becomes a plain box, in its own colours and border, with the shape inside it.",
+  headingFrameFill: "Outer box colour",
+  headingFrameLine: "Outer border colour",
+  headingShapeSize: "Shape size",
+  headingShapeWords: "Round the words",
+  headingShapeFull: "Full width",
+  headingShapeWidth: "Shape width",
   headingMore: "More options",
   headingCalloutJoined: "not for a heading joined to the table",
   layoutMatchTheme: "Use theme colours",

@@ -273,8 +273,18 @@ const cellStyleObject = z
     cells: z.enum(CELL_MODES).optional(),
     /** A heading piece: the space before it, from the piece before. */
     gapMm: z.number().min(0).max(100).optional(),
-    /** A banner as wide as its box, rather than round its words. */
+    /** The shape as wide as its box (a banner's, or a bordered heading's), rather than round its words. */
     bannerFull: z.literal(true).optional(),
+    /** The shape's width in mm, inside its box: between round-the-words and full. */
+    shapeWidthMm: z.number().min(5).max(400).optional(),
+    /**
+     * An outer border: the heading is a plain box (joined: on the table's line)
+     * in its own colours, with the shape drawn whole inside it.
+     */
+    frame: z.literal(true).optional(),
+    /** The outer box's background and its line. Its line defaults to the table's. */
+    frameFill: hexColour.optional(),
+    frameLine: hexColour.optional(),
     /** Excel's borders: each edge its own line style and colour. */
     borders: z
       .object({ top: borderEdge.optional(), right: borderEdge.optional(), bottom: borderEdge.optional(), left: borderEdge.optional() })
@@ -1602,15 +1612,17 @@ function shapedPartRules(root: string, selector: string, style: CellStyle, part?
   const padding = `padding: ${info.padYMm}mm ${info.padXMm}mm ${info.padYMm + (info.padBottomMm ?? 0)}mm`;
   // The shape is the outline: never a rectangle round it. A joined heading's
   // bottom edge is the table's own line, laid over it (see placementRules).
+  // With an outer border the box is drawn (its colours, its line); without, the shape is all there is.
+  const box = style.frame ? `background: ${style.frameFill ?? "transparent"};` : "background: transparent; border-color: transparent;";
   const rules = [
-    `${selector} { position: relative; isolation: isolate; background: transparent; border-color: transparent; ${padding}; }`,
+    `${selector} { position: relative; isolation: isolate; ${box} ${padding}; }`,
     `${selector} :is(td, th, div, span) { background: transparent; border-color: transparent; }`,
     `${selector} > .shape-layer { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; overflow: visible; background: transparent; }`,
     // A theme colours everything inside the title; never the drawing itself.
     `${selector} > .shape-layer > svg, ${selector} > .shape-layer > svg * { display: block; overflow: visible; background: transparent; }`,
   ];
   // A piece of a heading: outrank its heading's lines round every piece.
-  if (part && !part.block) rules.push(`${root} [data-part] > [data-part]${selector.slice(root.length + 1)} { border-color: transparent; }`);
+  if (part && !part.block && !style.frame) rules.push(`${root} [data-part] > [data-part]${selector.slice(root.length + 1)} { border-color: transparent; }`);
   return rules;
 }
 
@@ -1696,7 +1708,16 @@ function partRules(
     if (gradient) rules.push(`${selector} * { background: transparent; }`);
   }
   if (shaped) rules.push(...shapedPartRules(root, selector, style, part));
-  if (part?.block) rules.push(...placementRules(selector, style, part, mode, join));
+  const framed = shaped && style.frame === true;
+  // A bordered heading sits like a plain box (its shape is inside it), in its own line colour.
+  const boxJoin = framed && style.frameLine ? { ...join, colour: style.frameLine } : join;
+  if (part?.block) rules.push(...placementRules(selector, framed ? { ...style, shape: undefined } : style, part, mode, boxJoin));
+  if (framed && mode !== "row") {
+    // Apart from the table: its border all round.
+    // A piece outranks its heading's lines round every piece.
+    const where = part && !part.block ? `${root} [data-part] > [data-part]${attribute}` : selector;
+    rules.push(`${where} { border: ${boxJoin.widthPt}pt solid ${boxJoin.colour}; }`);
+  }
   if (style.gapMm !== undefined && part && !part.block) {
     // The space before a piece, over the heading's own; nothing at all shares one line when joined.
     const share = style.gapMm === 0 ? " - var(--heading-share, 0pt)" : "";
@@ -1991,13 +2012,15 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout, report: Pri
   for (const element of root.querySelectorAll<HTMLElement>("[data-part]")) {
     const style = shaped.get(element.dataset["part"] ?? "");
     if (!style) continue;
-    const box = shapeBox(element, style);
+    const mode = headingModeOf(report, layout, element.dataset["part"] ?? "");
+    const box = shapeBox(element, style, mode);
     if (!box) continue;
     const { width, height } = box;
     uid += 1;
     // Joined to the table: a straight bottom, laid on the table's line (a
     // callout, which cannot have one, prints as a plain row instead).
-    const flatBottom = headingModeOf(report, layout, element.dataset["part"] ?? "") === "row";
+    // Inside an outer border the shape no longer touches the table: drawn whole.
+    const flatBottom = mode === "row" && style.frame !== true;
     if (flatBottom && SHAPES_WITHOUT_FLAT_BOTTOM.has(style.shape!)) continue;
     const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme, layout.matchTheme === true), style.shapeAdjust, `shape${uid}`, {
       flatBottom,
@@ -2064,36 +2087,53 @@ const PX_PER_MM = 96 / 25.4;
  * the whole box less the inner space ("fill"), or centred round the words,
  * as wide as they need plus the shape's own margin ("center").
  */
+export function shapeSpan(
+  style: CellStyle,
+  mode: HeadingMode,
+  box: { width: number; height: number },
+  wordsHalf: number,
+): { left: number; top: number; width: number; height: number } {
+  const framed = style.frame === true;
+  // A bordered heading keeps its shape a little in from the box's edges.
+  const inset = framed ? FRAME_INSET_MM * PX_PER_MM : 0;
+  const height = Math.max(4, box.height - 2 * inset);
+  const room = Math.max(4, box.width - 2 * inset);
+  let width = room;
+  // Joined without a border, or as the form: the shape fills the heading.
+  if (framed || mode === "banner") {
+    if (style.shapeWidthMm !== undefined) width = Math.min(room, style.shapeWidthMm * PX_PER_MM);
+    else if (!style.bannerFull && wordsHalf > 0) {
+      const margin = shapeInfo(style.shape!).padXMm * PX_PER_MM;
+      width = Math.min(room, Math.max(height * 2, 2 * wordsHalf + 2 * margin));
+    }
+  }
+  return { left: (box.width - width) / 2, top: inset, width, height };
+}
+
+/** How far a bordered heading's shape stays in from the box's edges. */
+const FRAME_INSET_MM = 1;
+
+/** Where a heading's shape goes on screen: its words measured, then shapeSpan. */
 function shapeBox(
   element: HTMLElement,
   style: CellStyle,
+  mode: HeadingMode,
 ): { left: number; top: number; width: number; height: number } | null {
   const boxWidth = element.offsetWidth;
   const boxHeight = element.offsetHeight;
   if (boxWidth === 0 || boxHeight === 0) return null;
-  const inset = 0;
-  const height = Math.max(4, boxHeight - 2 * inset);
-  let width = Math.max(4, boxWidth - 2 * inset);
-
-  if (style.headingMode === "banner" && !style.bannerFull) {
-    // The words' extent, measured on screen and brought back to the box's own
-    // pixels (the sheet may be zoomed).
-    const outer = element.getBoundingClientRect();
-    const scale = outer.width > 0 ? boxWidth / outer.width : 1;
-    const centre = outer.left + outer.width / 2;
-    let half = 0;
-    for (const child of element.children) {
-      if (child.classList.contains("shape-layer")) continue;
-      const rects = child.getClientRects();
-      for (const rect of rects) {
-        if (rect.width === 0) continue;
-        half = Math.max(half, centre - rect.left, rect.right - centre);
-      }
-    }
-    if (half > 0) {
-      const margin = shapeInfo(style.shape!).padXMm * PX_PER_MM;
-      width = Math.min(width, Math.max(height * 2, 2 * half * scale + 2 * margin));
+  // The words' extent, measured on screen and brought back to the box's own
+  // pixels (the sheet may be zoomed).
+  const outer = element.getBoundingClientRect();
+  const scale = outer.width > 0 ? boxWidth / outer.width : 1;
+  const centre = outer.left + outer.width / 2;
+  let half = 0;
+  for (const child of element.children) {
+    if (child.classList.contains("shape-layer")) continue;
+    for (const rect of child.getClientRects()) {
+      if (rect.width === 0) continue;
+      half = Math.max(half, centre - rect.left, rect.right - centre);
     }
   }
-  return { left: (boxWidth - width) / 2, top: inset, width, height };
+  return shapeSpan(style, mode, { width: boxWidth, height: boxHeight }, half * scale);
 }

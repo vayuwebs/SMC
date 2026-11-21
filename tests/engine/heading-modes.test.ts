@@ -15,6 +15,7 @@ import {
   withTheme,
   reportLayoutSchema,
   shapePaint,
+  shapeSpan,
   themeOf,
   type CellStyle,
   type ReportLayout,
@@ -240,5 +241,59 @@ describe("the voucher's વાઉચર heading is an ordinary heading", () => {
     expect(partStyleOf("vouchers", own({ shape: "pill", fill: "#ffeeaa" }), "voucherTitle")).toMatchObject({ shape: "pill", fill: "#ffeeaa", colour: "#ffffff" });
     const plain = layoutCss("vouchers", own({ shape: "rect" }), "#r");
     expect(plain).not.toContain('#r [data-part="voucherTitle"] { position: relative; isolation: isolate;');
+  });
+});
+
+describe("an outer border round a shaped heading", () => {
+  it("keeps the new settings, and refuses a shape narrower than 5 mm", () => {
+    const style = { headingMode: "row" as const, shape: "ribbon" as const, frame: true as const, frameFill: "#fff2cc", frameLine: "#1f4e79", shapeWidthMm: 120 };
+    expect(parse(style)).toEqual(style);
+    expect(() => parse({ shapeWidthMm: 2 })).toThrow();
+  });
+
+  it("joined: a plain box on the table's line, in its own colours, the shape inside it", () => {
+    const title = blocks(css({ "part:title": { headingMode: "row", shape: "ribbon", frame: true, frameFill: "#fff2cc", frameLine: "#1f4e79" } }), '#r [data-part="title"]');
+    expect(title).toContain("margin-bottom: -0.7pt");
+    expect(title).toContain("border: 0.7pt solid #1f4e79");
+    expect(title).toContain("background: #fff2cc");
+    expect(title).not.toContain("border-color: transparent");
+    expect(title).toContain("isolation: isolate");
+  });
+
+  it("joined without its own line colour: the table's", () => {
+    const title = blocks(css({ "part:title": { headingMode: "row", shape: "ribbon", frame: true } }), '#r [data-part="title"]');
+    expect(title).toContain("border: 0.7pt solid #000");
+  });
+
+  it("a banner: the box stays apart from the table, with its border", () => {
+    const title = blocks(css({ "part:title": { headingMode: "banner", shape: "ribbon", frame: true, frameLine: "#4caf50" } }), '#r [data-part="title"]');
+    expect(title).not.toContain("margin-bottom: -");
+    expect(title).toContain("border: 0.7pt solid #4caf50");
+  });
+});
+
+describe("where the shape goes inside its heading", () => {
+  const box = { width: 600, height: 40 };
+  const px = 96 / 25.4;
+
+  it("round the words by default in a bordered box, a little in from its edges", () => {
+    const span = shapeSpan({ shape: "ribbon", frame: true }, "row", box, 100);
+    expect(span.top).toBeCloseTo(px);
+    expect(span.height).toBeCloseTo(40 - 2 * px);
+    expect(span.width).toBeGreaterThan(200);
+    expect(span.width).toBeLessThan(300);
+    expect(span.left).toBeCloseTo((600 - span.width) / 2);
+  });
+
+  it("full width, or the width the school typed", () => {
+    expect(shapeSpan({ shape: "ribbon", frame: true, bannerFull: true }, "row", box, 100).width).toBeCloseTo(600 - 2 * px);
+    expect(shapeSpan({ shape: "ribbon", frame: true, shapeWidthMm: 80 }, "row", box, 100).width).toBeCloseTo(80 * px);
+    expect(shapeSpan({ shape: "ribbon", headingMode: "banner", shapeWidthMm: 80 }, "banner", box, 100).width).toBeCloseTo(80 * px);
+    // Never wider than the box.
+    expect(shapeSpan({ shape: "ribbon", frame: true, shapeWidthMm: 400 }, "row", box, 100).width).toBeCloseTo(600 - 2 * px);
+  });
+
+  it("a joined shape without a border fills the heading, as before", () => {
+    expect(shapeSpan({ shape: "ribbon" }, "row", box, 100)).toEqual({ left: 0, top: 0, width: 600, height: 40 });
   });
 });

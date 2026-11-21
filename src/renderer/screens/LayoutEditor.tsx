@@ -273,6 +273,10 @@ const CLEARED: StylePatch = {
   cells: undefined,
   gapMm: undefined,
   bannerFull: undefined,
+  shapeWidthMm: undefined,
+  frame: undefined,
+  frameFill: undefined,
+  frameLine: undefined,
   borders: undefined,
 };
 
@@ -1251,18 +1255,68 @@ export function LayoutEditor({
           );
         })}
       </div>
-      {placement === "banner" && (
-        <label className="ribbon-check">
-          <input type="checkbox" checked={own.bannerFull === true} onChange={(event) => apply({ bannerFull: event.target.checked || undefined })} />
-          {t.headingBannerFull}
-        </label>
-      )}
     </Group>
   ) : selectedPart ? (
     <Group label={t.headingPlacement}>
       <span className="ribbon-note">{t.headingPieceNote}</span>
     </Group>
   ) : null;
+  // A shape on a joined heading or a banner can sit inside a plain bordered box,
+  // and be sized round its words, full width, or to a width in mm.
+  const hasShape = own.shape !== undefined && own.shape !== "rect";
+  const sizable = hasShape && (own.frame === true || placement === "banner");
+  const frameGroup =
+    selectedPart && hasShape && placement !== "form" ? (
+      <Group label={t.headingFrame}>
+        <div className="ribbon-rows">
+          <div className="ribbon-row">
+            <label className="ribbon-check" title={t.headingFrameHint}>
+              <input type="checkbox" checked={own.frame === true} onChange={(event) => apply({ frame: event.target.checked || undefined })} />
+              {t.headingFrame}
+            </label>
+            {own.frame && (
+              <>
+                <ColourButton
+                  icon="▣"
+                  title={t.headingFrameFill}
+                  value={own.frameFill}
+                  noneValue=""
+                  noneLabel={t.layoutFillBlank}
+                  onChange={(frameFill) => apply({ frameFill: frameFill || undefined })}
+                />
+                <ColourButton icon="▭" title={t.headingFrameLine} value={own.frameLine} onChange={(frameLine) => apply({ frameLine })} />
+              </>
+            )}
+          </div>
+          {sizable && (
+            <div className="ribbon-row" role="group" aria-label={t.headingShapeSize}>
+              <button
+                type="button"
+                className={`ribbon-button${!own.bannerFull && own.shapeWidthMm === undefined ? " active" : ""}`}
+                onClick={() => apply({ bannerFull: undefined, shapeWidthMm: undefined })}
+              >
+                {t.headingShapeWords}
+              </button>
+              <button
+                type="button"
+                className={`ribbon-button${own.bannerFull && own.shapeWidthMm === undefined ? " active" : ""}`}
+                onClick={() => apply({ bannerFull: true, shapeWidthMm: undefined })}
+              >
+                {t.headingShapeFull}
+              </button>
+              <MiniStepper
+                label={`${t.headingShapeWidth} (${t.mm})`}
+                value={own.shapeWidthMm}
+                step={5}
+                min={5}
+                max={400}
+                onChange={(shapeWidthMm) => apply({ shapeWidthMm: shapeWidthMm || undefined })}
+              />
+            </div>
+          )}
+        </div>
+      </Group>
+    ) : null;
   const cellsGroup = selectedPart?.pieced ? (
     <Group label={t.headingCells}>
       <div className="ribbon-rows" role="radiogroup" aria-label={t.headingCells}>
@@ -1288,6 +1342,7 @@ export function LayoutEditor({
     <>
       {placementGroup}
       {cellsGroup}
+      {frameGroup}
       <Group label={t.shapeInsert}>
         <ShapeGallery
           value={own.shape}
