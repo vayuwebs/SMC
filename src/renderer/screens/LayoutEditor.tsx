@@ -16,6 +16,8 @@ import {
   HEADING_MODES,
   CELL_MODES,
   headingModeOf,
+  partStyleOf,
+  PART_DEFAULTS,
   withTheme,
   shapePaint,
   shapeStylePresets,
@@ -454,7 +456,13 @@ export function LayoutEditor({
   const targets = useMemo(() => targetsFor(selection, scope), [selection, scope]);
 
   const first = targets[0];
-  const own: CellStyle = draft && first ? (draft.styles[targetKey(first)] ?? {}) : {};
+  // A heading shows its look as it prints: the form's default (the voucher's ribbon) under the school's own.
+  const own: CellStyle =
+    draft && first
+      ? first.kind === "part"
+        ? partStyleOf(report, draft, first.part)
+        : (draft.styles[targetKey(first)] ?? {})
+      : {};
   const shown: CellStyle =
     draft && cellSelection
       ? styleAt(draft, cellSelection.anchor.row, cellSelection.anchor.col, cellSelection.anchor.group, cellSelection.anchor.line)
@@ -1290,7 +1298,14 @@ export function LayoutEditor({
           groupLabels={t.shapeGroups}
           shapeLabel={shapeLabel}
           noneLabel={t.shapeNone}
-          onPick={(shape) => apply(shape === undefined ? { shape: undefined, shapeAdjust: undefined } : { shape })}
+          onPick={(shape) =>
+            apply(
+              shape === undefined
+                ? // A heading whose form gives it a shape needs a plain box said out loud, or the default comes back.
+                  { shape: selectedPart && PART_DEFAULTS[report]?.[selectedPart.id]?.shape ? "rect" : undefined, shapeAdjust: undefined }
+                : { shape },
+            )
+          }
         />
         {adjustable && (
           <div className="ribbon-rows">

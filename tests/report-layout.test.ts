@@ -192,7 +192,12 @@ describe("row keys", () => {
 
 describe("the stylesheet", () => {
   it("is empty for an empty layout: the form prints exactly as before", () => {
-    for (const report of PRINTABLE_REPORTS) expect(layoutCss(report, emptyLayout(), "#r")).toBe("");
+    for (const report of PRINTABLE_REPORTS) {
+      const css = layoutCss(report, emptyLayout(), "#r");
+      // The voucher's વાઉચર ribbon is a default heading style (PART_DEFAULTS), not print.css: only it is drawn.
+      if (report === "vouchers") expect(css.split("\n").every((rule) => rule.includes('[data-part="voucherTitle"]'))).toBe(true);
+      else expect(css).toBe("");
+    }
   });
 
   it("scopes every rule to the root id and orders column, row, cell", () => {

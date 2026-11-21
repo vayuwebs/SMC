@@ -10,6 +10,7 @@ import {
   headingModeOf,
   isEmptyLayout,
   layoutCss,
+  partStyleOf,
   readableText,
   withTheme,
   reportLayoutSchema,
@@ -220,5 +221,24 @@ describe("the review's small fixes", () => {
     expect(on.theme).toBeUndefined();
     expect(on.matchTheme).toBeUndefined();
     expect(withTheme({ ...emptyLayout(), theme: "blue", matchTheme: true }, "green")).toMatchObject({ theme: "green", matchTheme: true });
+  });
+});
+
+describe("the voucher's વાઉચર heading is an ordinary heading", () => {
+  it("prints as a ribbon by default, from the heading system, not a fixed cut", () => {
+    expect(partStyleOf("vouchers", emptyLayout(), "voucherTitle")).toMatchObject({ shape: "ribbon", fill: "#7fb3d5", colour: "#ffffff" });
+    const out = layoutCss("vouchers", emptyLayout(), "#r");
+    expect(out).toContain('#r [data-part="voucherTitle"] { position: relative; isolation: isolate;');
+    const printCss = readFileSync(new URL("../../src/renderer/print/print.css", import.meta.url), "utf8");
+    const rule = /\.voucher-head \.voucher-title \{[^}]*\}/.exec(printCss)?.[0] ?? "";
+    expect(rule).not.toContain("clip-path");
+    expect(rule).not.toContain("background");
+  });
+
+  it("takes the school's own shape and colours, or none at all", () => {
+    const own = (style: CellStyle) => ({ ...emptyLayout(), styles: { "part:voucherTitle": style } });
+    expect(partStyleOf("vouchers", own({ shape: "pill", fill: "#ffeeaa" }), "voucherTitle")).toMatchObject({ shape: "pill", fill: "#ffeeaa", colour: "#ffffff" });
+    const plain = layoutCss("vouchers", own({ shape: "rect" }), "#r");
+    expect(plain).not.toContain('#r [data-part="voucherTitle"] { position: relative; isolation: isolate;');
   });
 });

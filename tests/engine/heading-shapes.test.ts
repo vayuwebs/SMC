@@ -3,7 +3,7 @@
  * options (fill, gradient, outline, effects, text effects) that go with them.
  */
 import { describe, expect, it } from "vitest";
-import { SHAPES, SHAPES_WITHOUT_FLAT_BOTTOM, SHAPE_GROUPS, shade, shapePieces, shapeSvg } from "../../src/shared/shapes.js";
+import { FLAT_BOTTOM_SHAPES, SHAPES, SHAPES_WITHOUT_FLAT_BOTTOM, SHAPE_GROUPS, shade, shapePieces, shapeSvg } from "../../src/shared/shapes.js";
 import {
   emptyLayout,
   layoutCss,
@@ -128,7 +128,8 @@ describe("shape styles and text effects", () => {
 
 describe("a shape joined to the table", () => {
   const paint = { fill: "#ddebf7", outline: "#1f4e79" };
-  const flat = SHAPES.map((shape) => shape.id).filter((id) => !SHAPES_WITHOUT_FLAT_BOTTOM.has(id));
+  // Only the shapes whose sides run straight down are cut flat; the rest are drawn whole.
+  const flat = [...FLAT_BOTTOM_SHAPES];
 
   it("leaves out only the callouts, whose point is at the bottom", () => {
     expect([...SHAPES_WITHOUT_FLAT_BOTTOM].sort()).toEqual(["calloutOval", "calloutRect", "calloutRound"]);
@@ -164,5 +165,25 @@ describe("a joined shape sits on the table's line, at its own size", () => {
   it("stops above the table's line, so the line shows under it", () => {
     const svg = shapeSvg("snip2same", 564, 33, paint, 35, "t", { flatBottom: true, shareBottomPx: 0.93 });
     expect(svg).toContain('<rect x="0" y="0" width="564" height="32.07"/>');
+  });
+});
+
+describe("a joined shape that has no straight sides is drawn whole", () => {
+  const paint = { fill: "#ddebf7", outline: "#1f4e79" };
+
+  it("keeps a ribbon's folded ends whole, above the table's line, never cut", () => {
+    const svg = shapeSvg("ribbonDown", 760, 30, paint, undefined, "t", { flatBottom: true, shareBottomPx: 0.93 });
+    expect(svg).not.toContain("clipPath");
+    const ys = [...svg.matchAll(/[ML]([\d.]+),([\d.]+)/g)].map((m) => Number(m[2]));
+    expect(Math.max(...ys)).toBeLessThanOrEqual(29.07);
+  });
+
+  it("still gives straight-sided shapes their flat bottom", () => {
+    for (const id of ["rect", "rounded", "snip2same", "round2same", "pill", "octagon", "badge"] as const) {
+      expect(shapeSvg(id, 760, 30, paint, undefined, "t", { flatBottom: true }), id).toContain("clipPath");
+    }
+    for (const id of ["ribbon", "ribbonDown", "ribbonUp", "scroll", "oval", "chevron", "hexagon", "arrowRight", "wave", "plaque", "floral"] as const) {
+      expect(shapeSvg(id, 760, 30, paint, undefined, "t", { flatBottom: true }), id).not.toContain("clipPath");
+    }
   });
 });

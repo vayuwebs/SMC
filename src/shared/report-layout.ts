@@ -747,6 +747,31 @@ function annexureBannerParts(): ReportPart[] {
 }
 
 /**
+ * A heading's own look before the school changes it, where the form has one:
+ * the voucher's વાઉચર heading is a pale-blue ribbon with white words. Kept here,
+ * not in print.css, so the heading tab can change it like any other heading.
+ */
+export const PART_DEFAULTS: Partial<Record<PrintableReportId, Record<string, CellStyle>>> = {
+  vouchers: { voucherTitle: { shape: "ribbon", fill: "#7fb3d5", lineColour: "#7fb3d5", colour: "#ffffff" } },
+};
+
+/** A heading's style as it prints: the form's default look, with the school's own choices over it. */
+export function partStyleOf(report: PrintableReportId, layout: ReportLayout, part: string): CellStyle {
+  const own = layout.styles[targetKey({ kind: "part", part })] ?? {};
+  const base = PART_DEFAULTS[report]?.[part];
+  return base ? { ...base, ...own } : own;
+}
+
+/** Every style of the layout, with each heading's default look filled in under it. */
+function stylesWithDefaults(report: PrintableReportId, layout: ReportLayout): Record<string, CellStyle> {
+  const styles = { ...layout.styles };
+  for (const part of Object.keys(PART_DEFAULTS[report] ?? {})) {
+    styles[targetKey({ kind: "part", part })] = partStyleOf(report, layout, part);
+  }
+  return styles;
+}
+
+/**
  * Where a heading really sits. Its own choice wins (a row only where it can
  * join); otherwise a joinable heading under a row heading joins too, so the
  * stack down to the table reads as one block - the Rojmel's title as a row
@@ -1826,10 +1851,10 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
   // A heading joined only because the heading above it is a row has no style
   // of its own: it still needs its row rules.
   const stacked = REPORT_PARTS[report]
-    .filter((part) => part.block && !(targetKey({ kind: "part", part: part.id }) in layout.styles))
+    .filter((part) => part.block && !(targetKey({ kind: "part", part: part.id }) in stylesWithDefaults(report, layout)))
     .filter((part) => headingModeOf(report, layout, part.id) === "row")
     .map((part): [string, CellStyle] => [targetKey({ kind: "part", part: part.id }), {}]);
-  const targets = [...Object.entries(layout.styles), ...stacked]
+  const targets = [...Object.entries(stylesWithDefaults(report, layout)), ...stacked]
     .map(([key, style]) => ({ target: parseTargetKey(key), style }))
     .filter((entry): entry is { target: LayoutTarget; style: CellStyle } => entry.target !== null)
     .sort(
@@ -1957,7 +1982,7 @@ export function shapePaint(style: CellStyle, theme: TableTheme | null, matchThem
 export function paintShapes(root: HTMLElement, layout: ReportLayout, report: PrintableReportId): void {
   const theme = themeOf(layout.theme);
   const shaped = new Map<string, CellStyle>();
-  for (const [key, style] of Object.entries(layout.styles)) {
+  for (const [key, style] of Object.entries(stylesWithDefaults(report, layout))) {
     const target = parseTargetKey(key);
     if (target?.kind === "part" && style.shape && style.shape !== "rect") shaped.set(target.part, style);
   }

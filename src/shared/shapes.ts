@@ -490,6 +490,18 @@ function escapeAttr(value: string): string {
  * The shape as SVG markup, `w` by `h` pixels, painted. `uid` keeps the
  * gradient and filter ids of one heading apart from another's on the page.
  */
+/**
+ * Shapes whose sides run straight down, so a joined heading can carry them on
+ * below its box and cut them there: a flat bottom on the table's line. Every
+ * other shape (ribbons, scrolls, arrows, ovals, waves, the plaque and floral
+ * frames) would be cut through its design, so a joined heading draws it whole,
+ * inside its box, just above the table's line.
+ */
+export const FLAT_BOTTOM_SHAPES: ReadonlySet<ShapeId> = new Set<ShapeId>([
+  "rect", "rounded", "snip1", "snip2same", "snip2diag", "snipRound", "round1", "round2same", "round2diag",
+  "pill", "concave", "octagon", "frame", "bevel", "double", "foldedCorner", "bracketPair", "bracePair", "seal", "badge",
+]);
+
 /** Shapes whose point is at the bottom (a callout's tail): they cannot sit flat on a table. */
 export const SHAPES_WITHOUT_FLAT_BOTTOM: ReadonlySet<ShapeId> = new Set<ShapeId>(["calloutRect", "calloutRound", "calloutOval"]);
 
@@ -520,9 +532,15 @@ export function shapeSvg(
   uid = "s",
   options: ShapeOptions = {},
 ): string {
-  const flat = options.flatBottom === true && !SHAPES_WITHOUT_FLAT_BOTTOM.has(id);
-  const pieces = flat ? shapePieces(id, w, h * FLAT_BOTTOM_STRETCH, adjust, Math.min(w, h)) : shapePieces(id, w, h, adjust);
-  const clipHeight = Math.max(1, h - (options.shareBottomPx ?? 0));
+  const joined = options.flatBottom === true && !SHAPES_WITHOUT_FLAT_BOTTOM.has(id);
+  const flat = joined && FLAT_BOTTOM_SHAPES.has(id);
+  const share = joined ? (options.shareBottomPx ?? 0) : 0;
+  const clipHeight = Math.max(1, h - share);
+  // Flat: drawn taller and cut at the box, corners sized from the real height.
+  // Whole: fitted inside the box, above the table's line.
+  const pieces = flat
+    ? shapePieces(id, w, h * FLAT_BOTTOM_STRETCH, adjust, Math.min(w, h))
+    : shapePieces(id, w, joined ? clipHeight : h, adjust);
   const outlinePx = (paint.outlinePt ?? 1) * PT_TO_PX;
   const dash = paint.outlineDash ?? "solid";
   const accent = paint.accent ?? DEFAULT_ACCENT;

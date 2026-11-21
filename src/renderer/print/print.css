@@ -726,9 +726,7 @@ table.form.register td.figure {
   font-weight: 700;
   font-size: calc(var(--report-font) * 1.3);
   letter-spacing: 0.5mm;
-  color: #fff;
-  background: #7fb3d5;
-  clip-path: polygon(0 0, 100% 0, 96% 50%, 100% 100%, 0 100%, 4% 50%);
+  /* Its ribbon and colours are a heading style (PART_DEFAULTS), changeable in the heading tab. */
 }
 
 table.form.voucher-meta td.budget-head {
