@@ -57,6 +57,9 @@ import type {
 import { formatDate } from "../lib/dates.js";
 import {
   EXCEL_TITLE_PART,
+  LINE_WEIGHT_PT,
+  headingModeOf,
+  readableText,
   NO_FILL,
   PAPER_MM,
   paperOf,
@@ -344,8 +347,8 @@ function sheet(
   if (look) {
     // The title row is the form's title part.
     const title = layout.styles[targetKey({ kind: "part", part: EXCEL_TITLE_PART[look.report] })];
+    applyHeading(worksheet.getRow(1).getCell(1), look.report, layout, excelSize);
     if (title) {
-      apply(worksheet.getRow(1).getCell(1), title);
       if (title.heightMm !== undefined) worksheet.getRow(1).height = Math.round(title.heightMm * PT_PER_MM * 10) / 10;
     }
 
@@ -704,10 +707,9 @@ function rojmelSheet(
   }
 
   // The school's own layout: highlights, bold, fonts, sizes, alignment.
-  const titleStyle = layout.styles[targetKey({ kind: "part", part: EXCEL_TITLE_PART.rojmel })];
   for (const { row, key, group = null, lines } of keyed) {
     if (key === "") {
-      if (titleStyle) applyStyle(row.getCell(1), titleStyle, excelSize);
+      applyHeading(row.getCell(1), "rojmel", layout, excelSize);
       continue;
     }
     const rowHeight = heightOfRow(layout, key, group);
@@ -757,6 +759,32 @@ function heightOfRow(layout: ReportLayout, key: string, group: string | null): n
     layout.styles[targetKey({ kind: "row", row: key })]?.heightMm ??
     (group !== null ? layout.styles[targetKey({ kind: "row", row: group })]?.heightMm : undefined)
   );
+}
+
+/**
+ * A report's title cell as the school's layout has it, and as its placement
+ * says: a title joined to the table gets the table's thin line all round
+ * (Excel has no shapes in cells, so a banner keeps its outline as the cell's
+ * border), and with the theme's colours on, words that read on its fill.
+ */
+export function applyHeading(
+  cell: ExcelJS.Cell,
+  report: PrintableReportId,
+  layout: ReportLayout,
+  excelSize: (pt: number) => number,
+): void {
+  const part = EXCEL_TITLE_PART[report];
+  const style = layout.styles[targetKey({ kind: "part", part })];
+  if (style) applyStyle(cell, style, excelSize);
+  if (headingModeOf(report, layout, part) === "row") {
+    const theme = themeOf(layout.theme);
+    const colour = layout.lineColour ?? theme?.line ?? "#000000";
+    const line: Partial<ExcelJS.Border> = { style: "thin", color: { argb: argb(colour) } };
+    cell.border = { top: line, right: line, bottom: line, left: line };
+  }
+  if (layout.matchTheme && style && !style.colour && style.fill && style.fill !== NO_FILL) {
+    cell.font = { ...cell.font, color: { argb: argb(readableText(style.fill)) } };
+  }
 }
 
 /** One cell as a school's layout has it. Blank (NO_FILL) is Excel's default. */
