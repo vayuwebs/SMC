@@ -53,3 +53,20 @@ export function resizePatch(
   if (handle.includes("n")) patch.heightMm = half(clamp(start.heightMm - deltaMm.y, MIN_HEIGHT_MM, MAX_HEIGHT_MM));
   return patch;
 }
+
+/**
+ * A heading on its own line stays centred: either side edge grows or shrinks
+ * it on both sides at once (twice the pointer's move), and it has no gap.
+ */
+export function centredResizePatch(
+  handle: Exclude<Handle, "gap">,
+  start: ResizeStart,
+  deltaMm: { x: number; y: number },
+  limits: { maxWidthMm: number },
+): Pick<CellStyle, "widthMm" | "heightMm"> {
+  const mirrored = handle.includes("w");
+  const asRight = (mirrored ? handle.replace("w", "e") : handle) as Exclude<Handle, "gap">;
+  const dx = (mirrored ? -deltaMm.x : deltaMm.x) * 2;
+  const { gapMm: _gap, ...patch } = resizePatch(asRight, { ...start, gapMm: 0 }, { x: dx, y: deltaMm.y }, limits);
+  return patch;
+}

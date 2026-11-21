@@ -3,7 +3,7 @@
  * Paint: what a drag of each handle does to width, height and the gap.
  */
 import { describe, expect, it } from "vitest";
-import { resizePatch } from "../../src/shared/heading-resize.js";
+import { centredResizePatch, resizePatch } from "../../src/shared/heading-resize.js";
 
 const start = { widthMm: 50, heightMm: 10, gapMm: 2 };
 const limits = { maxWidthMm: 300 };
@@ -47,5 +47,14 @@ describe("dragging a heading's handles", () => {
 
   it("rounds to half millimetres", () => {
     expect(resizePatch("e", start, { x: 3.33, y: 0 }, limits)).toEqual({ widthMm: 53.5 });
+  });
+});
+
+describe("a heading on its own line, kept centred", () => {
+  it("grows on both sides from either edge, and has no gap to store", () => {
+    expect(centredResizePatch("e", start, { x: 5, y: 0 }, limits)).toEqual({ widthMm: 60 });
+    expect(centredResizePatch("w", start, { x: -5, y: 0 }, limits)).toEqual({ widthMm: 60 });
+    expect(centredResizePatch("w", start, { x: 5, y: 0 }, limits)).toEqual({ widthMm: 40 });
+    expect(centredResizePatch("nw", start, { x: -5, y: -2 }, limits)).toEqual({ widthMm: 60, heightMm: 12 });
   });
 });

@@ -5,7 +5,7 @@
  * it as one change (one undo step). The sizes come from resizePatch.
  */
 import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
-import { HANDLES, resizePatch, type Handle, type ResizeStart } from "../../shared/heading-resize.js";
+import { HANDLES, centredResizePatch, resizePatch, type Handle, type ResizeStart } from "../../shared/heading-resize.js";
 import type { CellStyle } from "../../shared/report-layout.js";
 import { sheetZoom } from "../print/PagedSheets.js";
 
@@ -101,18 +101,10 @@ export function HeadingHandles({
 
   /** What the drag so far does: a centred heading grows on both sides at once. */
   function patchFor(now: Drag, x: number, y: number): Pick<CellStyle, "widthMm" | "heightMm" | "gapMm"> {
-    let dx = screenToMm(element, x - now.startX);
-    const dy = screenToMm(element, y - now.startY);
-    let handle = now.handle;
-    if (!piece && handle !== "gap") {
-      // Centred: the left edge mirrors the right, and both move.
-      if (handle.includes("w")) {
-        handle = handle.replace("w", "e") as Handle;
-        dx = -dx;
-      }
-      dx *= 2;
-    }
-    return resizePatch(handle, now.start, { x: dx, y: dy }, { maxWidthMm });
+    const delta = { x: screenToMm(element, x - now.startX), y: screenToMm(element, y - now.startY) };
+    // A heading on its own line stays centred; a cell in a row moves its own edges.
+    if (!piece && now.handle !== "gap") return centredResizePatch(now.handle, now.start, delta, { maxWidthMm });
+    return resizePatch(now.handle, now.start, delta, { maxWidthMm });
   }
 
   function begin(handle: Handle, event: ReactPointerEvent): void {

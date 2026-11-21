@@ -22,6 +22,11 @@ describe("the title row in Excel", () => {
     }
   });
 
+  it("draws the join in the report's line weight", () => {
+    const cell = titleCell({ ...emptyLayout(), lineWeight: "thick", styles: { "part:title": { headingMode: "row" } } });
+    expect(cell.border?.bottom?.style).toBe("thick");
+  });
+
   it("leaves a banner's or an untouched title's lines as they were", () => {
     expect(titleCell(emptyLayout()).border).toBeUndefined();
     const banner = titleCell({ ...emptyLayout(), styles: { "part:title": { headingMode: "banner", shape: "ribbon", fill: "#ffeeaa" } } });

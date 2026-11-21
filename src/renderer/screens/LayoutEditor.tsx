@@ -16,6 +16,7 @@ import {
   HEADING_MODES,
   CELL_MODES,
   headingModeOf,
+  withTheme,
   shapePaint,
   shapeStylePresets,
   themeOf,
@@ -1585,7 +1586,7 @@ export function LayoutEditor({
             aria-label={t.layoutTheme}
             value={draft.theme ?? ""}
             onChange={(event) =>
-              change(withReport(draft, { theme: (event.target.value || undefined) as TableThemeId | undefined }))
+              change(withTheme(draft, (event.target.value || undefined) as TableThemeId | undefined))
             }
           >
             <option value="">{t.layoutThemeNone}</option>
@@ -1613,7 +1614,7 @@ export function LayoutEditor({
                 title={theme.labelGu}
                 aria-label={theme.labelGu}
                 style={{ background: `linear-gradient(${theme.head} 0 40%, ${theme.band} 40% 70%, #fff 70%)`, borderColor: theme.line }}
-                onClick={() => change(withReport(draft, { theme: draft.theme === theme.id ? undefined : theme.id }))}
+                onClick={() => change(withTheme(draft, draft.theme === theme.id ? undefined : theme.id))}
               />
             ))}
           </div>

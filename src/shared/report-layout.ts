@@ -28,6 +28,7 @@ import {
   OUTLINE_DASHES,
   SHADOWS,
   SHAPE_IDS,
+  SHAPES_WITHOUT_FLAT_BOTTOM,
   shapeInfo,
   shapeSvg,
   type ShapeId,
@@ -418,6 +419,16 @@ export function emptyLayout(): ReportLayout {
   return { version: 1, widths: {}, rowGapsMm: {}, styles: {}, texts: {} };
 }
 
+/** The layout with another colour set; with none, its theme colours switch goes too. */
+export function withTheme(layout: ReportLayout, theme: TableThemeId | undefined): ReportLayout {
+  const next: ReportLayout = { ...layout, theme };
+  if (theme === undefined) {
+    delete next.theme;
+    delete next.matchTheme;
+  }
+  return next;
+}
+
 /** True when the layout changes nothing - the form prints its default. */
 export function isEmptyLayout(layout: ReportLayout): boolean {
   return (
@@ -731,7 +742,9 @@ export function headingModeOf(report: PrintableReportId, layout: ReportLayout, p
     if (each.block) {
       const own = layout.styles[targetKey({ kind: "part", part: each.id })]?.headingMode;
       if (!each.joinable) {
-        current = own === "banner" ? "banner" : "form";
+        // Not offered in the editor, but a join saved before 2026-11 still
+        // prints as it did. Nothing below it joins through it.
+        current = own ?? "form";
         joined = false;
       } else {
         current = own ?? (joined ? "row" : "form");
@@ -1611,6 +1624,11 @@ function partRules(
   mode: HeadingMode = "form",
   matchTheme = false,
 ): string[] {
+  if (mode === "row" && style.shape && SHAPES_WITHOUT_FLAT_BOTTOM.has(style.shape)) {
+    // A callout joined to the table (through the heading above it): its point
+    // would cover the table, so it prints as a plain row.
+    style = { ...style, shape: undefined };
+  }
   const attribute = `[data-part=${cssString(partId)}]`;
   const selector = `${root} ${attribute}`;
   /** The part when it is this kind of element, e.g. `#r table[data-part="x"]`. */
@@ -1932,8 +1950,10 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout, report: Pri
     if (!box) continue;
     const { width, height } = box;
     uid += 1;
-    // Joined to the table: a straight bottom, laid on the table's line.
+    // Joined to the table: a straight bottom, laid on the table's line (a
+    // callout, which cannot have one, prints as a plain row instead).
     const flatBottom = headingModeOf(report, layout, element.dataset["part"] ?? "") === "row";
+    if (flatBottom && SHAPES_WITHOUT_FLAT_BOTTOM.has(style.shape!)) continue;
     const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme, layout.matchTheme === true), style.shapeAdjust, `shape${uid}`, { flatBottom });
     let layer = element.querySelector<HTMLElement>(":scope > .shape-layer");
     if (!layer) {

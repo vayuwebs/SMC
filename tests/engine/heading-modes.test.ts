@@ -11,6 +11,7 @@ import {
   isEmptyLayout,
   layoutCss,
   readableText,
+  withTheme,
   reportLayoutSchema,
   shapePaint,
   themeOf,
@@ -75,9 +76,11 @@ describe("the effective placement", () => {
     expect(headingModeOf("rojmel", row, "closing")).toBe("form");
   });
 
-  it("never makes an unjoinable heading a row", () => {
+  it("keeps an old join on a heading the editor no longer offers to join, but never stacks under it", () => {
+    // Saved before 2026-11 with "join to the table": it printed joined, so it still does.
     const layout = { ...emptyLayout(), styles: { "part:title": { headingMode: "row" as const } } };
-    expect(headingModeOf("khatavahi", layout, "title")).toBe("form");
+    expect(headingModeOf("khatavahi", layout, "title")).toBe("row");
+    expect(headingModeOf("khatavahi", layout, "accountKind")).toBe("form");
   });
 
   it("keeps matchTheme off for old layouts and counts it as a change", () => {
@@ -202,5 +205,20 @@ describe("the school's own colours win over the theme's", () => {
     // The theme's piece colours are weaker than any part's own rule (one id, no more).
     expect(out).toContain('#r :where([data-part="band"] > [data-part]) { background: #ddebf7; color: #1f4e79; }');
     expect(out).not.toContain('#r [data-part="band"] > [data-part] { background: #ddebf7');
+  });
+});
+
+describe("the review's small fixes", () => {
+  it("draws a callout joined through the stack as a plain row, its point never over the table", () => {
+    const band = blocks(css({ "part:title": { headingMode: "row" }, "part:band": { shape: "calloutRect" } }), '#r [data-part="band"]');
+    expect(band).not.toContain("isolation: isolate");
+    expect(band).toContain("margin-bottom: -0.7pt");
+  });
+
+  it("turns the theme colours off with the theme", () => {
+    const on = withTheme({ ...emptyLayout(), theme: "blue", matchTheme: true }, undefined);
+    expect(on.theme).toBeUndefined();
+    expect(on.matchTheme).toBeUndefined();
+    expect(withTheme({ ...emptyLayout(), theme: "blue", matchTheme: true }, "green")).toMatchObject({ theme: "green", matchTheme: true });
   });
 });

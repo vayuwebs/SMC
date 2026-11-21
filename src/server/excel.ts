@@ -57,7 +57,6 @@ import type {
 import { formatDate } from "../lib/dates.js";
 import {
   EXCEL_TITLE_PART,
-  LINE_WEIGHT_PT,
   headingModeOf,
   readableText,
   NO_FILL,
@@ -779,7 +778,7 @@ export function applyHeading(
   if (headingModeOf(report, layout, part) === "row") {
     const theme = themeOf(layout.theme);
     const colour = layout.lineColour ?? theme?.line ?? "#000000";
-    const line: Partial<ExcelJS.Border> = { style: "thin", color: { argb: argb(colour) } };
+    const line: Partial<ExcelJS.Border> = { style: layout.lineWeight ?? "thin", color: { argb: argb(colour) } };
     cell.border = { top: line, right: line, bottom: line, left: line };
   }
   if (layout.matchTheme && style && !style.colour && style.fill && style.fill !== NO_FILL) {
