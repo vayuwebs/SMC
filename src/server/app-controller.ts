@@ -1593,7 +1593,7 @@ const ISSUES = {
       "This data belongs to another account. Log in with that account to open it.",
     ),
   wrongMode: (ownerMode: AppMode) => {
-    const label = ownerMode === "smc-e-old" ? "SMC E old" : "SMC E";
+    const label = ownerMode === "smc-e-old" ? "SMC1" : ownerMode === "smc" ? "SMC2" : "SMC E";
     return issue(
       "wrong_mode",
       `આ શાળાનો ડેટા "${label}" મોડનો છે. તેને ખોલવા માટે પહેલાં મોડ બદલીને ${label} પસંદ કરો.`,

@@ -15,7 +15,7 @@ import { BankCharges } from "./screens/BankCharges.js";
 import { Bills } from "./screens/Bills.js";
 import { Cheques } from "./screens/Cheques.js";
 import { Pfms } from "./screens/Pfms.js";
-import { modeLabel } from "./format.js";
+import { ModeSwitcher } from "./components/ModeSwitcher.js";
 import { OpeningBalances } from "./screens/OpeningBalances.js";
 import { Reports } from "./screens/Reports.js";
 import { Reconciliation } from "./screens/Reconciliation.js";
@@ -29,7 +29,7 @@ import { ModeSelect, Schools } from "./screens/Schools.js";
 import { BackupBadge } from "./components/BackupBadge.js";
 import { Suggestions } from "./components/Suggestions.js";
 import { PhoneticTyping } from "./components/PhoneticTyping.js";
-import { flushSuggestions, startSuggestionSync } from "./suggestions/sync.js";
+import { endSuggestionSession, flushSuggestions, startSuggestionSync } from "./suggestions/sync.js";
 import { LanguageProvider, useStrings } from "./i18n/index.js";
 import { PrintRoot, printableReportFromHash } from "./print/PrintRoot.js";
 import type { JSX } from "react";
@@ -388,14 +388,13 @@ function Shell({
             <b>{screenLabelInMode(screen, activeMode, t)}</b>
           </div>
           <div className="topbar-actions">
-            <button
-              type="button"
-              className={`mode-badge ${activeMode}`}
-              title={t.modeChange}
-              onClick={() => setScreen("settings")}
-            >
-              {modeLabel(activeMode, t)}
-            </button>
+            <ModeSwitcher
+              active={activeMode}
+              onSelect={async (mode) => {
+                await endSuggestionSession();
+                onModeChanged(await api.setAppMode(mode));
+              }}
+            />
             <span className="year-badge">
               {t.year} {dashboard.year.label}
             </span>

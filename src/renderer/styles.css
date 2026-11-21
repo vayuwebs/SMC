@@ -349,6 +349,203 @@ body {
   border-color: rgba(30, 107, 69, 0.28);
 }
 
+/* ---- The mode switcher: a pill that drops a panel of three glowing tiles ---- */
+
+.mode-trigger {
+  --mode-ink: #1b5fa8;
+  padding: 5px 10px 5px 9px;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.mode-trigger.smc-e-old { --mode-ink: #9a5200; }
+.mode-trigger.smc { --mode-ink: #1e6b45; }
+
+.mode-trigger:not(:disabled):hover,
+.mode-trigger.open {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mode-ink) 14%, transparent);
+}
+
+.mode-trigger-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mode-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mode-ink) 22%, transparent);
+  animation: mode-pulse 2.4s ease-in-out infinite;
+}
+
+.mode-trigger-chevron {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+.mode-trigger.open .mode-trigger-chevron { transform: rotate(180deg); }
+
+@keyframes mode-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--mode-ink) 25%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--mode-ink) 0%, transparent); }
+}
+
+.mode-menu {
+  width: 340px;
+  margin-top: 8px;
+  border-radius: 18px;
+  padding: 1px;
+  /* A thin gradient rim round a frosted white body. */
+  background: linear-gradient(135deg, #5b8def, #b06ce8 45%, #f0a04b 75%, #34b37a);
+  box-shadow: 0 24px 48px -12px rgba(28, 35, 51, 0.35), 0 4px 12px rgba(28, 35, 51, 0.12);
+  transform-origin: top right;
+  animation: mode-menu-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.mode-menu > div {
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.97);
+  overflow: hidden;
+}
+
+@keyframes mode-menu-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+.mode-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px 12px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(91, 141, 239, 0.18), transparent 55%),
+    radial-gradient(circle at 95% 10%, rgba(240, 160, 75, 0.16), transparent 50%),
+    linear-gradient(180deg, #f7f8fd, #ffffff);
+  border-bottom: 1px solid var(--line-subtle);
+}
+.mode-menu-head strong { font-size: 14px; color: var(--ink); }
+.mode-menu-head span { font-size: 12px; color: var(--ink-faint); }
+
+.mode-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.mode-tile {
+  --tile: #1a56db;
+  --tile-soft: #e8f0fe;
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  position: relative;
+  animation: mode-tile-in 0.28s ease both;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.mode-tile.smc-e-old { --tile: #c26a06; --tile-soft: #fef1de; }
+.mode-tile.smc { --tile: #1e8a57; --tile-soft: #e3f5eb; }
+
+@keyframes mode-tile-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.mode-tile:not(:disabled):hover,
+.mode-tile:focus-visible {
+  outline: none;
+  background: var(--tile-soft);
+  border-color: color-mix(in srgb, var(--tile) 30%, transparent);
+  transform: translateX(2px);
+}
+
+.mode-tile.current {
+  background: linear-gradient(90deg, var(--tile-soft), transparent);
+  border-color: color-mix(in srgb, var(--tile) 35%, transparent);
+  cursor: default;
+}
+.mode-tile.current::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--tile);
+}
+
+.mode-tile:disabled:not(.current) { cursor: progress; opacity: 0.7; }
+
+.mode-tile-orb {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.55), transparent 45%),
+    linear-gradient(145deg, color-mix(in srgb, var(--tile) 70%, #fff), var(--tile));
+  box-shadow: 0 6px 14px -4px color-mix(in srgb, var(--tile) 60%, transparent);
+  transition: transform 0.2s ease;
+}
+.mode-tile:not(:disabled):hover .mode-tile-orb { transform: rotate(-6deg) scale(1.06); }
+
+.mode-tile-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mode-tile-name { font-weight: 700; font-size: 14px; color: var(--tile); }
+.mode-tile-hint {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-faint);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mode-tile-current {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tile);
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--tile) 30%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.mode-tile-arrow {
+  color: var(--tile);
+  font-size: 16px;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.mode-tile:hover .mode-tile-arrow,
+.mode-tile:focus-visible .mode-tile-arrow { opacity: 1; transform: none; }
+
+.mode-tile-spinner {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--tile) 25%, transparent);
+  border-top-color: var(--tile);
+  animation: mode-spin 0.7s linear infinite;
+}
+@keyframes mode-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-menu, .mode-tile, .mode-trigger-dot { animation: none; }
+}
+
 .content {
   padding: 28px 32px 72px;
   flex: 1;
@@ -3854,4 +4051,13 @@ button.primary:disabled {
   .school-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.mode-menu-error {
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: var(--error-bg);
+  color: var(--error-line);
 }

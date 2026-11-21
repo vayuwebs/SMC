@@ -19,6 +19,7 @@ import { IssueList } from "../components/IssueList.js";
 import { Modal } from "../components/Modal.js";
 import { Popover } from "../components/Popover.js";
 import { LanguageSwitch } from "../components/LanguageSwitch.js";
+import { ModeSwitcher } from "../components/ModeSwitcher.js";
 import { formatBytes, formatDateTime, modeLabel } from "../format.js";
 import { useStrings } from "../i18n/index.js";
 
@@ -322,10 +323,8 @@ export function Schools({
 
   const activeMode = modeState?.active ?? null;
 
-  async function toggleMode(): Promise<void> {
-    if (!activeMode || !onModeChanged || busy) return;
-    // Round the three modes: SMC E -> SMC E old -> SMC -> SMC E.
-    const nextMode: AppMode = APP_MODES[(APP_MODES.indexOf(activeMode) + 1) % APP_MODES.length]!;
+  async function switchMode(nextMode: AppMode): Promise<void> {
+    if (!activeMode || !onModeChanged || busy || nextMode === activeMode) return;
     setBusy(true);
     try {
       await endSuggestionSession();
@@ -362,16 +361,7 @@ export function Schools({
           </div>
           <div className="schools-head-actions">
             {activeMode && (
-              <button
-                type="button"
-                className={`mode-badge ${activeMode}`}
-                title={t.modeChange}
-                disabled={busy || !onModeChanged}
-                onClick={() => void toggleMode()}
-              >
-                <span>{modeLabel(activeMode, t)}</span>
-                {onModeChanged && <span aria-hidden="true">⇄</span>}
-              </button>
+              <ModeSwitcher active={activeMode} disabled={busy || !onModeChanged} onSelect={switchMode} />
             )}
             <LanguageSwitch />
             <button type="button" className="ghost" onClick={() => void signOut()} disabled={busy}>

@@ -665,6 +665,8 @@ export interface Strings {
   overLimit: (head: string, over: string) => string;
   modeOpenButton: string;
   modeChange: string;
+  modeCurrent: string;
+  modeSwitchSubtitle: string;
   modeSection: string;
   modeSectionHelp: string;
   modeRememberLabel: string;
@@ -1454,10 +1456,10 @@ export const gu: Strings = {
     "તમારી શાળા અને બધી એન્ટ્રીઓ બંને મોડમાં સમાન રહેશે — માત્ર રોજમેળ અને ખાતાવહીના પાનાંની ગણતરી બદલાય છે.",
   modeSmcE: "SMC E",
   modeSmcEHint: "વર્તમાન સિસ્ટમ મુજબ રોજમેળ (મહિના પ્રમાણે નીલ બ્લોક અને પાનાં) અને ખાતાવહી.",
-  modeSmcEOld: "SMC E old",
+  modeSmcEOld: "SMC1",
   modeSmcEOldHint:
     "જૂની રીત મુજબ રોજમેળ (૦૧/૦૪ અને ૩૧/૦૩ અલગ બ્લોક, ૪+ દિવસની ગેપ પર સળંગ નીલ બ્લોક) અને ખાતાવહી.",
-  modeSmc: "SMC",
+  modeSmc: "SMC2",
   modeSmcHint: "PFMS થી ચુકવણી: ચેક રજીસ્ટરની જગ્યાએ PFMS રજીસ્ટર, ગ્રાન્ટ લિમિટ, અને રોજમેળમાં જરૂરી તારીખ ગાળો જ.",
   navPfms: "PFMS",
   pfmsTitle: "PFMS રજીસ્ટર",
@@ -1484,19 +1486,21 @@ export const gu: Strings = {
   limitNone: "—",
   limitsSave: "લિમિટ સાચવો",
   limitsSaved: "લિમિટ સચવાઈ ગઈ",
-  limitsApplyAll: "આ લિમિટ બધી SMC શાળાઓમાં લાગુ કરો",
-  limitsApplyAllConfirm: "આ શાળાની ગ્રાન્ટ લિમિટ આ ખાતાની બીજી બધી SMC શાળાઓમાં (આ જ વર્ષમાં) લાગુ કરવી છે? તેમની એ જ ગ્રાન્ટની લિમિટ બદલાઈ જશે.",
+  limitsApplyAll: "આ લિમિટ બધી SMC2 શાળાઓમાં લાગુ કરો",
+  limitsApplyAllConfirm: "આ શાળાની ગ્રાન્ટ લિમિટ આ ખાતાની બીજી બધી SMC2 શાળાઓમાં (આ જ વર્ષમાં) લાગુ કરવી છે? તેમની એ જ ગ્રાન્ટની લિમિટ બદલાઈ જશે.",
   limitsApplied: (count) => `${count} શાળામાં લિમિટ લાગુ થઈ`,
-  limitsAppliedNone: "બીજી કોઈ SMC શાળા મળી નહીં",
+  limitsAppliedNone: "બીજી કોઈ SMC2 શાળા મળી નહીં",
   limitsSkipped: (school, reason) => `${school}: ${reason}`,
   limitsNoSuchYear: "આ વર્ષ ત્યાં નથી",
   limitsUnsavedFirst: "પહેલાં લિમિટ સાચવો",
   overLimit: (head, over) => `${head}: લિમિટ કરતાં રૂ. ${over} વધુ ચુકવણી`,
   modeOpenButton: "ખોલો",
   modeChange: "મોડ બદલો",
+  modeCurrent: "ચાલુ",
+  modeSwitchSubtitle: "કયા મોડમાં કામ કરવું છે તે પસંદ કરો",
   modeSection: "સોફ્ટવેર મોડ (રોજમેળ અને ખાતાવહી)",
   modeSectionHelp:
-    "અહીંથી SMC E અને SMC E old વચ્ચે મોડ બદલી શકાય છે. શાળા, હિસાબ અને અન્ય રિપોર્ટ બંનેમાં એકસરખા રહેશે.",
+    "અહીંથી SMC E અને SMC1 વચ્ચે મોડ બદલી શકાય છે. શાળા, હિસાબ અને અન્ય રિપોર્ટ બંનેમાં એકસરખા રહેશે.",
   modeRememberLabel: "સોફ્ટવેર શરૂ થાય ત્યારે આ મોડ યાદ રાખો",
   modeRememberHelp:
     "ચાલુ રાખવાથી દર વખતે સોફ્ટવેર ખોલતી વખતે મોડ પસંદ કરવાનું પૂછશે નહીં.",
@@ -2302,10 +2306,10 @@ export const en: Strings = {
     "Your schools, entries, backups, and other reports stay identical — only Rojmel and Khatavahi block/page calculation changes.",
   modeSmcE: "SMC E",
   modeSmcEHint: "Current Rojmel (month-split nil blocks and pages) and Khatavahi.",
-  modeSmcEOld: "SMC E old",
+  modeSmcEOld: "SMC1",
   modeSmcEOldHint:
     "Legacy Rojmel (01/04 & 31/03 boundary blocks, continuous nil blocks on 4+ day gaps) and matching Khatavahi.",
-  modeSmc: "SMC",
+  modeSmc: "SMC2",
   modeSmcHint: "Payments through PFMS: a PFMS register in place of the cheque register, grant limits, and only the date ranges the rojmel needs.",
   navPfms: "PFMS",
   pfmsTitle: "PFMS register",
@@ -2332,19 +2336,21 @@ export const en: Strings = {
   limitNone: "—",
   limitsSave: "Save limits",
   limitsSaved: "Limits saved",
-  limitsApplyAll: "Use these limits in all SMC schools",
-  limitsApplyAllConfirm: "Copy this school's grant limits into every other SMC school of this account (same year)? Their limits for the same grants are replaced.",
+  limitsApplyAll: "Use these limits in all SMC2 schools",
+  limitsApplyAllConfirm: "Copy this school's grant limits into every other SMC2 school of this account (same year)? Their limits for the same grants are replaced.",
   limitsApplied: (count) => `Limits copied to ${count} school(s)`,
-  limitsAppliedNone: "No other SMC school was found",
+  limitsAppliedNone: "No other SMC2 school was found",
   limitsSkipped: (school, reason) => `${school}: ${reason}`,
   limitsNoSuchYear: "this year is not there",
   limitsUnsavedFirst: "Save the limits first",
   overLimit: (head, over) => `${head}: paid ₹${over} more than its limit`,
   modeOpenButton: "Open",
   modeChange: "Switch mode",
+  modeCurrent: "Current",
+  modeSwitchSubtitle: "Pick the mode you want to work in",
   modeSection: "Software mode (Rojmel & Khatavahi)",
   modeSectionHelp:
-    "Switch between SMC E and SMC E old at any time. All schools, entries, and other reports stay unchanged.",
+    "Switch between SMC E and SMC1 at any time. All schools, entries, and other reports stay unchanged.",
   modeRememberLabel: "Remember selected mode on startup",
   modeRememberHelp:
     "When checked, launching the app opens directly into the saved mode instead of asking every time.",
