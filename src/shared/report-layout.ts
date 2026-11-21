@@ -599,7 +599,11 @@ export interface ReportPart {
   block?: boolean;
   /** Sits directly above the table, or above another joinable heading: it can be a row joined to it. */
   joinable?: boolean;
-  /** A row of pieces (each its own data-part) that can be one cell or separate cells. */
+  /**
+   * A row of pieces that the form prints as boxes of their own (the Rojmel's
+   * આવક / જાવક / page boxes): one cell or separate cells. A heading whose
+   * pieces are only words in one box (a register's title) is not pieced.
+   */
   pieced?: boolean;
 }
 
@@ -631,17 +635,17 @@ export const REPORT_PARTS: Record<PrintableReportId, ReportPart[]> = {
     heading("footTitle", "નીચેનું નામ"),
   ],
   grantRegister: [
-    joinable(heading("title", "મથાળું (આખું)"), true),
+    joinable(heading("title", "મથાળું (આખું)")),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
   chequeRegister: [
-    joinable(heading("title", "મથાળું (આખું)"), true),
+    joinable(heading("title", "મથાળું (આખું)")),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
   billRegister: [
-    joinable(heading("title", "મથાળું (આખું)"), true),
+    joinable(heading("title", "મથાળું (આખું)")),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
@@ -1577,7 +1581,8 @@ function placementRules(selector: string, style: CellStyle, part: ReportPart, mo
   }
   if (mode !== "row") return rules;
   rules.push(`${selector} { margin-top: 0; margin-bottom: -${join.widthPt}pt; box-sizing: border-box; --heading-share: ${join.widthPt}pt; }`);
-  if (part.pieced && !one) {
+  // A shaped heading's pieces sit inside its shape: never boxes of their own.
+  if (part.pieced && !one && !shaped) {
     rules.push(
       `${selector} { border: none; --heading-gap: 0mm; gap: 0; }`,
       `${selector} > [data-part] { border: ${line}; }`,

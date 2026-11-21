@@ -173,3 +173,24 @@ describe("the theme colours switch", () => {
     expect(chosen.at(-1)?.[1]).toBe("#123456");
   });
 });
+
+describe("headings whose pieces are not boxes", () => {
+  const register = (styles: Record<string, CellStyle>, extra: Partial<ReportLayout> = {}) =>
+    layoutCss("grantRegister", { ...emptyLayout(), ...extra, styles }, "#r");
+
+  it("joins a register's title as one box, never boxing its words", () => {
+    const out = register({ "part:title": { headingMode: "row" } });
+    expect(blocks(out, '#r [data-part="title"]')).toContain("border: 0.7pt solid #000");
+    expect(blocks(out, '#r [data-part="title"] > [data-part]')).toBe("");
+  });
+
+  it("never boxes a shaped heading's pieces inside its shape", () => {
+    expect(blocks(css({ "part:band": { headingMode: "row", shape: "rounded" } }), '#r [data-part="band"] > [data-part]')).not.toContain(
+      "border: 0.7pt solid",
+    );
+  });
+
+  it("gives theme colours only to pieces that are boxes", () => {
+    expect(register({}, { theme: "maroon", matchTheme: true })).not.toContain('[data-part="title"] > [data-part]');
+  });
+});
