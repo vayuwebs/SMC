@@ -297,3 +297,29 @@ describe("where the shape goes inside its heading", () => {
     expect(shapeSpan({ shape: "ribbon" }, "row", box, 100)).toEqual({ left: 0, top: 0, width: 600, height: 40 });
   });
 });
+
+describe("the gap between the outer border and the shape", () => {
+  const box = { width: 600, height: 40 };
+  const px = 96 / 25.4;
+
+  it("is 1 mm unless the school sets it, on every side", () => {
+    expect(shapeSpan({ shape: "ribbon", frame: true, bannerFull: true }, "row", box, 100)).toMatchObject({ top: expect.closeTo(px), height: expect.closeTo(40 - 2 * px) });
+    const wide = shapeSpan({ shape: "ribbon", frame: true, bannerFull: true, frameGapMm: 3 }, "row", box, 100);
+    expect(wide.top).toBeCloseTo(3 * px);
+    expect(wide.height).toBeCloseTo(40 - 6 * px);
+    expect(wide.width).toBeCloseTo(600 - 6 * px);
+    expect(shapeSpan({ shape: "ribbon", frame: true, bannerFull: true, frameGapMm: 0 }, "row", box, 100).width).toBe(600);
+  });
+
+  it("makes room for the words: the box grows by the gap", () => {
+    const title = blocks(css({ "part:title": { headingMode: "row", shape: "ribbon", frame: true, frameGapMm: 3 } }), '#r [data-part="title"]');
+    // The ribbon's own room (0.8mm, 7mm) plus the 3mm gap.
+    expect(title).toContain("padding: 3.8mm 10mm 3.8mm");
+  });
+
+  it("keeps it between 0 and 20 mm", () => {
+    expect(parse({ frameGapMm: 4 })).toEqual({ frameGapMm: 4 });
+    expect(() => parse({ frameGapMm: -1 })).toThrow();
+    expect(() => parse({ frameGapMm: 21 })).toThrow();
+  });
+});

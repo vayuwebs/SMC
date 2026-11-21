@@ -277,6 +277,7 @@ const CLEARED: StylePatch = {
   frame: undefined,
   frameFill: undefined,
   frameLine: undefined,
+  frameGapMm: undefined,
   borders: undefined,
 };
 
@@ -1285,6 +1286,15 @@ export function LayoutEditor({
                   onChange={(frameFill) => apply({ frameFill: frameFill || undefined })}
                 />
                 <ColourButton icon="▭" title={t.headingFrameLine} value={own.frameLine} onChange={(frameLine) => apply({ frameLine })} />
+                <MiniStepper
+                  label={`${t.headingFrameGap} (${t.mm})`}
+                  value={own.frameGapMm}
+                  placeholder={1}
+                  step={0.5}
+                  min={0}
+                  max={20}
+                  onChange={(frameGapMm) => apply({ frameGapMm })}
+                />
               </>
             )}
           </div>

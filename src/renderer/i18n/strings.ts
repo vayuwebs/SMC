@@ -438,6 +438,7 @@ export interface Strings {
   headingFrameHint: string;
   headingFrameFill: string;
   headingFrameLine: string;
+  headingFrameGap: string;
   headingShapeSize: string;
   headingShapeWords: string;
   headingShapeFull: string;
@@ -1253,6 +1254,7 @@ export const gu: Strings = {
   headingFrameHint: "મથાળું એક સાદું ખાનું બને — પોતાના રંગ અને કિનારી સાથે — અને આકાર તેની અંદર આવે.",
   headingFrameFill: "બહારના ખાનાનો રંગ",
   headingFrameLine: "બહારની કિનારીનો રંગ",
+  headingFrameGap: "કિનારી અને આકાર વચ્ચે અંતર",
   headingShapeSize: "આકારનું કદ",
   headingShapeWords: "શબ્દો જેટલું",
   headingShapeFull: "પૂરી પહોળાઈ",
@@ -2101,6 +2103,7 @@ export const en: Strings = {
   headingFrameHint: "The heading becomes a plain box, in its own colours and border, with the shape inside it.",
   headingFrameFill: "Outer box colour",
   headingFrameLine: "Outer border colour",
+  headingFrameGap: "Gap between border and shape",
   headingShapeSize: "Shape size",
   headingShapeWords: "Round the words",
   headingShapeFull: "Full width",

@@ -285,6 +285,8 @@ const cellStyleObject = z
     /** The outer box's background and its line. Its line defaults to the table's. */
     frameFill: hexColour.optional(),
     frameLine: hexColour.optional(),
+    /** The space between the outer border and the shape, all round (1 mm when left out). */
+    frameGapMm: z.number().min(0).max(20).optional(),
     /** Excel's borders: each edge its own line style and colour. */
     borders: z
       .object({ top: borderEdge.optional(), right: borderEdge.optional(), bottom: borderEdge.optional(), left: borderEdge.optional() })
@@ -1609,7 +1611,9 @@ function textEffectDeclarations(style: CellStyle): string[] {
  */
 function shapedPartRules(root: string, selector: string, style: CellStyle, part?: ReportPart): string[] {
   const info = shapeInfo(style.shape!);
-  const padding = `padding: ${info.padYMm}mm ${info.padXMm}mm ${info.padYMm + (info.padBottomMm ?? 0)}mm`;
+  // Inside an outer border the words need the gap round the shape too.
+  const gap = style.frame ? (style.frameGapMm ?? FRAME_INSET_MM) : 0;
+  const padding = `padding: ${round3(info.padYMm + gap)}mm ${round3(info.padXMm + gap)}mm ${round3(info.padYMm + gap + (info.padBottomMm ?? 0))}mm`;
   // The shape is the outline: never a rectangle round it. A joined heading's
   // bottom edge is the table's own line, laid over it (see placementRules).
   // With an outer border the box is drawn (its colours, its line); without, the shape is all there is.
@@ -2095,7 +2099,7 @@ export function shapeSpan(
 ): { left: number; top: number; width: number; height: number } {
   const framed = style.frame === true;
   // A bordered heading keeps its shape a little in from the box's edges.
-  const inset = framed ? FRAME_INSET_MM * PX_PER_MM : 0;
+  const inset = framed ? (style.frameGapMm ?? FRAME_INSET_MM) * PX_PER_MM : 0;
   const height = Math.max(4, box.height - 2 * inset);
   const room = Math.max(4, box.width - 2 * inset);
   let width = room;
@@ -2110,7 +2114,7 @@ export function shapeSpan(
   return { left: (box.width - width) / 2, top: inset, width, height };
 }
 
-/** How far a bordered heading's shape stays in from the box's edges. */
+/** How far a bordered heading's shape stays in from the box's edges, unless the school says (frameGapMm). */
 const FRAME_INSET_MM = 1;
 
 /** Where a heading's shape goes on screen: its words measured, then shapeSpan. */
