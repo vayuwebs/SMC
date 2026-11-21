@@ -10,7 +10,10 @@ import {
   headingModeOf,
   isEmptyLayout,
   layoutCss,
+  readableText,
   reportLayoutSchema,
+  shapePaint,
+  themeOf,
   type CellStyle,
   type ReportLayout,
 } from "../../src/shared/report-layout.js";
@@ -139,5 +142,34 @@ describe("the print CSS for each placement", () => {
     expect(css({ "part:band": { headingMode: "row" }, "part:bandRight": { gapMm: 0 } })).toContain(
       '#r [data-part] > [data-part][data-part="bandRight"] { margin-left: calc(0mm - var(--heading-gap, 0mm) - var(--heading-share, 0pt)); }',
     );
+  });
+});
+
+describe("the theme colours switch", () => {
+  it("picks black or white words, whichever reads better on the fill", () => {
+    expect(readableText("#2f75b5")).toBe("#ffffff");
+    expect(readableText("#ddebf7")).toBe("#000000");
+    expect(readableText("#ffffff")).toBe("#000000");
+    expect(readableText("#1f4e79")).toBe("#ffffff");
+  });
+
+  it("paints a shape in the theme's matching title pair when on, as before when off", () => {
+    expect(shapePaint({}, themeOf("blue"), true)).toMatchObject({ fill: "#2f75b5", outline: "#1f4e79" });
+    expect(shapePaint({}, themeOf("blue"))).toMatchObject({ fill: "#ddebf7", outline: "#2f75b5" });
+  });
+
+  it("colours the band's pieces from the theme when on", () => {
+    const on = css({}, { theme: "blue", matchTheme: true });
+    expect(on).toContain('#r [data-part="band"] > [data-part] { background: #ddebf7; color: #1f4e79; }');
+    expect(css({}, { theme: "blue" })).toBe(BEFORE["rojmel:blue"]);
+  });
+
+  it("makes a shaped heading's words readable, unless the school chose their colour", () => {
+    const words = (style: CellStyle) => blocks(css({ "part:title": style }, { theme: "blue", matchTheme: true }), '#r [data-part="title"], #r [data-part="title"] *');
+    expect(words({ headingMode: "banner", shape: "ribbon" })).toContain("color: #ffffff");
+    expect(words({ headingMode: "row", fill: "#ffeb3b" })).toContain("color: #000000");
+    // The last colour given wins: the school's own.
+    const chosen = [...words({ headingMode: "banner", shape: "ribbon", colour: "#123456" }).matchAll(/color: (#[0-9a-f]{6})/g)];
+    expect(chosen.at(-1)?.[1]).toBe("#123456");
   });
 });

@@ -1603,6 +1603,7 @@ function partRules(
   theme: TableTheme | null = null,
   join: JoinLine = { colour: "#000", widthPt: 0.7 },
   mode: HeadingMode = "form",
+  matchTheme = false,
 ): string[] {
   const attribute = `[data-part=${cssString(partId)}]`;
   const selector = `${root} ${attribute}`;
@@ -1631,6 +1632,11 @@ function partRules(
     // The space before a piece, over the heading's own; nothing at all shares one line when joined.
     const share = style.gapMm === 0 ? " - var(--heading-share, 0pt)" : "";
     rules.push(`${root} [data-part] > [data-part]${attribute} { margin-left: calc(${style.gapMm}mm - var(--heading-gap, 0mm)${share}); }`);
+  }
+  if (matchTheme && !style.colour && part?.block) {
+    // The theme's colours on: words that read on whatever the heading is filled with.
+    const fill = shaped ? shapePaint(style, theme, true).fill : style.fill && style.fill !== NO_FILL ? style.fill : null;
+    if (fill) rules.push(`${all} { color: ${readableText(fill)}; }`);
   }
   const effects = textEffectDeclarations(style);
   if (effects.length > 0) rules.push(`${all} { ${effects.join("; ")}; }`);
@@ -1719,6 +1725,12 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
     }
     const title = `${root} [data-part=${cssString(EXCEL_TITLE_PART[report])}]`;
     rules.push(`${title}, ${title} * { background: ${theme.title}; color: ${theme.titleText}; }`);
+    if (layout.matchTheme) {
+      // The heading's own boxes (the Rojmel's આવક / જાવક / page boxes) in the theme's colours.
+      for (const part of REPORT_PARTS[report].filter((each) => each.pieced)) {
+        rules.push(`${root} [data-part=${cssString(part.id)}] > [data-part] { background: ${theme.band}; color: ${theme.head}; }`);
+      }
+    }
   }
 
   const padding: string[] = [];
@@ -1796,6 +1808,7 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
             widthPt: layout.lineWeight ? LINE_WEIGHT_PT[layout.lineWeight] : 0.7,
           },
           headingModeOf(report, layout, target.part),
+          layout.matchTheme === true,
         ),
       );
       continue;
@@ -1855,13 +1868,29 @@ export function widthScale(report: PrintableReportId, layout: ReportLayout, cols
 
 // ------------------------------------------------------------------ shapes
 
+/** Black or white, whichever reads better on this fill (WCAG contrast). */
+export function readableText(fill: string): "#000000" | "#ffffff" {
+  const channel = (hex: string): number => {
+    const c = parseInt(hex, 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance =
+    0.2126 * channel(fill.slice(1, 3)) + 0.7152 * channel(fill.slice(3, 5)) + 0.0722 * channel(fill.slice(5, 7));
+  const onWhite = 1.05 / (luminance + 0.05);
+  const onBlack = (luminance + 0.05) / 0.05;
+  return onWhite >= onBlack ? "#ffffff" : "#000000";
+}
+
 /** How a heading's shape is painted, from its style and the report's theme. */
-export function shapePaint(style: CellStyle, theme: TableTheme | null): ShapePaint {
-  const fill = style.fill === NO_FILL ? null : (style.fill ?? (theme ? theme.band : "#ffffff"));
+export function shapePaint(style: CellStyle, theme: TableTheme | null, matchTheme = false): ShapePaint {
+  // With the theme's colours on, the theme's title pair (dark fill, light
+  // words); otherwise the pale band colour, as before.
+  const themeFill = theme ? (matchTheme ? theme.title : theme.band) : "#ffffff";
+  const fill = style.fill === NO_FILL ? null : (style.fill ?? themeFill);
   return {
     fill,
     ...(style.fill2 && fill !== null ? { fill2: style.fill2, gradientAngle: style.gradientAngle ?? 90 } : {}),
-    outline: style.lineColour ?? theme?.title ?? "#7b1d1d",
+    outline: style.lineColour ?? (matchTheme ? theme?.head : theme?.title) ?? "#7b1d1d",
     ...(style.outlinePt !== undefined ? { outlinePt: style.outlinePt } : {}),
     ...(style.outlineDash ? { outlineDash: style.outlineDash } : {}),
     ...(style.accent ? { accent: style.accent } : {}),
@@ -1897,7 +1926,7 @@ export function paintShapes(root: HTMLElement, layout: ReportLayout, report: Pri
     uid += 1;
     // Joined to the table: a straight bottom, laid on the table's line.
     const flatBottom = headingModeOf(report, layout, element.dataset["part"] ?? "") === "row";
-    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme), style.shapeAdjust, `shape${uid}`, { flatBottom });
+    const markup = shapeSvg(style.shape!, width, height, shapePaint(style, theme, layout.matchTheme === true), style.shapeAdjust, `shape${uid}`, { flatBottom });
     let layer = element.querySelector<HTMLElement>(":scope > .shape-layer");
     if (!layer) {
       layer = document.createElement("span");
