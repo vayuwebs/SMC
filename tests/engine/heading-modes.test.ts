@@ -47,8 +47,9 @@ describe("old saved headings are migrated", () => {
     expect(parse({ shape: "plaque", shapeFit: "center" })).toEqual({ headingMode: "banner", shape: "plaque" });
   });
 
-  it("drops an outer colour with nothing to carry it", () => {
-    expect(parse({ boxFill: "#fff8e1" })).toEqual({});
+  it("keeps an unshaped heading's outer colour as its fill, so it prints as before", () => {
+    expect(parse({ boxFill: "#fff8e1" })).toEqual({ fill: "#fff8e1" });
+    expect(parse({ boxFill: "#fff8e1", fill: "#000000" })).toEqual({ fill: "#000000" });
   });
 
   it("leaves rect and unshaped styles alone", () => {
@@ -160,7 +161,7 @@ describe("the theme colours switch", () => {
 
   it("colours the band's pieces from the theme when on", () => {
     const on = css({}, { theme: "blue", matchTheme: true });
-    expect(on).toContain('#r [data-part="band"] > [data-part] { background: #ddebf7; color: #1f4e79; }');
+    expect(on).toContain('#r :where([data-part="band"] > [data-part]) { background: #ddebf7; color: #1f4e79; }');
     expect(css({}, { theme: "blue" })).toBe(BEFORE["rojmel:blue"]);
   });
 
@@ -192,5 +193,14 @@ describe("headings whose pieces are not boxes", () => {
 
   it("gives theme colours only to pieces that are boxes", () => {
     expect(register({}, { theme: "maroon", matchTheme: true })).not.toContain('[data-part="title"] > [data-part]');
+  });
+});
+
+describe("the school's own colours win over the theme's", () => {
+  it("keeps a band piece's own fill and colour with theme colours on", () => {
+    const out = css({ "part:bandLeft": { fill: "#ffff00", colour: "#00ff00" } }, { theme: "blue", matchTheme: true });
+    // The theme's piece colours are weaker than any part's own rule (one id, no more).
+    expect(out).toContain('#r :where([data-part="band"] > [data-part]) { background: #ddebf7; color: #1f4e79; }');
+    expect(out).not.toContain('#r [data-part="band"] > [data-part] { background: #ddebf7');
   });
 });

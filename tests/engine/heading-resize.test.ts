@@ -41,6 +41,10 @@ describe("dragging a heading's handles", () => {
     expect(resizePatch("s", start, { x: 0, y: 500 }, limits)).toEqual({ heightMm: 80 });
   });
 
+  it("never stores a width the layout cannot save, however wide the paper", () => {
+    expect(resizePatch("e", start, { x: 1000, y: 0 }, { maxWidthMm: 410 })).toEqual({ widthMm: 400 });
+  });
+
   it("rounds to half millimetres", () => {
     expect(resizePatch("e", start, { x: 3.33, y: 0 }, limits)).toEqual({ widthMm: 53.5 });
   });

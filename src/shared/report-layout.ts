@@ -203,9 +203,10 @@ export function migrateCellStyle(raw: unknown): unknown {
   if (!("joinTable" in old || "boxFill" in old || "shapeFit" in old || "shapeInsetMm" in old)) return raw;
   const { joinTable, boxFill, shapeFit, shapeInsetMm: _inset, ...style } = old;
   const shaped = typeof style["shape"] === "string" && style["shape"] !== "rect";
+  // Unshaped, the outer box was the heading's own background: keep it.
+  if (!shaped && style["fill"] === undefined && typeof boxFill === "string") style["fill"] = boxFill;
   if (joinTable === true) {
     style["headingMode"] = "row";
-    if (!shaped && style["fill"] === undefined && typeof boxFill === "string") style["fill"] = boxFill;
   } else if (shaped && style["headingMode"] === undefined) {
     style["headingMode"] = "banner";
     if (shapeFit !== "center") style["bannerFull"] = true;
@@ -1733,7 +1734,9 @@ export function layoutCss(report: PrintableReportId, layout: ReportLayout, root:
     if (layout.matchTheme) {
       // The heading's own boxes (the Rojmel's આવક / જાવક / page boxes) in the theme's colours.
       for (const part of REPORT_PARTS[report].filter((each) => each.pieced)) {
-        rules.push(`${root} [data-part=${cssString(part.id)}] > [data-part] { background: ${theme.band}; color: ${theme.head}; }`);
+        // :where keeps this to one id: a piece's own colours, and a shaped band's
+        // see-through pieces, still win; print.css's fixed colours do not.
+        rules.push(`${root} :where([data-part=${cssString(part.id)}] > [data-part]) { background: ${theme.band}; color: ${theme.head}; }`);
       }
     }
   }

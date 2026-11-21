@@ -23,6 +23,7 @@ export interface ResizeStart {
 
 /** The limits the layout can store (cellStyleSchema), and the table's width. */
 const MIN_WIDTH_MM = 5;
+const MAX_WIDTH_MM = 400;
 const MIN_HEIGHT_MM = 2;
 const MAX_HEIGHT_MM = 80;
 const MAX_GAP_MM = 100;
@@ -39,7 +40,8 @@ export function resizePatch(
   if (handle === "gap") return { gapMm: half(clamp(start.gapMm + deltaMm.x, 0, MAX_GAP_MM)) };
 
   const patch: Pick<CellStyle, "widthMm" | "heightMm" | "gapMm"> = {};
-  const width = (mm: number): number => half(clamp(mm, MIN_WIDTH_MM, limits.maxWidthMm));
+  // Never wider than the layout can store (cellStyleSchema caps widthMm at 400), however wide the paper.
+  const width = (mm: number): number => half(clamp(mm, MIN_WIDTH_MM, Math.min(limits.maxWidthMm, MAX_WIDTH_MM)));
   if (handle.includes("e")) patch.widthMm = width(start.widthMm + deltaMm.x);
   if (handle.includes("w")) {
     // The left edge cannot pass the cell before it, nor make this one too narrow.
