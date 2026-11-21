@@ -3459,3 +3459,40 @@ button.primary:disabled {
   border-radius: 4px;
   margin-bottom: 3px;
 }
+
+/* ---- Resizing a heading on the preview, like a picture in Paint ---- */
+.heading-handles-box {
+  position: fixed;
+  border: 1px dashed #1f6feb;
+  pointer-events: none;
+  z-index: 19;
+}
+
+.heading-handle {
+  position: fixed;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1.5px solid #1f6feb;
+  border-radius: 2px;
+  z-index: 22;
+  touch-action: none;
+}
+
+.heading-handle-n,
+.heading-handle-s { cursor: ns-resize; }
+.heading-handle-e,
+.heading-handle-w { cursor: ew-resize; }
+.heading-handle-ne,
+.heading-handle-sw { cursor: nesw-resize; }
+.heading-handle-nw,
+.heading-handle-se { cursor: nwse-resize; }
+
+.heading-handle-gap {
+  position: fixed;
+  cursor: col-resize;
+  background: repeating-linear-gradient(90deg, rgba(31, 111, 235, 0.25) 0 2px, transparent 2px 5px);
+  z-index: 21;
+  touch-action: none;
+}

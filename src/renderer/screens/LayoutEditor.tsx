@@ -73,6 +73,7 @@ import { MarginsMenu } from "../components/PageMargins.js";
 import { cleanPage } from "./PrintDialog.js";
 import { askConfirm } from "../components/ConfirmDialog.js";
 import { ShapeGallery, ShapeStyleGallery } from "../components/ShapeFormat.js";
+import { HeadingHandles } from "../components/HeadingHandles.js";
 import { BEVELS, OUTLINE_DASHES, SHADOWS, SHAPES_WITHOUT_FLAT_BOTTOM, shapeInfo, type BevelPreset, type OutlineDash, type ShadowPreset, type ShapeId } from "../../shared/shapes.js";
 
 /**
@@ -350,11 +351,27 @@ export function LayoutEditor({
   const [viewZoom, setViewZoom] = useState(100);
   // The heading tab's rarely used options (gradient, effects, text effects), closed by default.
   const [moreShapeOptions, setMoreShapeOptions] = useState(false);
+  // The selected heading's box on the preview, for its resize handles.
+  const [partElement, setPartElement] = useState<HTMLElement | null>(null);
   // The format painter: a style picked up, waiting to be put on the next click.
   const [painter, setPainter] = useState<CellStyle | null>(null);
   // The pen the border buttons draw with.
   const [pen, setPen] = useState<Pen>({ style: "thin", colour: undefined });
   const justDragged = useRef(false);
+
+  // Find the selected heading on the sheet again whenever the sheet changes.
+  useEffect(() => {
+    if (selection?.kind !== "part" || !REPORT_PARTS[report].find((each) => each.id === selection.part)?.sizable) {
+      setPartElement(null);
+      return;
+    }
+    const frame = requestAnimationFrame(() =>
+      setPartElement(
+        document.querySelector<HTMLElement>(`#${LAYOUT_ROOT_ID} .sheet:not([aria-hidden]) [data-part=${cssString(selection.part)}]`),
+      ),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [selection, draft, report]);
 
   const updateCheck = useCallback((next: LayoutCheck) => {
     setCheck((current) =>
@@ -1804,6 +1821,16 @@ export function LayoutEditor({
           <PrintRoot report={report} layout={draft} editorCss={editorCss} onChecked={updateCheck} />
         </div>
       </div>
+
+      {partElement && selection?.kind === "part" && draft && (
+        <HeadingHandles
+          element={partElement}
+          piece={REPORT_PARTS[report].find((each) => each.id === selection.part)?.block !== true}
+          maxWidthMm={tableWidthMm(report, draft)}
+          mmLabel={t.mm}
+          onCommit={(patch) => apply(patch)}
+        />
+      )}
 
       {drag && (
         <>
