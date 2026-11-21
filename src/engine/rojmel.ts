@@ -32,6 +32,7 @@ import {
   cashbookCheques,
   chequeAllocation,
   chequeAmount,
+  isPfms,
 } from "./allocation.js";
 import { openingBank, openingCash } from "./balances.js";
 import { chequeReturnedGu, type PageResolver } from "./ledger.js";
@@ -138,14 +139,29 @@ const FOOTER_ROWS = 3;
 
 export interface RojmelOptions {
   /**
-   * Whether to print nil blocks for stretches with no transactions.
+   * How nil blocks are emitted for stretches with no transactions:
    *
-   * SPEC 11.4 is still open with the client: their own file is inconsistent
-   * about this. The default fills every gap, splitting at month ends, which
-   * reproduces the shape of the sample pages.
+   *  - `"fill-gaps"` (default / SMC E): SPEC 11.4 rule splitting at month ends
+   *    and omitting intermediate/month-start gaps shorter than 15 days.
+   *  - `"continuous-old"` (SMC E old): dedicated single-date blocks for the
+   *    first and last day of the year, and single continuous nil blocks between
+   *    active dates whenever the gap is strictly more than 3 days (4+ days),
+   *    with no month-boundary splitting.
+   *  - `"smc"` (SMC): only the date range that is needed - the 1 April block,
+   *    one nil block from 2 April to the day before the first entry, no nil
+   *    blocks between entries, and a 31 March block at the end, always.
+   *  - `"none"`: active transaction dates only.
    */
-  nilBlocks?: "fill-gaps" | "none";
+  nilBlocks?: "fill-gaps" | "continuous-old" | "smc" | "none";
+  /**
+   * Who the closing sentence says the balance belongs to: "SMCE" (default) or
+   * "SMC" in SMC mode.
+   */
+  bodyLabel?: string;
 }
+
+/** Minimum empty days required to emit a nil block in continuous-old mode (> 3 days). */
+const CONTINUOUS_OLD_MIN_GAP_DAYS = 4;
 
 /**
  * The cash book runs date by date; cheques entered on the same cash-book date
@@ -157,7 +173,10 @@ function byDate(a: BookCheque, b: BookCheque): number {
 }
 
 export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel {
-  const fillGaps = (options.nilBlocks ?? "fill-gaps") === "fill-gaps";
+  const mode = options.nilBlocks ?? "fill-gaps";
+  const fillGaps = mode === "fill-gaps";
+  const continuousOld = mode === "continuous-old";
+  const smc = mode === "smc";
 
   const receiptsByDate = groupBy(book.receipts, (receipt) => receipt.date);
   // A cheque the bank later sent back was still written and entered: it prints on
@@ -184,6 +203,17 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
     blocks.push(block);
     cash = block.closingCashPaise;
     bank = block.closingBankPaise;
+  };
+
+  /**
+   * Continuous nil-block rule (SMC E old):
+   * Emits one nil block spanning [from, to] without splitting across months,
+   * ignoring gaps of 3 days or less (only emitting when >= 4 empty days).
+   */
+  const emitContinuousGap = (from: string, to: string): void => {
+    if (from <= to && daysInclusive(from, to) >= CONTINUOUS_OLD_MIN_GAP_DAYS) {
+      emit(nilBlock(from, to, cash, bank));
+    }
   };
 
   /**
@@ -248,6 +278,7 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
 
   // The year opens with its own block, even when nothing happened on 1 April.
   const firstDate = book.year.startDate;
+  const endDate = book.year.endDate;
   const startHasEntries = activeDates[0] === firstDate;
   if (fillGaps && !startHasEntries) {
     emit(nilBlock(firstDate, firstDate, cash, bank));
@@ -259,11 +290,22 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
     } else {
       emitTailGap(firstDate, activeDates[0]);
     }
+  } else if (smc) {
+    if (!startHasEntries) emit(nilBlock(firstDate, firstDate, cash, bank));
+    // One range up to the first entry - or, in a year with none, up to 30 March.
+    const upTo = activeDates[0] !== undefined ? previousDay(activeDates[0]) : previousDay(endDate);
+    const from = startHasEntries ? null : nextDay(firstDate);
+    if (from !== null && from <= upTo) emit(nilBlock(from, upTo, cash, bank));
+  } else if (continuousOld && !startHasEntries) {
+    emit(nilBlock(firstDate, firstDate, cash, bank));
+    if (activeDates.length > 0 && activeDates[0]! > firstDate) {
+      emitContinuousGap(nextDay(firstDate), previousDay(activeDates[0]!));
+    }
   }
 
   for (let index = 0; index < activeDates.length; index += 1) {
     const date = activeDates[index]!;
-    if (index === 0 || activeDates[index - 1]!.slice(0, 7) !== date.slice(0, 7)) {
+    if (fillGaps && (index === 0 || activeDates[index - 1]!.slice(0, 7) !== date.slice(0, 7))) {
       emitMonthStartGap(date);
     }
     // One block per cheque: a date with two cheques prints two blocks, the
@@ -290,40 +332,67 @@ export function buildRojmel(book: YearBook, options: RojmelOptions = {}): Rojmel
     });
     const nextDate = activeDates[index + 1];
     if (nextDate !== undefined) {
-      emitTailGap(date, nextDate);
-      emitEmptyMonths(date, nextDate);
+      if (fillGaps) {
+        emitTailGap(date, nextDate);
+        emitEmptyMonths(date, nextDate);
+      } else if (continuousOld) {
+        emitContinuousGap(nextDay(date), previousDay(nextDate));
+      }
     } else if (fillGaps) {
-      emitTailGap(date, book.year.endDate);
-      emitEmptyMonths(date, book.year.endDate);
+      emitTailGap(date, endDate);
+      emitEmptyMonths(date, endDate);
       const lastBlock = blocks[blocks.length - 1];
-      if (!lastBlock || lastBlock.toDate < book.year.endDate) {
-        if (lastBlock && nextDay(lastBlock.toDate) <= previousDay(book.year.endDate)) {
+      if (!lastBlock || lastBlock.toDate < endDate) {
+        if (lastBlock && nextDay(lastBlock.toDate) <= previousDay(endDate)) {
           const preEndFrom = nextDay(lastBlock.toDate);
-          const preEndTo = previousDay(book.year.endDate);
+          const preEndTo = previousDay(endDate);
           if (daysInclusive(preEndFrom, preEndTo) >= 15) {
             emit(nilBlock(preEndFrom, preEndTo, cash, bank));
           }
         }
-        emit(nilBlock(book.year.endDate, book.year.endDate, cash, bank));
-      } else if (lastBlock && lastBlock.toDate === book.year.endDate && !lastBlock.isNil) {
-        emit(nilBlock(book.year.endDate, book.year.endDate, cash, bank));
+        emit(nilBlock(endDate, endDate, cash, bank));
+      } else if (lastBlock && lastBlock.toDate === endDate && !lastBlock.isNil) {
+        emit(nilBlock(endDate, endDate, cash, bank));
+      }
+    } else if (smc) {
+      // The year always closes with its own 31 March block.
+      const closing = nilBlock(endDate, endDate, cash, bank);
+      emit(date < endDate ? closing : { ...closing, id: `${endDate}#close` });
+    } else if (continuousOld) {
+      if (date < endDate) {
+        emitContinuousGap(nextDay(date), previousDay(endDate));
+        emit(nilBlock(endDate, endDate, cash, bank));
+      } else {
+        const closing = nilBlock(endDate, endDate, cash, bank);
+        emit({ ...closing, id: `${endDate}#close` });
       }
     }
   }
 
+  if (smc && activeDates.length === 0) {
+    emit(nilBlock(endDate, endDate, cash, bank));
+  }
+
   // A year with no transactions at all still prints a book.
-  if (blocks.length === 0) {
-    emit(nilBlock(firstDate, firstDate, cash, bank));
-    for (const range of monthRanges(nextDay(firstDate), previousDay(book.year.endDate))) {
-      emit(nilBlock(range.from, range.to, cash, bank));
+  if (blocks.length === 0 || (continuousOld && activeDates.length === 0)) {
+    if (continuousOld) {
+      if (endDate > firstDate) {
+        emitContinuousGap(nextDay(firstDate), previousDay(endDate));
+        emit(nilBlock(endDate, endDate, cash, bank));
+      }
+    } else {
+      emit(nilBlock(firstDate, firstDate, cash, bank));
+      for (const range of monthRanges(nextDay(firstDate), previousDay(endDate))) {
+        emit(nilBlock(range.from, range.to, cash, bank));
+      }
+      emit(nilBlock(endDate, endDate, cash, bank));
     }
-    emit(nilBlock(book.year.endDate, book.year.endDate, cash, bank));
   }
 
   return {
     blocks,
     pages: paginate(blocks),
-    closingSentenceGu: closingSentence(book, add(cash, bank)),
+    closingSentenceGu: closingSentence(book, add(cash, bank), options.bodyLabel ?? "SMCE"),
   };
 }
 
@@ -480,7 +549,9 @@ function activeBlock(
         ? ""
         : `${cheque.voucherNo} ${formatDate(cheque.voucherDate ?? cheque.chequeDate)}`;
 
-    if (isReimbursement(cheque.type)) {
+    if (isPfms(cheque)) {
+      pushPfmsLines(cheque, amount, date, nameByCode, receiptLines, paymentLines);
+    } else if (isReimbursement(cheque.type)) {
       // Each bill goes in one column: a bill paid in cash (રોકડ) in the cash
       // column, from money the member secretary took in hand; a bill paid online
       // (બેન્ક) in the bank column, straight from the bank. The withdrawal line
@@ -658,6 +729,89 @@ function activeBlock(
     receiptLines,
     paymentLines,
   });
+}
+
+/**
+ * A PFMS payment, laid out as the client's SMC workbook lays it out. The grant
+ * comes in on the આવક side (`<head> જમા`) and goes straight out on the જાવક
+ * side, over four rows:
+ *
+ *   <head> માંથી
+ *   PFMS P.A.NO <PPA નંબર> થી        bill no + date   PFMS   amount
+ *   <vendor> ને
+ *   <expense> ના નાણાં ચુકવ્યા.વા.મુ
+ */
+function pushPfmsLines(
+  cheque: BookCheque,
+  amount: Paise,
+  date: string,
+  nameByCode: Map<string, string>,
+  receiptLines: RojmelLine[],
+  paymentLines: RojmelLine[],
+): void {
+  const source = { kind: "cheque", chequeNo: cheque.chequeNo } as const;
+  const allocation = chequeAllocation(cheque);
+  for (const [code, share] of allocation) {
+    receiptLines.push({
+      side: "receipt",
+      dateText: "",
+      descriptionGu: `${nameByCode.get(code) ?? code} જમા`,
+      referenceText: "",
+      chequeText: "",
+      cashPaise: ZERO,
+      bankPaise: share,
+      totalPaise: share,
+      headingOnly: false,
+      source,
+    });
+  }
+
+  const heads = [...allocation.keys()].map((code) => nameByCode.get(code) ?? code);
+  const note = (descriptionGu: string, first = false): RojmelLine => ({
+    side: "payment",
+    dateText: first && paymentLines.length === 0 ? formatDate(date) : "",
+    descriptionGu,
+    referenceText: "",
+    chequeText: "",
+    cashPaise: ZERO,
+    bankPaise: ZERO,
+    totalPaise: ZERO,
+    headingOnly: true,
+    source,
+  });
+
+  paymentLines.push(note(`${joinGu(heads)} માંથી`, true));
+  paymentLines.push({
+    side: "payment",
+    dateText: "",
+    descriptionGu: `PFMS P.A.NO ${cheque.ppaNo ?? ""} થી`.replace(/\s+/g, " "),
+    referenceText: pfmsBillReference(cheque),
+    chequeText: "PFMS",
+    cashPaise: ZERO,
+    bankPaise: amount,
+    totalPaise: amount,
+    headingOnly: false,
+    source,
+  });
+  paymentLines.push(note(`${cheque.payeeGu.trim()} ને`));
+  paymentLines.push(note(`${cheque.purposeGu.trim()} ના નાણાં ચુકવ્યા.વા.મુ`));
+}
+
+/**
+ * The bill reference a PFMS payment prints in the voucher column: its bill's
+ * number and date ("9/1 01/10/25"), or the first and last bill numbers when it
+ * pays several ("34/1 થી 34/9").
+ */
+function pfmsBillReference(cheque: BookCheque): string {
+  const bills = cheque.bills;
+  if (bills.length === 0) return "";
+  if (bills.length === 1) {
+    const bill = bills[0]!;
+    return bill.billNo ? `${bill.billNo} ${formatDateShort(bill.billDate)}` : formatDateShort(bill.billDate);
+  }
+  const numbers = bills.map((bill) => bill.billNo).filter((no): no is string => no !== null && no !== "");
+  if (numbers.length === 0) return formatDateShort(bills[0]!.billDate);
+  return numbers.length === 1 ? numbers[0]! : `${numbers[0]} થી ${numbers[numbers.length - 1]}`;
 }
 
 /** Compute the three footer rows and the row count. */
@@ -873,9 +1027,9 @@ function formatAmountPlain(amount: Paise): string {
   return remainder === 0 ? String(rupees) : `${rupees}.${String(remainder).padStart(2, "0")}`;
 }
 
-function closingSentence(book: YearBook, closing: Paise): string {
+function closingSentence(book: YearBook, closing: Paise, bodyLabel: string): string {
   // Latin digits like the rest of the book: "154.00", the paise in the same
   // figures as the rupees (it used to end in a Gujarati ".૦૦" - and in
   // "154.50.૦૦" when there were paise).
-  return `તારીખ ${formatDate(book.year.endDate)} ના રોજ ${book.school.nameGu} SMCE ની બંધ સિલક રૂપિયા ${formatAmount(closing)} રહે છે.`;
+  return `તારીખ ${formatDate(book.year.endDate)} ના રોજ ${book.school.nameGu} ${bodyLabel} ની બંધ સિલક રૂપિયા ${formatAmount(closing)} રહે છે.`;
 }

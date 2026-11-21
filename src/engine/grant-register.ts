@@ -19,7 +19,7 @@
  * NOTE: still to be confirmed with the client (SPEC 11.10).
  */
 import { paise, type Paise, ZERO } from "../lib/money.js";
-import { chequeAllocation } from "./allocation.js";
+import { chequeAllocation, isPfms, pfmsPayments } from "./allocation.js";
 import type { BookReceipt, GrantRegisterRow, YearBook } from "./types.js";
 
 /** A source of money that outflows are drawn from, oldest first. */
@@ -79,17 +79,55 @@ export function grantRegister(book: YearBook): GrantRegisterRow[] {
   const spent = spentPerReceipt(book);
   const nameByCode = new Map(book.heads.map((head) => [head.code, head.nameGu]));
 
-  return [...book.receipts]
-    .sort(byDateThenId)
-    .map((receipt) => {
-      const spentPaise = spent.get(receipt.id) ?? ZERO;
-      return {
-        receipt,
-        headNameGu: nameByCode.get(receipt.headCode) ?? receipt.headCode,
-        spentPaise,
-        savingPaise: paise(receipt.amountPaise - spentPaise),
-      };
-    });
+  const typed: GrantRegisterRow[] = book.receipts.map((receipt) => {
+    const spentPaise = spent.get(receipt.id) ?? ZERO;
+    return {
+      receipt,
+      headNameGu: nameByCode.get(receipt.headCode) ?? receipt.headCode,
+      spentPaise,
+      savingPaise: paise(receipt.amountPaise - spentPaise),
+    };
+  });
+
+  // SMC: each PFMS payment draws its own grant, which is spent the same day.
+  const pfms: GrantRegisterRow[] = pfmsGrantReceipts(book).map((receipt) => ({
+    receipt,
+    headNameGu: nameByCode.get(receipt.headCode) ?? receipt.headCode,
+    spentPaise: receipt.amountPaise,
+    savingPaise: ZERO,
+  }));
+
+  return [...typed, ...pfms].sort((a, b) => byDateThenId(a.receipt, b.receipt));
+}
+
+/** The prefix of a grant register row's id that a PFMS payment produced. */
+export const PFMS_RECEIPT_PREFIX = "pfms:";
+
+/**
+ * The grant each PFMS payment brings in, one per head it pays from, as the
+ * client's SMC grant register lists it: from SSA, online, on the day it was
+ * paid, into the school's bank. Its id is `pfms:<serial>:<head code>`.
+ */
+export function pfmsGrantReceipts(book: YearBook): BookReceipt[] {
+  const bankLabelGu = [book.school.bankNameGu, book.school.bankBranchGu].filter(Boolean).join(" ");
+  return pfmsPayments(book).flatMap((cheque) =>
+    [...chequeAllocation(cheque)].map(([headCode, amountPaise]) => ({
+      id: `${PFMS_RECEIPT_PREFIX}${String(cheque.chequeNo).padStart(6, "0")}:${headCode}`,
+      date: cheque.cashbookDate,
+      headCode,
+      amountPaise,
+      receivedFromGu: "SSA",
+      modeGu: "ઓનલાઈન",
+      bankLabelGu,
+      ddChequeNo: null,
+      ddChequeDate: null,
+      allotmentOrderNo: null,
+      allotmentOrderDate: null,
+      depositedDate: cheque.cashbookDate,
+      creditedDate: cheque.cashbookDate,
+      remarksGu: null,
+    })),
+  );
 }
 
 /** Opening balance first, then this head's receipts oldest first. */
@@ -110,7 +148,8 @@ function poolsFor(book: YearBook, headCode: string): Pool[] {
 function outflowsFor(book: YearBook, headCode: string): Outflow[] {
   const outflows: Outflow[] = [];
 
-  for (const cheque of book.cheques) {
+  // A PFMS payment spends its own grant, never a typed receipt's.
+  for (const cheque of book.cheques.filter((candidate) => !isPfms(candidate))) {
     const share = chequeAllocation(cheque).get(headCode);
     if (share === undefined || share === 0) continue;
     outflows.push({

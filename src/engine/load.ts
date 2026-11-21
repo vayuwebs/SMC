@@ -116,6 +116,7 @@ export async function loadYearBook(prisma: PrismaClient, financialYearId: number
       purposeGu: cheque.purposeGu,
       type: first.type as ChequeType,
       remarksGu: cheque.remarksGu,
+      ppaNo: cheque.ppaNo ?? null,
       bills: first.bills
         .map(toBill)
         .map((bill) => ({ ...bill, chequeNo: cheque.chequeNo }))

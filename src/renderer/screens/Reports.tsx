@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { api } from "../api.js";
 import type { DayBalance, Ledger } from "../../engine/types.js";
-import { PRINTABLE_REPORTS, type ApplyLayoutResultDto, type PrintableReportId } from "../../shared/api.js";
+import {
+  PRINTABLE_REPORTS,
+  reportsForMode,
+  type AppMode,
+  type ApplyLayoutResultDto,
+  type PrintableReportId,
+} from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
 import { Money } from "../components/Money.js";
@@ -31,7 +37,7 @@ type FigureTab = "balances" | "ledgers";
 type Tab = PrintableReportId | FigureTab;
 
 const STATUTORY_TABS: PrintableReportId[] = ["rojmel", "khatavahi", "annexure10", "annexure9", "patrakD"];
-const REGISTER_TABS: PrintableReportId[] = ["grantRegister", "chequeRegister", "billRegister", "vouchers"];
+const REGISTER_TABS: PrintableReportId[] = ["grantRegister", "chequeRegister", "pfmsRegister", "billRegister", "vouchers"];
 const FIGURE_TABS: FigureTab[] = ["balances", "ledgers"];
 
 function labelFor(tab: Tab, t: Strings): string {
@@ -46,6 +52,8 @@ function labelFor(tab: Tab, t: Strings): string {
       return t.tabGrantRegisterPrint;
     case "chequeRegister":
       return t.tabChequeRegister;
+    case "pfmsRegister":
+      return t.tabPfmsRegister;
     case "billRegister":
       return t.tabBillRegister;
     case "vouchers":
@@ -72,8 +80,10 @@ type ExportKind = "pdf" | "excel" | "excel-all";
  * a card; the preview (and, from there, the layout editor) opens the report
  * on its own page, with a way back to the cards.
  */
-export function Reports(): JSX.Element {
+export function Reports({ mode = "smc-e" }: { mode?: AppMode }): JSX.Element {
   const t = useStrings();
+  // SMC prints a PFMS register in place of the cheque register, and no પત્રક-D.
+  const inMode = new Set<Tab>([...reportsForMode(mode), ...FIGURE_TABS]);
   const [tab, setTab] = useState<Tab>("rojmel");
   // Showing one report (its preview, or a figure view) rather than the cards.
   const [open, setOpen] = useState(false);
@@ -250,8 +260,8 @@ export function Reports(): JSX.Element {
           </button>
         </div>
         {savedNotice}
-        {group(t.groupStatutory, STATUTORY_TABS)}
-        {group(t.groupRegisters, REGISTER_TABS)}
+        {group(t.groupStatutory, STATUTORY_TABS.filter((id) => inMode.has(id)))}
+        {group(t.groupRegisters, REGISTER_TABS.filter((id) => inMode.has(id)))}
         {group(t.groupFigures, FIGURE_TABS)}
         {printDialog}
       </>

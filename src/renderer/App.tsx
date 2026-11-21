@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
-import type { AppStateDto, DashboardDto, OpenSchoolDto, SetupStateDto, UserDto } from "../shared/api.js";
+import type {
+  AppMode,
+  AppModeStateDto,
+  AppStateDto,
+  DashboardDto,
+  OpenSchoolDto,
+  SetupStateDto,
+  UserDto,
+} from "../shared/api.js";
 import { Dashboard } from "./screens/Dashboard.js";
 import { Receipts } from "./screens/Receipts.js";
 import { BankCharges } from "./screens/BankCharges.js";
 import { Bills } from "./screens/Bills.js";
 import { Cheques } from "./screens/Cheques.js";
+import { Pfms } from "./screens/Pfms.js";
+import { modeLabel } from "./format.js";
 import { OpeningBalances } from "./screens/OpeningBalances.js";
 import { Reports } from "./screens/Reports.js";
 import { Reconciliation } from "./screens/Reconciliation.js";
@@ -15,7 +25,7 @@ import { YearEnd } from "./screens/YearEnd.js";
 import { Import } from "./screens/Import.js";
 import { Setup } from "./screens/Setup.js";
 import { Login } from "./screens/Login.js";
-import { Schools } from "./screens/Schools.js";
+import { ModeSelect, Schools } from "./screens/Schools.js";
 import { BackupBadge } from "./components/BackupBadge.js";
 import { Suggestions } from "./components/Suggestions.js";
 import { PhoneticTyping } from "./components/PhoneticTyping.js";
@@ -46,6 +56,18 @@ const SCREENS = [
 ] as const;
 
 export type ScreenId = (typeof SCREENS)[number]["id"];
+
+/**
+ * SMC pays through PFMS: its cheques entry is the PFMS screen. The importer
+ * reads SMC E workbooks (cheques), so SMC does not offer it.
+ */
+function shownInMode(id: ScreenId, mode: AppMode): boolean {
+  return !(mode === "smc" && id === "import");
+}
+
+function screenLabelInMode(id: ScreenId, mode: AppMode, t: ReturnType<typeof useStrings>): string {
+  return mode === "smc" && id === "cheques" ? t.navPfms : screenLabel(id, t);
+}
 
 /** The provider has to sit above anything that reads the dictionary. */
 export function App(): JSX.Element {
@@ -99,7 +121,18 @@ function Root(): JSX.Element {
     if (phase !== "open" && phase !== "dataMissing") return;
     const timer = window.setInterval(async () => {
       const next = await api.getAppState();
-      setState((current) => (current && current.phase !== next.phase ? next : current));
+      setState((current) => {
+        if (!current) return current;
+        if (current.phase !== next.phase) return next;
+        if (
+          "mode" in current &&
+          "mode" in next &&
+          (current.mode.active !== next.mode.active || current.mode.remember !== next.mode.remember)
+        ) {
+          return next;
+        }
+        return current;
+      });
     }, STATE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [phase]);
@@ -113,6 +146,20 @@ function Root(): JSX.Element {
     );
   }
   if (!state) return <div className="state">{t.loading}</div>;
+
+  if (
+    (state.phase === "chooseSchool" || state.phase === "dataMissing" || state.phase === "open") &&
+    state.mode.active === null
+  ) {
+    return (
+      <ModeSelect
+        user={state.user}
+        modeState={state.mode}
+        onSelected={(next) => setState(next)}
+        onSignedOut={() => void refresh()}
+      />
+    );
+  }
 
   switch (state.phase) {
     case "unavailable":
@@ -128,6 +175,7 @@ function Root(): JSX.Element {
     case "chooseSchool":
       return creatingSchool ? (
         <Setup
+          mode={state.mode.active}
           newSchool={{ onCancel: () => setCreatingSchool(false) }}
           onDone={() => {
             setCreatingSchool(false);
@@ -136,22 +184,27 @@ function Root(): JSX.Element {
         />
       ) : (
         <Schools
+          key={state.mode.active ?? "none"}
           user={state.user}
           cloud={state.cloud}
+          modeState={state.mode}
           onOpened={() => void refresh()}
           onNewSchool={() => setCreatingSchool(true)}
+          onModeChanged={(next) => setState(next)}
         />
       );
     case "dataMissing":
       return <DataMissing school={state.school} onChanged={(next) => setState(next)} />;
     case "open":
-      if (state.needsSetup) return <Setup onDone={() => void refresh()} />;
+      if (state.needsSetup) return <Setup mode={state.mode.active} onDone={() => void refresh()} />;
       // Keyed by school: switching schools starts every screen afresh.
       return (
         <Shell
           key={state.school.profileId}
           school={state.school}
           user={state.user}
+          modeState={state.mode}
+          onModeChanged={(next) => setState(next)}
           onSchoolClosed={() => void refresh()}
         />
       );
@@ -200,13 +253,18 @@ function DataMissing({
 function Shell({
   school,
   user,
+  modeState,
+  onModeChanged,
   onSchoolClosed,
 }: {
   school: OpenSchoolDto;
   user: UserDto;
+  modeState: AppModeStateDto;
+  onModeChanged: (next: AppStateDto) => void;
   onSchoolClosed: () => void;
 }): JSX.Element {
   const t = useStrings();
+  const activeMode: AppMode = modeState.active ?? "smc-e";
   // The screen is kept in the URL hash so a particular screen can be opened
   // directly - used by the SMOKE_SHOT check, and by the back button behaving
   // the way people expect.
@@ -290,7 +348,7 @@ function Shell({
         {groups.map((group) => (
           <div className="nav-group" key={group || "root"}>
             {group !== "" && <h2>{groupLabel(group, t)}</h2>}
-            {SCREENS.filter((item) => item.group === group).map((item) => {
+            {SCREENS.filter((item) => item.group === group && shownInMode(item.id, activeMode)).map((item) => {
               const count = countFor(item.id, dashboard);
               return (
                 <button
@@ -304,7 +362,7 @@ function Shell({
                     <span className="nav-item-chip" aria-hidden="true">
                       <NavIcon id={item.id} />
                     </span>
-                    <span>{screenLabel(item.id, t)}</span>
+                    <span>{screenLabelInMode(item.id, activeMode, t)}</span>
                   </span>
                   {count !== "" && <span className="count">{count}</span>}
                 </button>
@@ -327,9 +385,17 @@ function Shell({
                 <span aria-hidden="true">/</span>
               </>
             )}
-            <b>{screenLabel(screen, t)}</b>
+            <b>{screenLabelInMode(screen, activeMode, t)}</b>
           </div>
           <div className="topbar-actions">
+            <button
+              type="button"
+              className={`mode-badge ${activeMode}`}
+              title={t.modeChange}
+              onClick={() => setScreen("settings")}
+            >
+              {modeLabel(activeMode, t)}
+            </button>
             <span className="year-badge">
               {t.year} {dashboard.year.label}
             </span>
@@ -352,15 +418,23 @@ function Shell({
           {screen === "opening" && <OpeningBalances onChanged={refresh} />}
           {screen === "receipts" && <Receipts onChanged={refresh} />}
           {screen === "bills" && <Bills onChanged={refresh} />}
-          {screen === "cheques" && <Cheques onChanged={refresh} />}
+          {screen === "cheques" &&
+            (activeMode === "smc" ? <Pfms onChanged={refresh} /> : <Cheques onChanged={refresh} />)}
           {screen === "bankCharges" && <BankCharges onChanged={refresh} />}
           {screen === "reconciliation" && <Reconciliation onChanged={refresh} />}
-          {screen === "reports" && <Reports />}
+          {screen === "reports" && <Reports key={activeMode} mode={activeMode} />}
           {screen === "masters" && <Masters onChanged={refresh} />}
           {screen === "yearEnd" && <YearEnd />}
           {screen === "import" && <Import onChanged={refresh} />}
           {screen === "settings" && (
-            <Settings data={dashboard} school={school} user={user} onSignedOut={onSchoolClosed} />
+            <Settings
+              data={dashboard}
+              school={school}
+              user={user}
+              modeState={modeState}
+              onModeChanged={onModeChanged}
+              onSignedOut={onSchoolClosed}
+            />
           )}
         </div>
       </main>

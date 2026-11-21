@@ -24,10 +24,13 @@ export function Annexure10Page({
   school,
   year,
   report,
+  bodyGu = "એસ.એમ.સી.ઈ",
 }: {
   school: SchoolDto;
   year: FinancialYearDto;
   report: Annexure10;
+  /** Whose accounts the certificate speaks of: "એસ.એમ.સી.ઈ", or "એસ.એમ.સી" in SMC mode. */
+  bodyGu?: string;
 }): JSX.Element {
   /** An amount, two decimals, in Latin digits. */
   const money = (paise: number): string => formatAmount(paise);
@@ -112,13 +115,13 @@ export function Annexure10Page({
           {/* SPEC 6.9: the certificate, with the totals written into the sentence. */}
           <div className="certificate" data-part="certificate">
             આથી પ્રમાણપત્ર આપવામાં આવે છે કે સમગ્ર શિક્ષા અંતર્ગત વર્ષ {yearLabel} દરમ્યાન
-            એસ.એમ.સી.ઈ કક્ષાએ શરૂની સિલક રૂા.{" "}
+            {bodyGu} કક્ષાએ શરૂની સિલક રૂા.{" "}
             <span className="blank">{money(totals.openingPaise)}</span> વર્ષ દરમ્યાન મળેલ ગ્રાન્ટ
             રૂા. <span className="blank">{money(totals.receivedPaise)}</span> કુલ ગ્રાન્ટ રૂા.{" "}
             <span className="blank">{money(totals.totalPaise)}</span> તથા ગ્રાન્ટ પૈકી કુલ ખર્ચ રૂા.{" "}
             <span className="blank">{money(totals.totalOutPaise)}</span> થયેલ છે. અગાઉના વર્ષ સહિત
             31મી માર્ચના રોજ બચત રૂા. <span className="blank">{money(totals.closingPaise)}</span>{" "}
-            એસ.એમ.સી.ઈ કક્ષાએ જમા રહેલ છે. સદર આવક તથા ખર્ચ હિસાબી રેકર્ડ પરથી ખરાઈ કરેલ છે. જે આપ
+            {bodyGu} કક્ષાએ જમા રહેલ છે. સદર આવક તથા ખર્ચ હિસાબી રેકર્ડ પરથી ખરાઈ કરેલ છે. જે આપ
             સાહેબશ્રીને વિદિત થાય.
           </div>
         </>

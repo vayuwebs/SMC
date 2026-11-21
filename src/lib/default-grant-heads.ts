@@ -33,8 +33,8 @@ export const DEFAULT_GRANT_HEADS: DefaultGrantHead[] = [
  * The district is filled in from what the school enters, because these lines
  * name it: "સમગ્ર શિક્ષા ખેડા – SMCE".
  */
-export function defaultProgrammeLines(districtGu: string): string {
-  return `સમગ્ર શિક્ષા ${districtGu} – SMCE / સર્વ શિક્ષા અભિયાન – ${districtGu}`;
+export function defaultProgrammeLines(districtGu: string, bodyLabel = "SMCE"): string {
+  return `સમગ્ર શિક્ષા ${districtGu} – ${bodyLabel} / સર્વ શિક્ષા અભિયાન – ${districtGu}`;
 }
 
 /**

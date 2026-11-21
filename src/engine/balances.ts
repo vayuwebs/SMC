@@ -17,7 +17,15 @@
  * 1,646 short, and a hand-typed 0 in the cash closing hid it (SPEC 9.1).
  */
 import { add, paise, sum, type Paise, ZERO } from "../lib/money.js";
-import { billNet, billPaidInCash, cashPart, cashbookCheques, chequeAllocation, chequeAmount } from "./allocation.js";
+import {
+  billNet,
+  billPaidInCash,
+  cashPart,
+  cashbookCheques,
+  chequeAllocation,
+  chequeAmount,
+  pfmsPayments,
+} from "./allocation.js";
 import type { DayBalance, YearBook } from "./types.js";
 
 /** Opening bank across all heads. */
@@ -46,9 +54,11 @@ export function cashbookDates(book: YearBook): string[] {
 
 /** The cash and bank position at the end of `date`. */
 export function balanceOn(book: YearBook, date: string): DayBalance {
-  const receiptsIn = sum(
-    book.receipts.filter((receipt) => receipt.date <= date).map((receipt) => receipt.amountPaise),
-  );
+  const receiptsIn = sum([
+    ...book.receipts.filter((receipt) => receipt.date <= date).map((receipt) => receipt.amountPaise),
+    // A PFMS payment brings in its own grant on the day it is paid.
+    ...pfmsPayments(book).filter((cheque) => cheque.cashbookDate <= date).map(chequeAmount),
+  ]);
 
   const chequesOut = sum(
     cashbookCheques(book).filter((cheque) => cheque.cashbookDate <= date).map(chequeAmount),
@@ -104,6 +114,10 @@ export function headBalanceOn(book: YearBook, headCode: string, date: string): P
   );
 
   let out = ZERO;
+  for (const cheque of pfmsPayments(book)) {
+    if (cheque.cashbookDate > date) continue;
+    out = paise(out - (chequeAllocation(cheque).get(headCode) ?? ZERO));
+  }
   for (const cheque of cashbookCheques(book)) {
     if (cheque.cashbookDate > date) continue;
     out = add(out, chequeAllocation(cheque).get(headCode) ?? ZERO);

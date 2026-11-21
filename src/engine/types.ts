@@ -105,6 +105,12 @@ export interface BookCheque {
   purposeGu: string;
   type: ChequeType;
   remarksGu: string | null;
+  /**
+   * A PFMS payment's PPA number (SMC mode), e.g. "C072548358355". Absent or null
+   * for a cheque. For a PFMS payment chequeNo is the register's serial,
+   * chequeDate the PPA's date and cashbookDate the day it was actually paid.
+   */
+  ppaNo?: string | null;
   /** The bills this cheque pays. Empty for a grant return. */
   bills: BookBill[];
   /**

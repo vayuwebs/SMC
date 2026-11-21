@@ -547,6 +547,18 @@ export const REPORT_COLUMNS: Record<PrintableReportId, ReportColumn[]> = {
     ["cashedDate", "ચેક વટાવ્યાં તારીખ", 9.5],
     ["remarks", "શેરો", null],
   ]),
+  // SMC mode: the PFMS register, in the client's own column order. The limit
+  // columns of its Excel are left out - the limit is not printed.
+  pfmsRegister: columns([
+    ["serial", "અ.નં", 4.5],
+    ["ppaDate", "PPA બનાવ્યા તારીખ", 10],
+    ["ppaNo", "PPA નંબર", 14],
+    ["head", "વિગત", 15],
+    ["vendor", "વેન્ડરની વિગત", 18],
+    ["purpose", "ખર્ચની વિગત", 17],
+    ["amount", "રૂપિયા", 9.5],
+    ["paidDate", "ખરેખર ચુકવ્યા તારીખ", null],
+  ]),
   billRegister: columns([
     ["serial", "અ.નં", 4],
     ["voucherNo", "વાઉચર નંબર", 5.5],
@@ -652,6 +664,11 @@ export const REPORT_PARTS: Record<PrintableReportId, ReportPart[]> = {
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
   ],
   chequeRegister: [
+    joinable(heading("title", "મથાળું (આખું)")),
+    { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
+    { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
+  ],
+  pfmsRegister: [
     joinable(heading("title", "મથાળું (આખું)")),
     { id: "titleSchool", labelGu: "શાળાનું નામ", sizable: true },
     { id: "titleReport", labelGu: "રજીસ્ટર અને વર્ષ", sizable: true },
@@ -762,6 +779,7 @@ export const EXCEL_TITLE_PART: Record<PrintableReportId, string> = {
   khatavahi: "title",
   grantRegister: "title",
   chequeRegister: "title",
+  pfmsRegister: "title",
   billRegister: "title",
   vouchers: "programme",
   patrakD: "title",
@@ -784,6 +802,7 @@ export const REPORT_DEFAULTS: Record<PrintableReportId, ReportDefaults> = {
   khatavahi: { sizePt: 14, paddingXMm: 0.8, paddingYMm: 0.6, rowHeightMm: 5 },
   grantRegister: { sizePt: 14, paddingXMm: 1, paddingYMm: 1.1, rowHeightMm: 7 },
   chequeRegister: { sizePt: 14, paddingXMm: 1, paddingYMm: 1.1, rowHeightMm: 7 },
+  pfmsRegister: { sizePt: 14, paddingXMm: 1, paddingYMm: 1.1, rowHeightMm: 7 },
   billRegister: { sizePt: 14, paddingXMm: 1, paddingYMm: 1.1, rowHeightMm: 7 },
   vouchers: { sizePt: 14, paddingXMm: 1.1, paddingYMm: 1.2, rowHeightMm: null },
   patrakD: { sizePt: 14, paddingXMm: 1, paddingYMm: 1.1, rowHeightMm: 7 },
@@ -820,6 +839,7 @@ export const DEFAULT_PAGE: Record<
   khatavahi: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   grantRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   chequeRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
+  pfmsRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   billRegister: { paper: "legal-in", orientation: "landscape", marginMm: 10 },
   vouchers: { paper: "a4", orientation: "portrait", marginMm: 10 },
   patrakD: { paper: "a4", orientation: "landscape", marginMm: 10 },

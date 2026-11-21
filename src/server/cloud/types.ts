@@ -19,6 +19,8 @@
  * encrypted database file, byte for byte.
  */
 
+import type { AppMode } from "../../shared/api.js";
+
 export interface CloudUser {
   id: string;
   email: string;
@@ -36,6 +38,7 @@ export interface CloudProfile {
   id: string;
   schoolNameGu: string;
   diseCode: string;
+  appMode?: AppMode;
   createdAt: string;
 }
 
@@ -118,7 +121,7 @@ export interface CloudBackend {
   /** Register a new school and its key together. Neither can be replaced later. */
   createProfile(
     session: CloudSession,
-    input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string },
+    input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string; appMode?: AppMode },
   ): Promise<CloudProfile>;
   getProfileKey(session: CloudSession, profileId: string): Promise<string>;
   /**

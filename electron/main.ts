@@ -34,6 +34,7 @@ import {
   SESSION_METHODS,
   channelFor,
   type ApiMethod,
+  type AppMode,
   type BooksApi,
   type ExcelReportId,
   type FolderPurpose,
@@ -244,6 +245,8 @@ const FOLDER_TITLES: Record<FolderPurpose, string> = {
 function registerSessionApi(): void {
   const answers: Record<(typeof SESSION_METHODS)[number], (...args: never[]) => unknown> = {
     getAppState: () => requireController().getAppState(),
+    setAppMode: (mode: AppMode) => requireController().setAppMode(mode),
+    setModeRemember: (remember: boolean) => requireController().setModeRemember(remember),
     signIn: (email: string, password: string) => requireController().signIn(email, password),
     signUp: (email: string, password: string) => requireController().signUp(email, password),
     verifySignUp: (email: string, code: string) => requireController().verifySignUp(email, code),
@@ -281,6 +284,7 @@ function registerSessionApi(): void {
     moveLegacyBooks: (folder: string) => requireController().moveLegacyBooks(folder),
     deleteSchool: (profileId: string, password: string) => requireController().deleteSchool(profileId, password),
     applyLayoutToAllSchools: (report: PrintableReportId) => requireController().applyLayoutToAllSchools(report),
+    applyLimitsToAllSchools: () => requireController().applyLimitsToAllSchools(),
     renameDataFolder: (newName: string) => requireController().renameDataFolder(newName),
   };
 

@@ -290,6 +290,83 @@ describe("the nil-block rule is a setting, because SPEC 11.4 is open", () => {
     expect(blockKeys).not.toContain("2025-06-01->2025-06-08"); // 8 days
     expect(blockKeys).not.toContain("2025-07-01->2025-07-01"); // 1 day
   });
+
+  it("supports SMC E old continuous-old nil-block rule with 01/04 & 31/03 blocks and 4+ day continuous gaps", () => {
+    const sampleOld = buildRojmel(book, { nilBlocks: "continuous-old" });
+    expect(sampleOld.blocks[0]!.fromDate).toBe(book.year.startDate);
+    expect(sampleOld.blocks[0]!.toDate).toBe(book.year.startDate);
+    expect(sampleOld.blocks[0]!.isNil).toBe(true);
+    expect(sampleOld.blocks[sampleOld.blocks.length - 1]!.fromDate).toBe(book.year.endDate);
+    expect(sampleOld.blocks[sampleOld.blocks.length - 1]!.toDate).toBe(book.year.endDate);
+    expect(sampleOld.blocks[sampleOld.blocks.length - 1]!.isNil).toBe(true);
+    expect(sampleOld.blocks[sampleOld.blocks.length - 1]!.closingBankPaise).toBe(
+      rupeesToPaise(154),
+    );
+    // Khatavahi resolves pages cleanly against SMC E old rojmel too.
+    const oldPages = pageResolver(sampleOld);
+    const oldLastPage = sampleOld.pages[sampleOld.pages.length - 1]!.pageNo;
+    const oldLedger = ledger(book, "SWACHHATA", { pages: oldPages });
+    expect(oldLedger.rows.every((row) => row.rojmelPage !== null)).toBe(true);
+    expect(oldLedger.closingRojmelPage).toBe(oldLastPage);
+
+    // Synthetic book verifying every gap boundary for continuous-old:
+    // - 01/04 dedicated opening nil block (01/04 -> 01/04)
+    // - 02/04..07/04 is 6 days (>= 4) -> emitted as 2025-04-02->2025-04-07
+    // - 08/04 and 09/04 consecutive days -> two active blocks, no nil block between them
+    // - 10/04..11/04 is 2 days (<= 3) -> ignored
+    // - 12/04 active, then 13/04..15/04 is 3 days (<= 3) -> ignored
+    // - 16/04 active, then 17/04..20/04 is 4 days (>= 4) -> emitted as 2025-04-17->2025-04-20
+    // - 21/04 active, then 22/04..2026-03-30 spans months continuously -> single nil block
+    // - 31/03 dedicated closing nil block (31/03 -> 31/03)
+    const templateReceipt = book.receipts[0]!;
+    const makeReceipt = (id: string, date: string) => ({
+      ...templateReceipt,
+      id,
+      date,
+    });
+    const synthetic = {
+      ...book,
+      receipts: [
+        makeReceipt("r1", "2025-04-08"),
+        makeReceipt("r2", "2025-04-09"),
+        makeReceipt("r3", "2025-04-12"),
+        makeReceipt("r4", "2025-04-16"),
+        makeReceipt("r5", "2025-04-21"),
+      ],
+      bills: [],
+      cheques: [],
+      returnedCheques: [],
+      bankCharges: [],
+    };
+    const syntheticRojmel = buildRojmel(synthetic, { nilBlocks: "continuous-old" });
+    expect(
+      syntheticRojmel.blocks.map((b) => `${b.fromDate}->${b.toDate}:${b.isNil ? "nil" : "act"}`),
+    ).toEqual([
+      "2025-04-01->2025-04-01:nil",
+      "2025-04-02->2025-04-07:nil",
+      "2025-04-08->2025-04-08:act",
+      "2025-04-09->2025-04-09:act",
+      "2025-04-12->2025-04-12:act",
+      "2025-04-16->2025-04-16:act",
+      "2025-04-17->2025-04-20:nil",
+      "2025-04-21->2025-04-21:act",
+      "2025-04-22->2026-03-30:nil",
+      "2026-03-31->2026-03-31:nil",
+    ]);
+
+    // Empty year emits dedicated 01/04, continuous middle gap, and dedicated 31/03.
+    const emptyRojmel = buildRojmel(
+      { ...synthetic, receipts: [] },
+      { nilBlocks: "continuous-old" },
+    );
+    expect(
+      emptyRojmel.blocks.map((b) => `${b.fromDate}->${b.toDate}:${b.isNil ? "nil" : "act"}`),
+    ).toEqual([
+      "2025-04-01->2025-04-01:nil",
+      "2025-04-02->2026-03-30:nil",
+      "2026-03-31->2026-03-31:nil",
+    ]);
+  });
 });
 
 describe("the આવક side", () => {

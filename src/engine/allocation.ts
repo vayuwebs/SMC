@@ -72,7 +72,25 @@ export function receivedByHead(book: YearBook): Map<string, Paise> {
   for (const receipt of book.receipts) {
     totals.set(receipt.headCode, add(totals.get(receipt.headCode) ?? ZERO, receipt.amountPaise));
   }
+  // A PFMS payment draws its own grant: the limit it uses counts as received.
+  for (const [headCode, amount] of totalAllocation(pfmsPayments(book))) {
+    totals.set(headCode, add(totals.get(headCode) ?? ZERO, amount));
+  }
   return totals;
+}
+
+/** True for an SMC-mode PFMS payment rather than a cheque. */
+export function isPfms(cheque: { type: string }): boolean {
+  return cheque.type === "PFMS";
+}
+
+/**
+ * The PFMS payments that stand. Each one is booked twice on the day it was paid,
+ * as the client's SMC workbook does: the grant comes in (`<head> જમા`) and goes
+ * straight out to the vendor, so it never changes a balance.
+ */
+export function pfmsPayments(book: YearBook): BookCheque[] {
+  return book.cheques.filter(isPfms);
 }
 
 /** Σ spending allocated to each head (reimbursement and direct cheques, plus bank charges). */

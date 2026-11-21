@@ -28,6 +28,7 @@ import type { Rojmel } from "../engine/rojmel.js";
 import type {
   BillRegisterRow,
   ChequeRegisterRow,
+  PfmsRegisterRow,
   PatrakDRow,
   Voucher,
 } from "../engine/registers.js";
@@ -171,6 +172,8 @@ export interface ChequeDto {
   purposeGu: string;
   type: ChequeType;
   remarksGu: string | null;
+  /** A PFMS payment's PPA number (SMC mode); null for a cheque. */
+  ppaNo: string | null;
   /** Computed from the linked bills, or typed for a grant return. */
   allocation: ChequeAllocationDto[];
   /** Computed: the total of the allocation. Never stored. */
@@ -357,6 +360,8 @@ export interface ChequeInput {
   purposeGu: string;
   type: ChequeType;
   remarksGu?: string | null;
+  /** A PFMS payment's PPA number (SMC mode). Ignored for a cheque. */
+  ppaNo?: string | null;
   /** Bills this cheque pays. Must be empty for a grant return. */
   billIds: number[];
   /**
@@ -403,12 +408,42 @@ export interface OpeningBalanceInput {
 
 /** Everything the dashboard shows, in one round trip. */
 export interface DashboardDto {
+  /** Which software the school's books belong to; the reports' wording follows it. */
+  appMode: AppMode;
   school: SchoolDto;
   year: FinancialYearDto;
   annexure10: Annexure10;
   yearEnd: DayBalance;
   counts: { receipts: number; bills: number; cheques: number; unpaidBills: number };
   issues: Issue[];
+}
+
+/**
+ * A grant head's PFMS limit for the year (SMC mode), beside what the PFMS
+ * payments have used of it. Shown in the software only; no report prints it.
+ */
+export interface GrantLimitDto {
+  grantHeadId: number;
+  headCode: string;
+  headNameGu: string;
+  /** Null when no limit has been entered for this head. */
+  limitPaise: number | null;
+  /** Computed: Σ this year's PFMS payments from this head. */
+  usedPaise: number;
+  /** Computed: limit − used; null without a limit. Negative when it is overspent. */
+  remainingPaise: number | null;
+}
+
+export interface GrantLimitInput {
+  grantHeadId: number;
+  /** Null (or absent) removes the head's limit. */
+  limitPaise: number | null;
+}
+
+/** What copying the limits to the other SMC schools did. */
+export interface ApplyLimitsResultDto {
+  applied: string[];
+  skipped: { profileId: string; schoolNameGu: string; reason: LayoutSkipReason | "noSuchYear" }[];
 }
 
 export interface GrantRegisterRowDto {
@@ -458,6 +493,19 @@ export interface OpenSchoolDto {
   folder: string;
 }
 
+export const APP_MODES = ["smc-e", "smc-e-old", "smc"] as const;
+export type AppMode = (typeof APP_MODES)[number];
+
+/** Which software mode is active on this PC and whether it is remembered across launches. */
+export interface AppModeStateDto {
+  /** Active mode for this session; null when the user still needs to choose. */
+  active: AppMode | null;
+  /** Whether the selected mode is saved across app restarts. */
+  remember: boolean;
+  /** Remembered default mode when `remember` is enabled, or null. */
+  savedMode: AppMode | null;
+}
+
 /**
  * Where the application is: the one question the renderer asks first.
  *
@@ -470,9 +518,16 @@ export interface OpenSchoolDto {
 export type AppStateDto =
   | { phase: "unavailable"; reason: string }
   | { phase: "signedOut"; cloud: CloudInfoDto }
-  | { phase: "chooseSchool"; cloud: CloudInfoDto; user: UserDto }
-  | { phase: "open"; cloud: CloudInfoDto; user: UserDto; school: OpenSchoolDto; needsSetup: boolean }
-  | { phase: "dataMissing"; cloud: CloudInfoDto; user: UserDto; school: OpenSchoolDto };
+  | { phase: "chooseSchool"; cloud: CloudInfoDto; user: UserDto; mode: AppModeStateDto }
+  | {
+      phase: "open";
+      cloud: CloudInfoDto;
+      user: UserDto;
+      school: OpenSchoolDto;
+      needsSetup: boolean;
+      mode: AppModeStateDto;
+    }
+  | { phase: "dataMissing"; cloud: CloudInfoDto; user: UserDto; school: OpenSchoolDto; mode: AppModeStateDto };
 
 /**
  *   ready         its folder is reachable on this PC
@@ -505,6 +560,7 @@ export interface FolderInspectionDto {
     profileId: string;
     schoolNameGu: string;
     diseCode: string;
+    appMode: AppMode;
     folder: string;
     /** False when the folder belongs to a different account. */
     ownedByMe: boolean;
@@ -577,6 +633,8 @@ export interface DeleteSchoolResultDto {
  */
 export interface SessionApi {
   getAppState(): Promise<AppStateDto>;
+  setAppMode(mode: AppMode): Promise<AppStateDto>;
+  setModeRemember(remember: boolean): Promise<AppStateDto>;
 
   signIn(email: string, password: string): Promise<ApiResult<AppStateDto>>;
   /** needsCode: a 6-digit code was emailed; call verifySignUp with it. */
@@ -625,6 +683,12 @@ export interface SessionApi {
    * columns and cells - into every other school of the account this PC can reach.
    */
   applyLayoutToAllSchools(report: PrintableReportId): Promise<ApiResult<ApplyLayoutResultDto>>;
+  /**
+   * SMC mode: copy the open school's grant limits into every other SMC school
+   * of the account this PC can reach - the year with the same label, heads
+   * matched by code.
+   */
+  applyLimitsToAllSchools(): Promise<ApiResult<ApplyLimitsResultDto>>;
   /**
    * Rename the folder the open school's data is kept in ("SMC Accounts" unless
    * changed). Every school in that folder moves with it.
@@ -697,6 +761,11 @@ export interface BooksApi {
   updateCheque(id: number, input: ChequeInput): Promise<ApiResult<ChequeDto>>;
   deleteCheque(id: number): Promise<ApiResult<null>>;
 
+  // grant limits (SMC mode)
+  listGrantLimits(): Promise<GrantLimitDto[]>;
+  /** Replace the year's limits with these; a head left out keeps no limit. */
+  saveGrantLimits(rows: GrantLimitInput[]): Promise<ApiResult<GrantLimitDto[]>>;
+
   // reconciliation
   getReconciliation(): Promise<ReconciliationDto | null>;
   saveReconciliation(input: ReconciliationDto): Promise<ApiResult<ReconciliationDto>>;
@@ -760,6 +829,7 @@ export interface BooksApi {
   // reports
   getRojmel(): Promise<Rojmel>;
   getChequeRegister(): Promise<ChequeRegisterRow[]>;
+  getPfmsRegister(): Promise<PfmsRegisterRow[]>;
   getBillRegister(): Promise<BillRegisterRow[]>;
   getVouchers(): Promise<Voucher[]>;
   getPatrakD(): Promise<PatrakDRow[]>;
@@ -780,6 +850,7 @@ export const PRINTABLE_REPORTS = [
   "khatavahi",
   "grantRegister",
   "chequeRegister",
+  "pfmsRegister",
   "billRegister",
   "vouchers",
   "patrakD",
@@ -788,6 +859,17 @@ export const PRINTABLE_REPORTS = [
 ] as const;
 export type PrintableReportId = (typeof PRINTABLE_REPORTS)[number];
 
+/**
+ * The reports a mode prints. SMC pays through PFMS, so its PFMS register takes
+ * the cheque register's place, and it has no પત્રક-D; the other modes have no
+ * PFMS register.
+ */
+export function reportsForMode(mode: AppMode): PrintableReportId[] {
+  return PRINTABLE_REPORTS.filter((report) =>
+    mode === "smc" ? report !== "chequeRegister" && report !== "patrakD" : report !== "pfmsRegister",
+  );
+}
+
 /** Excel covers the same reports, plus "all" for one workbook of everything. */
 export const EXCEL_REPORTS = ["all", ...PRINTABLE_REPORTS] as const;
 export type ExcelReportId = (typeof EXCEL_REPORTS)[number];
@@ -795,6 +877,8 @@ export type ExcelReportId = (typeof EXCEL_REPORTS)[number];
 /** SessionApi's methods, answered by the app controller rather than the books. */
 export const SESSION_METHODS = [
   "getAppState",
+  "setAppMode",
+  "setModeRemember",
   "signIn",
   "signUp",
   "verifySignUp",
@@ -818,6 +902,7 @@ export const SESSION_METHODS = [
   "moveLegacyBooks",
   "deleteSchool",
   "applyLayoutToAllSchools",
+  "applyLimitsToAllSchools",
   "renameDataFolder",
 ] as const satisfies readonly (keyof SessionApi)[];
 
@@ -845,6 +930,7 @@ export const MUTATING_METHODS = [
   "createCheque",
   "updateCheque",
   "deleteCheque",
+  "saveGrantLimits",
   "saveReconciliation",
   "closeYear",
   "openYear",
@@ -888,6 +974,8 @@ export const API_METHODS = [
   "createCheque",
   "updateCheque",
   "deleteCheque",
+  "listGrantLimits",
+  "saveGrantLimits",
   "pickLegacyFile",
   "previewLegacyImport",
   "applyLegacyImport",
@@ -907,6 +995,7 @@ export const API_METHODS = [
   "syncSuggestions",
   "getRojmel",
   "getChequeRegister",
+  "getPfmsRegister",
   "getBillRegister",
   "getVouchers",
   "getPatrakD",

@@ -88,3 +88,12 @@ ehthumbs.db
 *.swo
 *~
 .build-tmp/
+
+# ==========================================
+# School data and scratch files kept on this PC only (never pushed)
+# ==========================================
+/books.db
+/recovered_school_books.db
+/checkout_data/
+/SMC/
+/di/

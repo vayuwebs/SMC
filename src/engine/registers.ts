@@ -13,7 +13,7 @@
  *   - પત્રક-D's one row per cheque AND grant head, not per cheque (SPEC 6.7)
  */
 import { paise, sum, type Paise, ZERO } from "../lib/money.js";
-import { billNet, byVoucherOrder, chequeAllocation, chequeAmount } from "./allocation.js";
+import { billNet, byVoucherOrder, chequeAllocation, chequeAmount, isPfms, pfmsPayments } from "./allocation.js";
 import type { BookBill, BookCheque, YearBook } from "./types.js";
 
 // --------------------------------------------------------- cheque register
@@ -34,7 +34,8 @@ export interface ChequeRegisterRow {
 
 /** ચેક રજીસ્ટર - one row per cheque, in voucher order (voucher, then cheque number). */
 export function chequeRegister(book: YearBook): ChequeRegisterRow[] {
-  return [...book.cheques]
+  return book.cheques
+    .filter((cheque) => !isPfms(cheque))
     .sort(byVoucherOrder)
     .map((cheque, index) => ({
       serial: index + 1,
@@ -70,6 +71,45 @@ function billSequence(billNo: string): number {
   const afterSlash = billNo.includes("/") ? billNo.slice(billNo.lastIndexOf("/") + 1) : billNo;
   const parsed = Number.parseInt(afterSlash, 10);
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+// ----------------------------------------------------------- PFMS register
+
+/** One row of the SMC mode's PFMS register, which takes the cheque register's place. */
+export interface PfmsRegisterRow {
+  /** અ.નં - the serial the PFMS entry was given. */
+  serial: number;
+  /** PPA બનાવ્યા તારીખ. */
+  ppaDate: string;
+  /** PPA નંબર, as text. */
+  ppaNo: string;
+  /** વિગત - the grant head(s) the payment is charged to. */
+  headNamesGu: string;
+  /** વેન્ડરની વિગત. */
+  vendorGu: string;
+  /** ખર્ચની વિગત. */
+  purposeGu: string;
+  /** રૂપિયા - computed from its bills. */
+  amountPaise: Paise;
+  /** ખરેખર ચુકવ્યા તારીખ - the date it enters the rojmel. */
+  paidDate: string;
+}
+
+/** PFMS રજીસ્ટર - one row per PFMS payment, in serial order. */
+export function pfmsRegister(book: YearBook): PfmsRegisterRow[] {
+  const nameByCode = new Map(book.heads.map((head) => [head.code, head.nameGu]));
+  return [...pfmsPayments(book)]
+    .sort((a, b) => a.chequeNo - b.chequeNo)
+    .map((cheque) => ({
+      serial: cheque.chequeNo,
+      ppaDate: cheque.chequeDate,
+      ppaNo: cheque.ppaNo ?? "",
+      headNamesGu: [...chequeAllocation(cheque).keys()].map((code) => nameByCode.get(code) ?? code).join(", "),
+      vendorGu: cheque.payeeGu,
+      purposeGu: cheque.purposeGu,
+      amountPaise: chequeAmount(cheque),
+      paidDate: cheque.cashbookDate,
+    }));
 }
 
 // ----------------------------------------------------------- bill register

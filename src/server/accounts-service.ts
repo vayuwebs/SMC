@@ -25,7 +25,10 @@ import {
   buildRojmel,
   chequeRegister,
   grantRegister,
+  isPfms,
   pageResolver,
+  pfmsRegister,
+  PFMS_RECEIPT_PREFIX,
   patrakD,
   vouchers,
   loadYearBook,
@@ -45,6 +48,7 @@ import type {
   BillRegisterRow,
   ChequeRegisterRow,
   PatrakDRow,
+  PfmsRegisterRow,
   Voucher,
 } from "../engine/registers.js";
 import type { Issue } from "../engine/validation.js";
@@ -63,12 +67,15 @@ import { GRANT_SHARE_FORMAT, type GrantShareFile } from "../shared/grant-share.j
 import { fingerprint, fold, mergeRows, validRows, type SuggestionRow } from "../shared/suggestions.js";
 import type {
   ApiResult,
+  AppMode,
   BooksApi,
   BillDto,
   BillInput,
   ChequeDto,
   ChequeInput,
   DashboardDto,
+  GrantLimitDto,
+  GrantLimitInput,
   FinancialYearDto,
   GrantHeadDto,
   GrantHeadInput,
@@ -105,6 +112,8 @@ export class AccountsService implements BooksApi {
     private readonly prisma: PrismaClient,
     /** The year every call operates on. Single-school, single-year at a time. */
     private readonly financialYearId: number,
+    /** Active software mode ("smc-e" vs "smc-e-old"), queried per call so switching modes takes effect immediately. */
+    private readonly getMode: () => AppMode = () => "smc-e",
   ) {}
 
   get currentYearId(): number {
@@ -125,6 +134,7 @@ export class AccountsService implements BooksApi {
     const unpaidBills = book.bills.filter((bill) => bill.chequeNo === null).length;
 
     return {
+      appMode: this.getMode(),
       school: bookSchoolToDto(book),
       year,
       annexure10: annexure10(book),
@@ -1378,6 +1388,80 @@ export class AccountsService implements BooksApi {
     return null;
   }
 
+  // ------------------------------------------------------ grant limits (SMC)
+
+  async listGrantLimits(): Promise<GrantLimitDto[]> {
+    const book = await this.book();
+    const [heads, limits] = await Promise.all([
+      this.prisma.grantHead.findMany({ select: { id: true, code: true } }),
+      this.prisma.grantLimit.findMany({ where: { financialYearId: this.financialYearId } }),
+    ]);
+    const idByCode = new Map(heads.map((head) => [head.code, head.id]));
+    const limitById = new Map(limits.map((limit) => [limit.grantHeadId, limit.limitPaise]));
+
+    // What the PFMS payments have used of each head, as the engine splits them.
+    const used = new Map<string, number>();
+    for (const cheque of book.cheques.filter(isPfms)) {
+      for (const [code, amount] of chequeAllocation(cheque)) used.set(code, (used.get(code) ?? 0) + amount);
+    }
+
+    return book.heads.map((head) => {
+      const grantHeadId = idByCode.get(head.code) ?? 0;
+      const limitPaise = limitById.get(grantHeadId) ?? null;
+      const usedPaise = used.get(head.code) ?? 0;
+      return {
+        grantHeadId,
+        headCode: head.code,
+        headNameGu: head.nameGu,
+        limitPaise,
+        usedPaise,
+        remainingPaise: limitPaise === null ? null : limitPaise - usedPaise,
+      };
+    });
+  }
+
+  async saveGrantLimits(rows: GrantLimitInput[]): Promise<ApiResult<GrantLimitDto[]>> {
+    const frozen = await this.refuseIfClosed();
+    if (frozen) return frozen;
+    for (const row of rows) {
+      if (row.limitPaise !== null && (!Number.isInteger(row.limitPaise) || row.limitPaise < 0)) {
+        return fail("limit_not_valid", "લિમિટ શૂન્ય કે તેથી વધુ રકમ હોવી જોઈએ", "a limit must be zero or a positive amount");
+      }
+    }
+    const known = new Set(
+      (await this.prisma.grantHead.findMany({ select: { id: true } })).map((head) => head.id),
+    );
+    const keep = rows.filter(
+      (row): row is { grantHeadId: number; limitPaise: number } => row.limitPaise !== null && known.has(row.grantHeadId),
+    );
+    await this.prisma.$transaction([
+      this.prisma.grantLimit.deleteMany({ where: { financialYearId: this.financialYearId } }),
+      ...keep.map((row) =>
+        this.prisma.grantLimit.create({
+          data: { financialYearId: this.financialYearId, grantHeadId: row.grantHeadId, limitPaise: row.limitPaise },
+        }),
+      ),
+    ]);
+    return { ok: true, data: await this.listGrantLimits() };
+  }
+
+  /**
+   * Set the limits of this year by grant head CODE - how another school's limits
+   * are copied in. A head in `byCode` gets that limit (null: none), so matching
+   * heads end up exactly as in the other school; heads this school does not
+   * have are left out, and a head of this school missing from `byCode` keeps its
+   * own limit.
+   */
+  async mergeGrantLimitsByCode(byCode: Map<string, number | null>): Promise<ApiResult<GrantLimitDto[]>> {
+    const current = await this.listGrantLimits();
+    return this.saveGrantLimits(
+      current.map((row) => ({
+        grantHeadId: row.grantHeadId,
+        limitPaise: byCode.has(row.headCode) ? (byCode.get(row.headCode) ?? null) : row.limitPaise,
+      })),
+    );
+  }
+
   // --------------------------------------------------------------- cheques
 
   async listCheques(): Promise<ChequeDto[]> {
@@ -1436,6 +1520,7 @@ export class AccountsService implements BooksApi {
         purposeGu: cheque.purposeGu,
         type: (fromEngine?.type ?? cheque.type) as ChequeType,
         remarksGu: cheque.remarksGu,
+        ppaNo: cheque.ppaNo ?? null,
         allocation: rows,
         amountPaise: fromEngine ? chequeAmount(fromEngine) : 0,
         billCount: fromEngine ? fromEngine.bills.length : cheque.bills.length,
@@ -1470,6 +1555,7 @@ export class AccountsService implements BooksApi {
         purposeGu: input.purposeGu,
         type: input.type,
         remarksGu: input.remarksGu ?? null,
+        ppaNo: input.type === "PFMS" ? (input.ppaNo?.trim() || null) : null,
         returnedDate: input.returnedDate ?? null,
         replacesChequeId: input.replacesChequeId ?? null,
         // Typed rows exist only for a grant return; the other types compute it.
@@ -1509,6 +1595,7 @@ export class AccountsService implements BooksApi {
         purposeGu: input.purposeGu,
         type: input.type,
         remarksGu: input.remarksGu ?? null,
+        ppaNo: input.type === "PFMS" ? (input.ppaNo?.trim() || null) : null,
         returnedDate: input.returnedDate ?? null,
         replacesChequeId: input.replacesChequeId ?? null,
       },
@@ -1574,6 +1661,28 @@ export class AccountsService implements BooksApi {
   }
 
   private async checkCheque(input: ChequeInput, excludeId: number | null): Promise<ApiResult<never> | null> {
+    // SMC pays through PFMS only; the other modes write cheques only.
+    const pfms = input.type === "PFMS";
+    if (pfms !== (this.getMode() === "smc")) {
+      return pfms
+        ? fail("pfms_outside_smc", "PFMS ચુકવણી માત્ર SMC માં નોંધાય છે", "PFMS payments belong to SMC mode only")
+        : fail("cheque_in_smc", "SMC માં ચુકવણી PFMS થી નોંધાય છે, ચેકથી નહીં", "SMC mode records payments as PFMS entries, not cheques");
+    }
+    if (pfms && (input.returnedDate || input.replacesChequeId)) {
+      return fail("pfms_returned", "PFMS ચુકવણી પરત થયેલ ગણી શકાય નહીં", "a PFMS payment cannot be marked returned or replace one");
+    }
+    if (pfms && !input.ppaNo?.trim()) {
+      return fail("pfms_without_ppa", "PPA નંબર લખો", "a PFMS payment needs its PPA number");
+    }
+    if (pfms) {
+      if (input.chequeDate > input.cashbookDate) {
+        return fail(
+          "pfms_paid_before_ppa",
+          "ખરેખર ચુકવ્યા તારીખ PPA બનાવ્યા તારીખ પહેલાંની ન હોઈ શકે",
+          "the paid date cannot be before the PPA's date",
+        );
+      }
+    }
     const clash = await this.prisma.cheque.findFirst({
       where: {
         financialYearId: this.financialYearId,
@@ -1583,11 +1692,13 @@ export class AccountsService implements BooksApi {
       select: { id: true },
     });
     if (clash) {
-      return fail(
-        "duplicate_cheque_no",
-        `ચેક નંબર ${input.chequeNo} પહેલેથી છે`,
-        `cheque number ${input.chequeNo} already exists`,
-      );
+      return pfms
+        ? fail("duplicate_pfms_serial", `અ.નં ${input.chequeNo} પહેલેથી છે`, `PFMS serial ${input.chequeNo} already exists`)
+        : fail(
+            "duplicate_cheque_no",
+            `ચેક નંબર ${input.chequeNo} પહેલેથી છે`,
+            `cheque number ${input.chequeNo} already exists`,
+          );
     }
 
     // The other way round: a grant return on a voucher that already has bills
@@ -2097,12 +2208,24 @@ export class AccountsService implements BooksApi {
 
   // --------------------------------------------------------------- reports
 
+  private rojmelOptions(): { nilBlocks: "fill-gaps" | "continuous-old" | "smc"; bodyLabel: string } {
+    const mode = this.getMode();
+    return {
+      nilBlocks: mode === "smc-e-old" ? "continuous-old" : mode === "smc" ? "smc" : "fill-gaps",
+      bodyLabel: mode === "smc" ? "SMC" : "SMCE",
+    };
+  }
+
   async getRojmel(): Promise<Rojmel> {
-    return buildRojmel(await this.book());
+    return buildRojmel(await this.book(), this.rojmelOptions());
   }
 
   async getChequeRegister(): Promise<ChequeRegisterRow[]> {
     return chequeRegister(await this.book());
+  }
+
+  async getPfmsRegister(): Promise<PfmsRegisterRow[]> {
+    return pfmsRegister(await this.book());
   }
 
   async getBillRegister(): Promise<BillRegisterRow[]> {
@@ -2133,7 +2256,7 @@ export class AccountsService implements BooksApi {
     // The ledger prints the rojmel page each entry appears on, so the cash book
     // has to be paginated first - that is where those page numbers come from.
     const book = await this.book();
-    return allLedgers(book, { pages: pageResolver(buildRojmel(book)) });
+    return allLedgers(book, { pages: pageResolver(buildRojmel(book, this.rojmelOptions())) });
   }
 
   async getGrantRegister(): Promise<GrantRegisterRowDto[]> {
@@ -2141,7 +2264,23 @@ export class AccountsService implements BooksApi {
     const receipts = await this.listReceipts();
     const byKey = new Map(receipts.map((receipt) => [`${receipt.date}::${receipt.id}`, receipt]));
 
+    const heads = await this.prisma.grantHead.findMany({ select: { id: true, code: true } });
+    const headIdByCode = new Map(heads.map((head) => [head.code, head.id]));
+    let pfmsRow = 0;
     return grantRegister(book).map((row) => {
+      // SMC: the grant a PFMS payment brought in is no stored receipt. It gets
+      // a negative id, which no stored receipt has.
+      if (row.receipt.id.startsWith(PFMS_RECEIPT_PREFIX)) {
+        pfmsRow += 1;
+        const { id: _id, headCode, ...rest } = row.receipt;
+        const receipt: ReceiptDto = {
+          ...rest,
+          id: -pfmsRow,
+          grantHeadId: headIdByCode.get(headCode) ?? 0,
+          headNameGu: row.headNameGu,
+        };
+        return { receipt, spentPaise: row.spentPaise, savingPaise: row.savingPaise };
+      }
       const dto =
         byKey.get(`${row.receipt.date}::${Number(row.receipt.id)}`) ??
         receipts.find((candidate) => candidate.id === Number(row.receipt.id))!;

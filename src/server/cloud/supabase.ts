@@ -19,6 +19,7 @@
  */
 import { createClient, isAuthError, isAuthRetryableFetchError, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
+import { APP_MODES, type AppMode } from "../../shared/api.js";
 import {
   CloudError,
   type CloudBackend,
@@ -44,6 +45,7 @@ interface ProfileRow {
   id: string;
   school_name_gu: string;
   dise_code: string;
+  app_mode?: string;
   created_at: string;
 }
 
@@ -153,26 +155,50 @@ export class SupabaseCloud implements CloudBackend {
   // ---------------------------------------------------------------- schools
 
   async listProfiles(session: CloudSession): Promise<CloudProfile[]> {
-    const { data, error, status } = await this.as(session)
+    const withMode = await this.as(session)
       .from("profiles")
-      .select("id, school_name_gu, dise_code, created_at")
+      .select("id, school_name_gu, dise_code, app_mode, created_at")
       .order("created_at", { ascending: true });
-    if (error) throw dataFailure(error, status);
-    return (data as ProfileRow[]).map(toProfile);
+    if (!withMode.error) return (withMode.data as ProfileRow[]).map(toProfile);
+
+    // Pre-0004 Supabase instances do not have app_mode yet: all existing profiles belong to SMC E.
+    if (withMode.error.code === "42703" || withMode.error.code === "PGRST204") {
+      const legacy = await this.as(session)
+        .from("profiles")
+        .select("id, school_name_gu, dise_code, created_at")
+        .order("created_at", { ascending: true });
+      if (legacy.error) throw dataFailure(legacy.error, legacy.status);
+      return (legacy.data as ProfileRow[]).map(toProfile);
+    }
+    throw dataFailure(withMode.error, withMode.status);
   }
 
   async createProfile(
     session: CloudSession,
-    input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string },
+    input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string; appMode?: AppMode },
   ): Promise<CloudProfile> {
+    const appMode: AppMode = input.appMode ?? "smc-e";
     // One database function, so the school and its key are created in a single
     // transaction: there is never a school in the cloud without its key.
-    const { data, error, status } = await this.as(session).rpc("create_profile", {
+    let { data, error, status } = await this.as(session).rpc("create_profile_for_mode", {
       p_id: input.id,
       p_school_name_gu: input.schoolNameGu,
       p_dise_code: input.diseCode,
       p_key_hex: input.keyHex,
+      p_app_mode: appMode,
     });
+    if (error && error.code === "PGRST202" && appMode === "smc-e") {
+      // Pre-0004 fallback for default SMC E creation.
+      const fallback = await this.as(session).rpc("create_profile", {
+        p_id: input.id,
+        p_school_name_gu: input.schoolNameGu,
+        p_dise_code: input.diseCode,
+        p_key_hex: input.keyHex,
+      });
+      data = fallback.data;
+      error = fallback.error;
+      status = fallback.status;
+    }
     if (error) throw dataFailure(error, status);
     const row = (Array.isArray(data) ? data[0] : data) as ProfileRow | undefined;
     if (!row) throw new CloudError("server", "create_profile returned nothing");
@@ -296,10 +322,12 @@ function toSession(session: {
 }
 
 function toProfile(row: ProfileRow): CloudProfile {
+  const mode = APP_MODES.find((m) => m === row.app_mode) ?? "smc-e";
   return {
     id: row.id,
     schoolNameGu: row.school_name_gu,
     diseCode: row.dise_code,
+    appMode: mode,
     createdAt: row.created_at,
   };
 }

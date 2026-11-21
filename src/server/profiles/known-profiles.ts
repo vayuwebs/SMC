@@ -8,6 +8,7 @@
  */
 import path from "node:path";
 import { z } from "zod";
+import { APP_MODES } from "../../shared/api.js";
 import { readJson, writeJsonAtomic } from "./json-file.js";
 
 const knownProfileSchema = z.object({
@@ -15,6 +16,7 @@ const knownProfileSchema = z.object({
   ownerUserId: z.string(),
   schoolNameGu: z.string(),
   diseCode: z.string(),
+  appMode: z.enum(APP_MODES).optional(),
   folder: z.string(),
   lastOpenedAt: z.string(),
 });

@@ -82,6 +82,7 @@ const openState = {
   user: { id: "preview", email: "preview@localhost" },
   school: { profileId: "preview", schoolNameGu: school.nameGu, diseCode: school.diseCode, folder: "(preview)" },
   needsSetup: false,
+  mode: { active: "smc-e", remember: false, savedMode: null },
 };
 
 rmSync(PREVIEW, { recursive: true, force: true });
@@ -104,6 +105,8 @@ html = html.replace(
     `getAnnexure9:()=>Promise.resolve(${JSON.stringify(annexure9)}),` +
     `getBalances:()=>Promise.resolve(${JSON.stringify(balances)}),` +
     `getAppState:()=>Promise.resolve(${JSON.stringify(openState)}),` +
+    `setAppMode:(m)=>Promise.resolve({...${JSON.stringify(openState)},mode:{active:m,remember:false,savedMode:null}}),` +
+    `setModeRemember:(r)=>Promise.resolve({...${JSON.stringify(openState)},mode:{active:"smc-e",remember:r,savedMode:r?"smc-e":null}}),` +
     `getSetupState:()=>Promise.resolve({needsSetup:false,schoolNameGu:null,yearLabel:null}),` +
     `getBackupStatus:()=>Promise.resolve({state:"upToDate",pendingSince:null,lastBackupAt:null,lastBackupDevice:null,lastError:null}),` +
     `getReportLayout:(r)=>Promise.resolve(structuredClone(layouts[r])),` +

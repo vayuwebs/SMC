@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { JSX } from "react";
 import { api } from "../api.js";
-import type { SetupInput } from "../../shared/api.js";
+import type { AppMode, SetupInput } from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
 import { Money } from "../components/Money.js";
@@ -40,8 +40,11 @@ interface HeadRow {
 export function Setup({
   onDone,
   newSchool,
+  mode,
 }: {
   onDone: () => void;
+  /** The mode the school is made in: an SMC school's headers say SMC, not SMCE. */
+  mode?: AppMode | null;
   /** Present when this creates a new school rather than filling an open one. */
   newSchool?: { onCancel: () => void };
 }): JSX.Element {
@@ -104,18 +107,19 @@ export function Setup({
   async function submit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     if (!valid || saving) return;
+    const bodyLabel = mode === "smc" ? "SMC" : "SMCE";
 
     const input: SetupInput = {
       school: {
         nameGu: nameGu.trim(),
         // The header line every report prints. Derived unless the school
         // already writes it differently.
-        smcLabelGu: `SMCE ${nameGu.trim()}`,
+        smcLabelGu: `${bodyLabel} ${nameGu.trim()}`,
         diseCode: diseCode.trim(),
         clusterGu: clusterGu.trim(),
         talukaGu: talukaGu.trim(),
         districtGu: districtGu.trim(),
-        programmeGu: defaultProgrammeLines(districtGu.trim()),
+        programmeGu: defaultProgrammeLines(districtGu.trim(), bodyLabel),
         memberSecretaryGu: memberSecretaryGu.trim(),
         memberSecretaryShortGu:
           memberSecretaryShortGu.trim() || `સભ્ય સચિવ ${memberSecretaryGu.trim()}`,

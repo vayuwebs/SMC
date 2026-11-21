@@ -4,6 +4,7 @@ import type {
   BillRegisterRow,
   ChequeRegisterRow,
   PatrakDRow,
+  PfmsRegisterRow,
   Voucher,
 } from "../../engine/registers.js";
 import type { GrantRegisterRowDto, SchoolDto, FinancialYearDto } from "../../shared/api.js";
@@ -113,16 +114,71 @@ export function ChequeRegisterPages({
   );
 }
 
-// ----------------------------------------------------------- bill register
+// ----------------------------------------------------------- PFMS register
 
-export function BillRegisterPages({
+/**
+ * SMC mode: the PFMS register, which takes the cheque register's place - the
+ * client's own columns (SMC/KHADOL workbook, sheet "pfms"). Its limit columns
+ * are left out: the limit is kept in the software and not printed.
+ */
+export function PfmsRegisterPages({
   school,
   year,
   rows,
 }: {
   school: SchoolDto;
   year: FinancialYearDto;
+  rows: PfmsRegisterRow[];
+}): JSX.Element {
+  return (
+    <PagedSheets
+      landscape
+      head={() => <RegisterTitle school={school} year={year} titleGu="PFMS રજીસ્ટર" />}
+      tableClassName="form register"
+      thead={
+        <tr data-row="head">
+          <th data-col="serial"><Text id="col:serial">અ.નં</Text></th>
+          <th data-col="ppaDate"><Text id="col:ppaDate">PPA બનાવ્યા તારીખ</Text></th>
+          <th data-col="ppaNo"><Text id="col:ppaNo">PPA નંબર</Text></th>
+          <th data-col="head"><Text id="col:head">વિગત</Text></th>
+          <th data-col="vendor"><Text id="col:vendor">વેન્ડરની વિગત</Text></th>
+          <th data-col="purpose"><Text id="col:purpose">ખર્ચની વિગત</Text></th>
+          <th data-col="amount"><Text id="col:amount">રૂપિયા</Text></th>
+          <th data-col="paidDate"><Text id="col:paidDate">ખરેખર ચુકવ્યા તારીખ</Text></th>
+        </tr>
+      }
+      rows={rows.map((row) => ({
+        key: ROW_KEYS.cheque(row.serial),
+        cells: (
+          <>
+            <td data-col="serial" className="centre">{latin(String(row.serial))}</td>
+            <td data-col="ppaDate" className="centre">{date(row.ppaDate)}</td>
+            <td data-col="ppaNo" className="centre">{latin(row.ppaNo)}</td>
+            <td data-col="head">{row.headNamesGu}</td>
+            <td data-col="vendor">{row.vendorGu}</td>
+            <td data-col="purpose">{row.purposeGu}</td>
+            <td data-col="amount" className="figure">{money(row.amountPaise)}</td>
+            <td data-col="paidDate" className="centre">{date(row.paidDate)}</td>
+          </>
+        ),
+      }))}
+    />
+  );
+}
+
+// ----------------------------------------------------------- bill register
+
+export function BillRegisterPages({
+  school,
+  year,
+  rows,
+  bodyGu = "એસ.એમ.સી.ઈ",
+}: {
+  school: SchoolDto;
+  year: FinancialYearDto;
   rows: BillRegisterRow[];
+  /** Whose register: "એસ.એમ.સી.ઈ", or "એસ.એમ.સી" in SMC mode. */
+  bodyGu?: string;
 }): JSX.Element {
   const keys = billRowKeys(rows);
   return (
@@ -131,7 +187,7 @@ export function BillRegisterPages({
       head={() => (
         <div className="register-title" data-part="title">
           <span className="what">બિલ રજીસ્ટર</span>
-          <span className="smc">એસ.એમ.સી.ઈ {school.nameGu}</span>
+          <span className="smc">{bodyGu} {school.nameGu}</span>
           <span className="what">
             વર્ષ÷ {latin(`${year.startDate.slice(0, 4)}/${year.endDate.slice(0, 4)}`)}
           </span>

@@ -2,18 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { api } from "../api.js";
 import { endSuggestionSession } from "../suggestions/sync.js";
-import type {
-  CloudBackupDto,
-  CloudInfoDto,
-  FolderInspectionDto,
-  SchoolListDto,
-  SchoolListItemDto,
-  UserDto,
+import {
+  APP_MODES,
+  type AppMode,
+  type AppModeStateDto,
+  type AppStateDto,
+  type CloudBackupDto,
+  type CloudInfoDto,
+  type FolderInspectionDto,
+  type SchoolListDto,
+  type SchoolListItemDto,
+  type UserDto,
 } from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
 import { IssueList } from "../components/IssueList.js";
 import { LanguageSwitch } from "../components/LanguageSwitch.js";
-import { formatBytes, formatDateTime } from "../format.js";
+import { formatBytes, formatDateTime, modeLabel } from "../format.js";
 import { useStrings } from "../i18n/index.js";
 
 /**
@@ -40,16 +44,124 @@ interface RestorePanel {
   chosen: string | null;
 }
 
+/**
+ * Prompts the user to pick "SMC E" or "SMC E old" after sign-in (and on launch
+ * when "Remember selected mode" is off).
+ */
+export function ModeSelect({
+  user,
+  modeState,
+  onSelected,
+  onSignedOut,
+}: {
+  user: UserDto;
+  modeState: AppModeStateDto;
+  onSelected: (next: AppStateDto) => void;
+  onSignedOut: () => void;
+}): JSX.Element {
+  const t = useStrings();
+  const [busyMode, setBusyMode] = useState<AppMode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function choose(mode: AppMode): Promise<void> {
+    setBusyMode(mode);
+    setError(null);
+    try {
+      const next = await api.setAppMode(mode);
+      onSelected(next);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setBusyMode(null);
+    }
+  }
+
+  async function signOut(): Promise<void> {
+    setBusyMode("smc-e");
+    try {
+      await endSuggestionSession();
+      await api.signOut();
+      onSignedOut();
+    } finally {
+      setBusyMode(null);
+    }
+  }
+
+  const meta: Record<AppMode, { title: string; hint: string; badgeClass: string }> = {
+    "smc-e": { title: t.modeSmcE, hint: t.modeSmcEHint, badgeClass: "smc-e" },
+    "smc-e-old": { title: t.modeSmcEOld, hint: t.modeSmcEOldHint, badgeClass: "smc-e-old" },
+    smc: { title: t.modeSmc, hint: t.modeSmcHint, badgeClass: "smc" },
+  };
+
+  return (
+    <div className="setup">
+      <div className="setup-form">
+        <header className="setup-head">
+          <div>
+            <h1>{t.modeSelectTitle}</h1>
+            <p>{t.modeSelectSubtitle}</p>
+            <p className="muted num-inline">{t.schoolsSignedInAs(user.email)}</p>
+          </div>
+          <div className="schools-head-actions">
+            <LanguageSwitch />
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void signOut()}
+              disabled={busyMode !== null}
+            >
+              {t.schoolsSignOut}
+            </button>
+          </div>
+        </header>
+
+        {error !== null && (
+          <div className="issue error" style={{ marginBottom: 16 }}>
+            <div>{error}</div>
+          </div>
+        )}
+
+        <div className="mode-grid">
+          {APP_MODES.map((option) => {
+            const info = meta[option];
+            const isSaved = modeState.savedMode === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                className={`mode-card${isSaved ? " saved" : ""}`}
+                disabled={busyMode !== null}
+                onClick={() => void choose(option)}
+              >
+                <div className="mode-card-head">
+                  <span className={`mode-badge ${info.badgeClass}`}>{info.title}</span>
+                  <span className="mode-card-cta">
+                    {busyMode === option ? t.working : t.modeOpenButton} →
+                  </span>
+                </div>
+                <p className="muted">{info.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Schools({
   user,
   cloud,
+  modeState,
   onOpened,
   onNewSchool,
+  onModeChanged,
 }: {
   user: UserDto;
   cloud: CloudInfoDto;
+  modeState?: AppModeStateDto;
   onOpened: () => void;
   onNewSchool: () => void;
+  onModeChanged?: (next: AppStateDto) => void;
 }): JSX.Element {
   const t = useStrings();
   const [list, setList] = useState<SchoolListDto | null>(null);
@@ -189,6 +301,22 @@ export function Schools({
     onOpened();
   }
 
+  const activeMode = modeState?.active ?? null;
+
+  async function toggleMode(): Promise<void> {
+    if (!activeMode || !onModeChanged || busy) return;
+    // Round the three modes: SMC E -> SMC E old -> SMC -> SMC E.
+    const nextMode: AppMode = APP_MODES[(APP_MODES.indexOf(activeMode) + 1) % APP_MODES.length]!;
+    setBusy(true);
+    try {
+      await endSuggestionSession();
+      const next = await api.setAppMode(nextMode);
+      onModeChanged(next);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const availability: Record<SchoolListItemDto["availability"], string> = {
     ready: t.schoolsReady,
     notConnected: t.schoolsNotConnected,
@@ -205,6 +333,18 @@ export function Schools({
             <p className="muted num-inline">{t.schoolsSignedInAs(user.email)}</p>
           </div>
           <div className="schools-head-actions">
+            {activeMode && (
+              <button
+                type="button"
+                className={`mode-badge ${activeMode}`}
+                title={t.modeChange}
+                disabled={busy || !onModeChanged}
+                onClick={() => void toggleMode()}
+              >
+                <span>{modeLabel(activeMode, t)}</span>
+                {onModeChanged && <span aria-hidden="true">⇄</span>}
+              </button>
+            )}
             <LanguageSwitch />
             <button type="button" className="ghost" onClick={() => void signOut()} disabled={busy}>
               {t.schoolsSignOut}
@@ -277,7 +417,13 @@ export function Schools({
                     {school.diseCode} · {school.folder}
                   </div>
                 </div>
-                {school.ownedByMe ? (
+                {!school.ownedByMe ? (
+                  <span className="badge muted">{t.schoolsOtherAccount}</span>
+                ) : activeMode && school.appMode !== activeMode ? (
+                  <span className="badge muted">
+                    {t.schoolsWrongMode(modeLabel(school.appMode, t))}
+                  </span>
+                ) : (
                   <button
                     className="primary"
                     type="button"
@@ -286,8 +432,6 @@ export function Schools({
                   >
                     {t.schoolsOpen}
                   </button>
-                ) : (
-                  <span className="badge muted">{t.schoolsOtherAccount}</span>
                 )}
               </div>
             ))}

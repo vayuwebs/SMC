@@ -22,9 +22,13 @@ import { runMigrations, NewerDataError } from "../../electron/migrate.js";
 import type { Issue } from "../engine/validation.js";
 import { createPrismaClient } from "../lib/db.js";
 import {
+  APP_MODES,
   PRINTABLE_REPORTS,
   type ApiResult,
   type ApplyLayoutResultDto,
+  type ApplyLimitsResultDto,
+  type AppMode,
+  type AppModeStateDto,
   type AppStateDto,
   type BackupStatusDto,
   type CloudBackupDto,
@@ -116,10 +120,14 @@ export class AppController {
   private current: OpenSchool | null = null;
   private dataMissing = false;
   private standalone = false;
+  private modePref: ModePreference;
+  private activeMode: AppMode | null;
 
   constructor(private readonly options: ControllerOptions) {
     this.known = new KnownProfiles(options.userDataDir);
     this.device = loadDevice(options.userDataDir);
+    this.modePref = loadModePreference(options.userDataDir);
+    this.activeMode = this.modePref.remember ? this.modePref.savedMode : null;
     if (options.standaloneDb && existsSync(options.standaloneDb)) {
       this.standalone = true;
     }
@@ -161,7 +169,7 @@ export class AppController {
       keyHex: "",
       prisma,
       setup: new SetupService(prisma),
-      books: year ? new AccountsService(prisma, year.id) : null,
+      books: year ? new AccountsService(prisma, year.id, () => this.effectiveMode()) : null,
       yearLabel: year?.label ?? "",
       schemaVersion: migration.schemaVersion,
     };
@@ -170,6 +178,46 @@ export class AppController {
   }
 
   // ------------------------------------------------------------------ state
+
+  private modeDto(): AppModeStateDto {
+    return {
+      active: this.activeMode,
+      remember: this.modePref.remember,
+      savedMode: this.modePref.savedMode,
+    };
+  }
+
+  private effectiveMode(): AppMode {
+    return this.activeMode ?? "smc-e";
+  }
+
+  private modeForManifest(manifest: Manifest): AppMode {
+    return manifest.appMode ?? "smc-e";
+  }
+
+  private modeForProfile(profile: { appMode?: AppMode }): AppMode {
+    return profile.appMode ?? "smc-e";
+  }
+
+  async setAppMode(mode: AppMode): Promise<AppStateDto> {
+    const valid = z.enum(APP_MODES).parse(mode);
+    if (!this.standalone && this.current && this.activeMode !== valid) {
+      await this.closeSchool();
+    }
+    this.activeMode = valid;
+    if (this.modePref.remember) {
+      this.modePref = { remember: true, savedMode: valid };
+      saveModePreference(this.options.userDataDir, this.modePref);
+    }
+    return this.getAppState();
+  }
+
+  setModeRemember(remember: boolean): AppStateDto {
+    const savedMode = remember ? (this.activeMode ?? this.modePref.savedMode) : null;
+    this.modePref = { remember, savedMode };
+    saveModePreference(this.options.userDataDir, this.modePref);
+    return this.getAppState();
+  }
 
   getAppState(): AppStateDto {
     if (this.standalone && this.current) {
@@ -182,7 +230,18 @@ export class AppController {
         diseCode: current.manifest.diseCode,
         folder: current.folder,
       };
-      return { phase: "open", cloud, user, school, needsSetup: current.books === null };
+      return {
+        phase: "open",
+        cloud,
+        user,
+        school,
+        needsSetup: current.books === null,
+        mode: {
+          active: this.activeMode ?? "smc-e",
+          remember: this.modePref.remember,
+          savedMode: this.modePref.savedMode,
+        },
+      };
     }
 
     const cloud = this.options.cloud;
@@ -191,16 +250,17 @@ export class AppController {
     }
     const user = this.account.user;
     if (!user) return { phase: "signedOut", cloud: cloud.info };
+    const mode = this.modeDto();
     const current = this.current;
-    if (!current) return { phase: "chooseSchool", cloud: cloud.info, user };
+    if (!current) return { phase: "chooseSchool", cloud: cloud.info, user, mode };
     const school = {
       profileId: current.profileId,
       schoolNameGu: current.manifest.schoolNameGu,
       diseCode: current.manifest.diseCode,
       folder: current.folder,
     };
-    if (this.dataMissing) return { phase: "dataMissing", cloud: cloud.info, user, school };
-    return { phase: "open", cloud: cloud.info, user, school, needsSetup: current.books === null };
+    if (this.dataMissing) return { phase: "dataMissing", cloud: cloud.info, user, school, mode };
+    return { phase: "open", cloud: cloud.info, user, school, needsSetup: current.books === null, mode };
   }
 
   /** The open school's books, or null when none is open or its drive is gone. */
@@ -220,7 +280,7 @@ export class AppController {
   switchYear(yearId: number, label: string): void {
     const current = this.current;
     if (!current) throw new Error("no school is open");
-    current.books = new AccountsService(current.prisma, yearId);
+    current.books = new AccountsService(current.prisma, yearId, () => this.effectiveMode());
     current.yearLabel = label;
   }
 
@@ -358,35 +418,94 @@ export class AppController {
     }
     const layout = await current.books.getReportLayout(report);
 
-    const targets = new Map<string, string>();
-    for (const known of this.known.all()) {
-      if (known.ownerUserId === user.id) targets.set(known.profileId, known.schoolNameGu);
-    }
-    try {
-      const inCloud = await account.withSession((session) => account.backend.listProfiles(session));
-      for (const profile of inCloud) if (!targets.has(profile.id)) targets.set(profile.id, profile.schoolNameGu);
-    } catch {
-      // Offline: the schools this PC knows are enough.
-    }
-    targets.delete(current.profileId);
-
     const applied: string[] = [];
     const skipped: ApplyLayoutResultDto["skipped"] = [];
-    for (const [profileId, schoolNameGu] of targets) {
-      const reason = await this.applyLayoutTo(profileId, report, layout);
+    for (const [profileId, schoolNameGu] of await this.otherSchoolsOfThisMode(current.profileId, user.id)) {
+      const reason = await this.withOtherSchoolBooks<never>(profileId, "before-layout", async (prisma) => {
+        const year = await latestYear(prisma);
+        if (!year) return "notSetUp" as const;
+        const saved = await new AccountsService(prisma, year.id).saveReportLayout(report, layout);
+        return saved.ok ? null : ("failed" as const);
+      });
       if (reason === null) applied.push(schoolNameGu);
       else skipped.push({ profileId, schoolNameGu, reason });
     }
     return { ok: true, data: { applied, skipped } };
   }
 
-  private async applyLayoutTo(
+  /**
+   * SMC mode: copy the open school's grant limits into every other SMC school of
+   * this account that this PC can reach - into its year with the same label,
+   * heads matched by code. Unreachable schools are listed with the reason, as
+   * for layouts.
+   */
+  async applyLimitsToAllSchools(): Promise<ApiResult<ApplyLimitsResultDto>> {
+    const current = this.current;
+    const account = this.account;
+    const user = account?.user;
+    if (!current || this.dataMissing || !current.books) return failure(ISSUES.noSchoolOpen());
+    if (!account || !user) return failure(ISSUES.notSignedIn());
+    if (this.effectiveMode() !== "smc") {
+      return failure(issue("limits_outside_smc", "લિમિટ માત્ર SMC માં છે", "grant limits belong to SMC mode only"));
+    }
+    const limits = await current.books.listGrantLimits();
+    const byCode = new Map(limits.map((row) => [row.headCode, row.limitPaise]));
+    const yearLabel = current.yearLabel;
+
+    const applied: string[] = [];
+    const skipped: ApplyLimitsResultDto["skipped"] = [];
+    for (const [profileId, schoolNameGu] of await this.otherSchoolsOfThisMode(current.profileId, user.id)) {
+      const reason = await this.withOtherSchoolBooks<"noSuchYear">(profileId, "before-limits", async (prisma) => {
+        const year = await prisma.financialYear.findFirst({ where: { label: yearLabel } });
+        if (!year) return (await latestYear(prisma)) ? ("noSuchYear" as const) : ("notSetUp" as const);
+        const saved = await new AccountsService(prisma, year.id, () => "smc").mergeGrantLimitsByCode(byCode);
+        return saved.ok ? null : ("failed" as const);
+      });
+      if (reason === null) applied.push(schoolNameGu);
+      else skipped.push({ profileId, schoolNameGu, reason });
+    }
+    return { ok: true, data: { applied, skipped } };
+  }
+
+  /** Every other school of this account in the active mode: this PC's list, then the cloud's. */
+  private async otherSchoolsOfThisMode(currentProfileId: string, userId: string): Promise<Map<string, string>> {
+    const account = this.account;
+    const mode = this.effectiveMode();
+    const targets = new Map<string, string>();
+    for (const known of this.known.all()) {
+      if (known.ownerUserId === userId && this.modeForProfile(known) === mode) {
+        targets.set(known.profileId, known.schoolNameGu);
+      }
+    }
+    try {
+      if (account) {
+        const inCloud = await account.withSession((session) => account.backend.listProfiles(session));
+        for (const profile of inCloud) {
+          if (this.modeForProfile(profile) === mode && !targets.has(profile.id)) {
+            targets.set(profile.id, profile.schoolNameGu);
+          }
+        }
+      }
+    } catch {
+      // Offline: the schools this PC knows are enough.
+    }
+    targets.delete(currentProfileId);
+    return targets;
+  }
+
+  /**
+   * Open another school's books for one change, the way a layout is copied: a
+   * local backup first, its lock held throughout, and a cloud backup owed after.
+   * The work returns null when it changed the books, or why it did not.
+   */
+  private async withOtherSchoolBooks<Reason extends string = never>(
     profileId: string,
-    report: PrintableReportId,
-    layout: ReportLayout,
-  ): Promise<LayoutSkipReason | null> {
+    backupTag: string,
+    work: (prisma: PrismaClient) => Promise<Reason | LayoutSkipReason | null>,
+  ): Promise<Reason | LayoutSkipReason | null> {
     const found = this.locate(profileId);
     if (!found) return "notConnected";
+    if (this.modeForManifest(found.manifest) !== this.effectiveMode()) return "failed";
     let keyHex: string;
     try {
       keyHex = await this.keyFor(found.manifest);
@@ -397,19 +516,17 @@ export class AppController {
 
     let prisma: PrismaClient | null = null;
     try {
-      takeLocalBackup(found.folder, keyHex, "before-layout");
+      takeLocalBackup(found.folder, keyHex, backupTag);
       runMigrations(booksFile(found.folder), this.options.migrationsDir, { keyHex });
       prisma = createPrismaClient({ file: booksFile(found.folder), keyHex });
-      const year = await latestYear(prisma);
-      if (!year) return "notSetUp";
-      const saved = await new AccountsService(prisma, year.id).saveReportLayout(report, layout);
-      if (!saved.ok) return "failed";
+      const reason = await work(prisma);
+      if (reason !== null) return reason;
       const sync = readSyncState(found.folder);
       if (!sync.pendingSince) writeSyncState(found.folder, { ...sync, pendingSince: new Date(this.now()).toISOString() });
       return null;
     } catch (error) {
       if (error instanceof NewerDataError) return "newerData";
-      console.error(`applyLayoutTo ${profileId} failed:`, error);
+      console.error(`changing school ${profileId} failed:`, error);
       return "failed";
     } finally {
       await prisma?.$disconnect().catch(() => undefined);
@@ -518,6 +635,9 @@ export class AppController {
   async signOut(): Promise<AppStateDto> {
     await this.closeSchool();
     await this.account?.signOut();
+    if (!this.modePref.remember) {
+      this.activeMode = null;
+    }
     return this.getAppState();
   }
 
@@ -539,19 +659,22 @@ export class AppController {
       // Offline, or the session ended (then the next state check shows the login).
     }
 
+    const mode = this.effectiveMode();
     const schools: SchoolListItemDto[] = [];
     for (const known of this.known.all()) {
+      if (this.modeForProfile(known) !== mode) continue;
       const found = this.locate(known.profileId);
+      if (found && this.modeForManifest(found.manifest) !== mode) continue;
       const matchesUser = known.ownerUserId === user.id;
       const cached = this.account?.cachedKey(known.profileId);
       const isOwnedLocally = Boolean(found && cached && keyMatches(found.manifest, cached));
       if (!matchesUser && !isOwnedLocally) continue;
 
       if (!matchesUser && isOwnedLocally) {
-        this.known.remember({ ...known, ownerUserId: user.id });
+        this.known.remember({ ...known, appMode: mode, ownerUserId: user.id });
       }
       if (found && found.folder !== known.folder) {
-        this.known.remember({ ...known, folder: found.folder, ownerUserId: user.id });
+        this.known.remember({ ...known, appMode: mode, folder: found.folder, ownerUserId: user.id });
       }
       schools.push({
         profileId: known.profileId,
@@ -563,8 +686,10 @@ export class AppController {
       });
     }
     for (const profile of inCloud ?? []) {
+      if (this.modeForProfile(profile) !== mode) continue;
       if (schools.some((school) => school.profileId === profile.id)) continue;
-      const found = this.locate(profile.id);
+      const located = this.locate(profile.id);
+      const found = located && this.modeForManifest(located.manifest) === mode ? located : null;
       schools.push({
         profileId: profile.id,
         schoolNameGu: profile.schoolNameGu,
@@ -602,6 +727,7 @@ export class AppController {
             profileId: manifest.profileId,
             schoolNameGu: manifest.schoolNameGu,
             diseCode: manifest.diseCode,
+            appMode: this.modeForManifest(manifest),
             folder: at,
             ownedByMe: manifest.ownerUserId === user.id || hasKey,
           };
@@ -633,8 +759,9 @@ export class AppController {
     } catch (error) {
       return failure(cloudIssue(error, "createSchool"));
     }
+    const mode = this.effectiveMode();
     const diseCode = input.school.diseCode.trim();
-    if (existing.some((profile) => profile.diseCode === diseCode)) {
+    if (existing.some((profile) => profile.diseCode === diseCode && this.modeForProfile(profile) === mode)) {
       return failure(ISSUES.schoolExists(diseCode));
     }
 
@@ -642,13 +769,14 @@ export class AppController {
 
     const profileId = randomUUID();
     const keyHex = generateKeyHex();
-    const folder = folderForNewSchool(location, diseCode);
+    const folder = folderForNewSchool(location, diseCode, mode);
     const madeDataDir = !existsSync(path.dirname(folder));
     const manifest = newManifest({
       profileId,
       ownerUserId: user.id,
       schoolNameGu: input.school.nameGu.trim(),
       diseCode,
+      appMode: mode,
       keyHex,
     });
 
@@ -671,6 +799,7 @@ export class AppController {
           schoolNameGu: manifest.schoolNameGu,
           diseCode,
           keyHex,
+          appMode: mode,
         }),
       );
       account.rememberKey(profileId, keyHex);
@@ -709,6 +838,11 @@ export class AppController {
     const found = options.folder ? profileAt(options.folder, profileId) : this.locate(profileId);
     if (!found) return failure(ISSUES.notConnected());
 
+    const ownerMode = this.modeForManifest(found.manifest);
+    if (ownerMode !== this.effectiveMode()) {
+      return failure(ISSUES.wrongMode(ownerMode));
+    }
+
     let keyHex: string;
     try {
       keyHex = await this.keyFor(found.manifest);
@@ -732,6 +866,7 @@ export class AppController {
         ownerUserId: user.id,
         schoolNameGu: found.manifest.schoolNameGu,
         diseCode: found.manifest.diseCode,
+        appMode: ownerMode,
         folder: found.folder,
         lastOpenedAt: new Date(this.now()).toISOString(),
       });
@@ -772,6 +907,7 @@ export class AppController {
             schoolNameGu: found.manifest.schoolNameGu,
             diseCode: found.manifest.diseCode,
             keyHex,
+            appMode: ownerMode,
           }),
         );
         this.backups?.markChanged();
@@ -869,7 +1005,17 @@ export class AppController {
   }
 
   async listCloudBackups(profileId: string): Promise<ApiResult<CloudBackupDto[]>> {
+    const mode = this.effectiveMode();
+    const known = this.known.get(profileId);
+    if (known && this.modeForProfile(known) !== mode) {
+      return failure(ISSUES.wrongMode(this.modeForProfile(known)));
+    }
     return this.cloudCall(async (account) => {
+      const profiles = await account.withSession((session) => account.backend.listProfiles(session));
+      const matched = profiles.find((item) => item.id === profileId);
+      if (matched && this.modeForProfile(matched) !== mode) {
+        throw new WrongModeError(this.modeForProfile(matched));
+      }
       const backups = await account.withSession((session) => account.backend.listBackups(session, profileId));
       return backups.map(toBackupDto);
     });
@@ -936,7 +1082,13 @@ export class AppController {
     const account = this.account;
     const user = account?.user;
     if (!account || !user) return failure(ISSUES.notSignedIn());
-    if (this.locate(profileId)) return failure(ISSUES.schoolAvailable());
+    const located = this.locate(profileId);
+    if (located) {
+      if (this.modeForManifest(located.manifest) !== this.effectiveMode()) {
+        return failure(ISSUES.wrongMode(this.modeForManifest(located.manifest)));
+      }
+      return failure(ISSUES.schoolAvailable());
+    }
     if (!isWritableLocation(location)) return failure(ISSUES.notWritable(location));
 
     let profile: CloudProfile | undefined;
@@ -947,14 +1099,19 @@ export class AppController {
       const profiles = await account.withSession((session) => account.backend.listProfiles(session));
       profile = profiles.find((item) => item.id === profileId);
       if (!profile) return failure(ISSUES.notConnected());
+      const ownerMode = this.modeForProfile(profile);
+      if (ownerMode !== this.effectiveMode()) {
+        return failure(ISSUES.wrongMode(ownerMode));
+      }
       keyHex = await account.keyFor(profileId);
       ({ bytes, backup } = await this.download(profileId, backupId));
     } catch (error) {
       return failure(this.errorIssue(error, "restoreSchool"));
     }
 
+    const ownerMode = this.modeForProfile(profile);
     await this.closeSchool();
-    const folder = folderForNewSchool(location, profile.diseCode);
+    const folder = folderForNewSchool(location, profile.diseCode, ownerMode);
     const madeDataDir = !existsSync(path.dirname(folder));
     try {
       writeManifest(
@@ -964,6 +1121,7 @@ export class AppController {
           ownerUserId: user.id,
           schoolNameGu: profile.schoolNameGu,
           diseCode: profile.diseCode,
+          appMode: ownerMode,
           keyHex,
           createdAt: profile.createdAt,
         }),
@@ -997,11 +1155,12 @@ export class AppController {
     if (!legacy || !isPlainDatabase(legacy.file)) return failure(ISSUES.noLegacyBooks());
     if (!isWritableLocation(location)) return failure(ISSUES.notWritable(location));
 
+    const mode = this.effectiveMode();
     const school = readLegacySchool(legacy.file);
     const diseCode = school?.diseCode ?? "";
     try {
       const existing = await account.withSession((session) => account.backend.listProfiles(session));
-      if (diseCode && existing.some((profile) => profile.diseCode === diseCode)) {
+      if (diseCode && existing.some((profile) => profile.diseCode === diseCode && this.modeForProfile(profile) === mode)) {
         return failure(ISSUES.schoolExists(diseCode));
       }
     } catch (error) {
@@ -1011,13 +1170,14 @@ export class AppController {
     await this.closeSchool();
     const profileId = randomUUID();
     const keyHex = generateKeyHex();
-    const folder = folderForNewSchool(location, diseCode || "school");
+    const folder = folderForNewSchool(location, diseCode || "school", mode);
     const madeDataDir = !existsSync(path.dirname(folder));
     const manifest = newManifest({
       profileId,
       ownerUserId: user.id,
       schoolNameGu: school?.nameGu ?? "",
       diseCode,
+      appMode: mode,
       keyHex,
     });
     try {
@@ -1030,6 +1190,7 @@ export class AppController {
           schoolNameGu: manifest.schoolNameGu,
           diseCode,
           keyHex,
+          appMode: mode,
         }),
       );
       account.rememberKey(profileId, keyHex);
@@ -1136,7 +1297,7 @@ export class AppController {
       keyHex,
       prisma,
       setup: new SetupService(prisma),
-      books: year ? new AccountsService(prisma, year.id) : null,
+      books: year ? new AccountsService(prisma, year.id, () => this.effectiveMode()) : null,
       yearLabel: year?.label ?? "",
       schemaVersion: migration.schemaVersion,
     };
@@ -1166,6 +1327,7 @@ export class AppController {
       ownerUserId: current.manifest.ownerUserId,
       schoolNameGu: current.manifest.schoolNameGu,
       diseCode: current.manifest.diseCode,
+      appMode: this.modeForManifest(current.manifest),
       folder: current.folder,
       lastOpenedAt: new Date(this.now()).toISOString(),
     });
@@ -1198,6 +1360,7 @@ export class AppController {
   }
 
   private errorIssue(error: unknown, where: string): Issue {
+    if (error instanceof WrongModeError) return ISSUES.wrongMode(error.ownerMode);
     if (error instanceof CloudError) return cloudIssue(error, where);
     if (error instanceof NewerDataError) return ISSUES.newerData(error.message);
     if (error instanceof VaultError) return ISSUES.wrongKey(error.message);
@@ -1208,6 +1371,12 @@ export class AppController {
 }
 
 // ----------------------------------------------------------------- helpers
+
+class WrongModeError extends Error {
+  constructor(readonly ownerMode: AppMode) {
+    super(`school belongs to ${ownerMode}`);
+  }
+}
 
 class BackupDamagedError extends Error {
   constructor() {
@@ -1280,6 +1449,25 @@ function removeDataDirIfEmpty(dir: string): void {
 }
 
 const deviceSchema = z.object({ id: z.string().uuid(), name: z.string() });
+const modePreferenceSchema = z.object({
+  remember: z.boolean(),
+  savedMode: z.enum(APP_MODES).nullable(),
+});
+type ModePreference = z.infer<typeof modePreferenceSchema>;
+
+function loadModePreference(userDataDir: string): ModePreference {
+  const file = path.join(userDataDir, "mode.json");
+  const stored = readJson(file, modePreferenceSchema);
+  if (stored) {
+    return stored.remember ? stored : { remember: false, savedMode: null };
+  }
+  return { remember: false, savedMode: null };
+}
+
+function saveModePreference(userDataDir: string, pref: ModePreference): void {
+  const file = path.join(userDataDir, "mode.json");
+  writeJsonAtomic(file, pref);
+}
 
 /** This PC's identity, for lock files and for naming who made a backup. */
 function loadDevice(userDataDir: string): Device {
@@ -1404,6 +1592,14 @@ const ISSUES = {
       "આ ડેટા બીજા ખાતાનો છે. તે ખાતાથી લૉગિન કરીને ખોલો.",
       "This data belongs to another account. Log in with that account to open it.",
     ),
+  wrongMode: (ownerMode: AppMode) => {
+    const label = ownerMode === "smc-e-old" ? "SMC E old" : "SMC E";
+    return issue(
+      "wrong_mode",
+      `આ શાળાનો ડેટા "${label}" મોડનો છે. તેને ખોલવા માટે પહેલાં મોડ બદલીને ${label} પસંદ કરો.`,
+      `This school's data belongs to "${label}". Switch mode to ${label} first to open it.`,
+    );
+  },
   noSchoolInFolder: (folder: string) =>
     issue(
       "no_school_in_folder",

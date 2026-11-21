@@ -2,7 +2,16 @@ import { useState } from "react";
 import type { JSX } from "react";
 import { api } from "../api.js";
 import { endSuggestionSession } from "../suggestions/sync.js";
-import type { CloudBackupDto, DashboardDto, OpenSchoolDto, UserDto } from "../../shared/api.js";
+import {
+  APP_MODES,
+  type AppMode,
+  type AppModeStateDto,
+  type AppStateDto,
+  type CloudBackupDto,
+  type DashboardDto,
+  type OpenSchoolDto,
+  type UserDto,
+} from "../../shared/api.js";
 import type { Issue } from "../../engine/validation.js";
 import { LANGUAGES, useLanguage, useStrings, type Language } from "../i18n/index.js";
 import { backupLabel, useBackupStatus } from "../components/BackupBadge.js";
@@ -23,20 +32,62 @@ export function Settings({
   data,
   school,
   user,
+  modeState,
+  onModeChanged,
   onSignedOut,
 }: {
   data: DashboardDto;
   school: OpenSchoolDto;
   user: UserDto;
+  modeState: AppModeStateDto;
+  onModeChanged: (next: AppStateDto) => void;
   onSignedOut: () => void;
 }): JSX.Element {
   const t = useStrings();
   const { language, setLanguage } = useLanguage();
+  const [modeBusy, setModeBusy] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
+  const activeMode: AppMode = modeState.active ?? "smc-e";
 
   const labelFor: Record<Language, string> = {
     gu: t.languageGujarati,
     en: t.languageEnglish,
   };
+
+  const modeMeta: Record<AppMode, { label: string; hint: string }> = {
+    "smc-e": { label: t.modeSmcE, hint: t.modeSmcEHint },
+    "smc-e-old": { label: t.modeSmcEOld, hint: t.modeSmcEOldHint },
+    smc: { label: t.modeSmc, hint: t.modeSmcHint },
+  };
+
+  async function changeMode(mode: AppMode): Promise<void> {
+    if (modeBusy || mode === activeMode) return;
+    setModeBusy(true);
+    setModeError(null);
+    try {
+      await endSuggestionSession();
+      const next = await api.setAppMode(mode);
+      onModeChanged(next);
+    } catch (cause) {
+      setModeError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setModeBusy(false);
+    }
+  }
+
+  async function toggleRemember(remember: boolean): Promise<void> {
+    if (modeBusy) return;
+    setModeBusy(true);
+    setModeError(null);
+    try {
+      const next = await api.setModeRemember(remember);
+      onModeChanged(next);
+    } catch (cause) {
+      setModeError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setModeBusy(false);
+    }
+  }
 
   return (
     <>
@@ -70,6 +121,63 @@ export function Settings({
         <div className="issue warning" style={{ marginTop: 16 }}>
           <div>{t.reportsAlwaysGujarati}</div>
         </div>
+      </div>
+
+      <div className="card">
+        <h3>{t.modeSection}</h3>
+        <p className="muted" style={{ marginTop: 4 }}>
+          {t.modeSectionHelp}
+        </p>
+
+        {modeError !== null && (
+          <div className="issue error" style={{ marginTop: 12 }}>
+            <div>{modeError}</div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          {APP_MODES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={activeMode === option ? "primary" : "ghost"}
+              aria-pressed={activeMode === option}
+              disabled={modeBusy}
+              onClick={() => void changeMode(option)}
+              style={{ minWidth: 170 }}
+            >
+              {modeMeta[option].label}
+            </button>
+          ))}
+        </div>
+
+        <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>
+          {modeMeta[activeMode].hint}
+        </p>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            marginTop: 16,
+            cursor: modeBusy ? "default" : "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={modeState.remember}
+            disabled={modeBusy}
+            onChange={(event) => void toggleRemember(event.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <strong>{t.modeRememberLabel}</strong>
+            <span className="muted" style={{ display: "block", fontSize: 13, marginTop: 2 }}>
+              {t.modeRememberHelp}
+            </span>
+          </span>
+        </label>
       </div>
 
       <AccountAndBackup school={school} user={user} onSignedOut={onSignedOut} />

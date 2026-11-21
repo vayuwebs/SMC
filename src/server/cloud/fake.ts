@@ -18,6 +18,7 @@ import { randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { APP_MODES, type AppMode } from "../../shared/api.js";
 import { readJson, writeBytesAtomic, writeJsonAtomic } from "../profiles/json-file.js";
 import { sha256 } from "./checksum.js";
 import {
@@ -52,6 +53,7 @@ const stateSchema = z.object({
       ownerId: z.string(),
       schoolNameGu: z.string(),
       diseCode: z.string(),
+      appMode: z.enum(APP_MODES).optional(),
       createdAt: z.string(),
       /** Set when the account deleted the school; hidden from it from then on. */
       deletedAt: z.string().optional(),
@@ -219,22 +221,38 @@ export class FakeCloud implements CloudBackend {
     const { state, userId } = this.authorised(session);
     return state.profiles
       .filter((profile) => profile.ownerId === userId && !profile.deletedAt)
-      .map(({ ownerId: _owner, deletedAt: _deleted, ...profile }) => profile);
+      .map(({ ownerId: _owner, deletedAt: _deleted, appMode, ...profile }) => ({
+        ...profile,
+        appMode: appMode ?? "smc-e",
+      }));
   }
 
   async createProfile(
     session: CloudSession,
-    input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string },
+    input: { id: string; schoolNameGu: string; diseCode: string; keyHex: string; appMode?: AppMode },
   ): Promise<CloudProfile> {
     const { state, userId } = this.authorised(session);
+    const appMode: AppMode = input.appMode ?? "smc-e";
     if (state.profiles.some((profile) => profile.id === input.id) || state.keys[input.id]) {
       throw new CloudError("server", "a school with this id already exists");
+    }
+    if (
+      state.profiles.some(
+        (profile) =>
+          profile.ownerId === userId &&
+          !profile.deletedAt &&
+          profile.diseCode === input.diseCode &&
+          (profile.appMode ?? "smc-e") === appMode,
+      )
+    ) {
+      throw new CloudError("server", "duplicate school in this mode");
     }
     const profile = {
       id: input.id,
       ownerId: userId,
       schoolNameGu: input.schoolNameGu,
       diseCode: input.diseCode,
+      appMode,
       createdAt: new Date(this.now()).toISOString(),
     };
     state.profiles.push(profile);

@@ -8,6 +8,7 @@ import type { Annexure9, Ledger } from "../../engine/types.js";
 import type {
   BillRegisterRow,
   ChequeRegisterRow,
+  PfmsRegisterRow,
   PatrakDRow,
   Voucher,
 } from "../../engine/registers.js";
@@ -18,6 +19,7 @@ import { RojmelSheet } from "./RojmelPage.js";
 import {
   BillRegisterPages,
   ChequeRegisterPages,
+  PfmsRegisterPages,
   GrantRegisterPages,
   PatrakDPages,
   VoucherPages,
@@ -488,6 +490,7 @@ interface PrintData {
   rojmel?: Rojmel;
   grantRegister?: GrantRegisterRowDto[];
   chequeRegister?: ChequeRegisterRow[];
+  pfmsRegister?: PfmsRegisterRow[];
   billRegister?: BillRegisterRow[];
   vouchers?: Voucher[];
   patrakD?: PatrakDRow[];
@@ -539,6 +542,7 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
         if (report === "rojmel") next.rojmel = await api.getRojmel();
         if (report === "grantRegister") next.grantRegister = await api.getGrantRegister();
         if (report === "chequeRegister") next.chequeRegister = await api.getChequeRegister();
+        if (report === "pfmsRegister") next.pfmsRegister = await api.getPfmsRegister();
         if (report === "billRegister") next.billRegister = await api.getBillRegister();
         if (report === "vouchers") next.vouchers = await api.getVouchers();
         if (report === "patrakD") next.patrakD = await api.getPatrakD();
@@ -639,11 +643,20 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
           />
         )}
 
+        {report === "pfmsRegister" && data.pfmsRegister && (
+          <PfmsRegisterPages
+            school={dashboard.school}
+            year={dashboard.year}
+            rows={data.pfmsRegister}
+          />
+        )}
+
         {report === "billRegister" && data.billRegister && (
           <BillRegisterPages
             school={dashboard.school}
             year={dashboard.year}
             rows={data.billRegister}
+            bodyGu={dashboard.appMode === "smc" ? "એસ.એમ.સી" : "એસ.એમ.સી.ઈ"}
           />
         )}
 
@@ -668,6 +681,7 @@ export function PrintRoot({ report, layout: draft, editorCss, onChecked }: Print
             school={dashboard.school}
             year={dashboard.year}
             report={dashboard.annexure10}
+            bodyGu={dashboard.appMode === "smc" ? "એસ.એમ.સી" : "એસ.એમ.સી.ઈ"}
           />
         )}
       </>

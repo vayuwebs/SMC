@@ -220,6 +220,7 @@ export function defaultPdfName(report: string, yearLabel: string): string {
     rojmel: "rojmel",
     grantRegister: "grant-register",
     chequeRegister: "cheque-register",
+    pfmsRegister: "pfms-register",
     billRegister: "bill-register",
     vouchers: "vouchers",
     patrakD: "patrak-d",

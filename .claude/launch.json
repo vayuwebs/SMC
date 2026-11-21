@@ -4,8 +4,20 @@
     {
       "name": "print-preview",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["tsx", "scripts/print-preview.mjs"],
+      "runtimeArgs": [
+        "tsx",
+        "scripts/print-preview.mjs"
+      ],
       "port": 8801
+    },
+    {
+      "name": "smc-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "scripts/smc-preview.mjs"
+      ],
+      "port": 8802
     }
   ]
 }

@@ -434,4 +434,164 @@ describe("the books from before schools had folders", () => {
     expect(afterDelete.length).toBe(1);
     expect(afterDelete[0]!.label).toBe("2027-28");
   });
+
+  it("prompts for mode when remember is off, persists mode when remember is on, and switches Rojmel calculation", async () => {
+    const w = world();
+    const penDrive = tempDir("pendrive");
+    const userDataDir = tempDir("mode-pc");
+    w.plugIn(penDrive);
+
+    const makePc = () =>
+      new AppController({
+        userDataDir,
+        migrationsDir: MIGRATIONS,
+        cloud: { backend: w.cloud, info: { kind: "fake", note: null } },
+        secretBox: PLAIN_BOX,
+        appVersion: "0.2.0",
+        platform: "posix",
+        roots: () => [penDrive],
+        legacyBooks: null,
+        timers: w.timers,
+        now: w.timers.clock,
+      });
+
+    const pc1 = makePc();
+    await signUp(w, pc1);
+
+    // Right after login, active mode is null until the user picks a mode.
+    const initial = pc1.getAppState();
+    expect(initial.phase).toBe("chooseSchool");
+    if (initial.phase !== "chooseSchool") return;
+    expect(initial.mode).toEqual({ active: null, remember: false, savedMode: null });
+
+    const chosen = await pc1.setAppMode("smc-e-old");
+    expect(chosen.phase).toBe("chooseSchool");
+    if (chosen.phase !== "chooseSchool") return;
+    expect(chosen.mode).toEqual({ active: "smc-e-old", remember: false, savedMode: null });
+
+    // Open a school and verify Rojmel uses continuous-old blocks (01/04, middle gap, 31/03).
+    const opened = await createSchool(pc1, penDrive);
+    expect(opened.phase).toBe("open");
+    const oldRojmel = await pc1.books!.getRojmel();
+    expect(oldRojmel.blocks.map((b) => `${b.fromDate}->${b.toDate}`)).toEqual([
+      "2026-04-01->2026-04-01",
+      "2026-04-02->2027-03-30",
+      "2027-03-31->2027-03-31",
+    ]);
+
+    // Switching to SMC E closes the SMC E old school; opening an SMC E school uses month-split nil blocks.
+    const switchedToNew = await pc1.setAppMode("smc-e");
+    expect(switchedToNew.phase).toBe("chooseSchool");
+    expect(pc1.books).toBeNull();
+    const openedNew = await createSchool(pc1, penDrive);
+    expect(openedNew.phase).toBe("open");
+    const newRojmel = await pc1.books!.getRojmel();
+    expect(newRojmel.blocks.map((b) => `${b.fromDate}->${b.toDate}`)).toEqual([
+      "2026-04-01->2026-04-01",
+      "2026-04-02->2026-04-30",
+    ]);
+
+    // Restart with remember=false: prompt again (active=null, nothing saved on disk).
+    await pc1.closeSchool();
+    const pc2 = makePc();
+    const afterRestartNoRemember = pc2.getAppState();
+    expect(afterRestartNoRemember.phase).toBe("chooseSchool");
+    if (afterRestartNoRemember.phase !== "chooseSchool") return;
+    expect(afterRestartNoRemember.mode).toEqual({
+      active: null,
+      remember: false,
+      savedMode: null,
+    });
+
+    // Select SMC E old and turn Remember ON: restart opens directly into SMC E old.
+    await pc2.setAppMode("smc-e-old");
+    const remembered = await pc2.setModeRemember(true);
+    expect(remembered.phase).toBe("chooseSchool");
+    if (remembered.phase === "chooseSchool") {
+      expect(remembered.mode).toEqual({
+        active: "smc-e-old",
+        remember: true,
+        savedMode: "smc-e-old",
+      });
+    }
+
+    const pc3 = makePc();
+    const afterRestartRemember = pc3.getAppState();
+    expect(afterRestartRemember.phase).toBe("chooseSchool");
+    if (afterRestartRemember.phase !== "chooseSchool") return;
+    expect(afterRestartRemember.mode).toEqual({
+      active: "smc-e-old",
+      remember: true,
+      savedMode: "smc-e-old",
+    });
+
+    // When remember is turned off again, signOut clears the active mode.
+    await pc3.setModeRemember(false);
+    await pc3.signOut();
+    const signedBackIn = await pc3.signIn("head@school.in", PASSWORD);
+    expect(signedBackIn.ok).toBe(true);
+    if (signedBackIn.ok && signedBackIn.data.phase === "chooseSchool") {
+      expect(signedBackIn.data.mode.active).toBeNull();
+    }
+  });
+
+  it("isolates schools, folders, cloud backups, and open state strictly between SMC E and SMC E old", async () => {
+    const w = world();
+    const penDrive = tempDir("pendrive");
+    w.plugIn(penDrive);
+    const pc1 = w.pc();
+    await signUp(w, pc1);
+
+    // Create DISE 24160299999 inside SMC E.
+    await pc1.setAppMode("smc-e");
+    const newOpened = await createSchool(pc1, penDrive, "24160299999");
+    expect(newOpened.phase).toBe("open");
+    if (newOpened.phase !== "open") return;
+    const smcEProfileId = newOpened.school.profileId;
+    expect(newOpened.school.folder).toBe(path.join(penDrive, "SMC Accounts", "24160299999"));
+    await pc1.backupNow();
+
+    // Switching to SMC E old MUST close the open SMC E school and hide SMC E schools.
+    const switched = await pc1.setAppMode("smc-e-old");
+    expect(switched.phase).toBe("chooseSchool");
+    expect(pc1.books).toBeNull();
+    expect((await pc1.listSchools()).schools).toEqual([]);
+
+    // Trying to open or restore the SMC E school while in SMC E old MUST be refused.
+    const wrongOpen = await pc1.openSchool(smcEProfileId, { folder: newOpened.school.folder });
+    expect(wrongOpen.ok).toBe(false);
+    if (!wrongOpen.ok) expect(wrongOpen.issues[0]!.code).toBe("wrong_mode");
+
+    const inspected = pc1.inspectFolder(penDrive);
+    expect(inspected.ok).toBe(true);
+    if (inspected.ok) {
+      expect(inspected.data.schools.find((s) => s.profileId === smcEProfileId)?.appMode).toBe("smc-e");
+    }
+
+    // Creating the SAME DISE 24160299999 inside SMC E old creates separate folder & DB.
+    const oldOpened = await createSchool(pc1, penDrive, "24160299999");
+    expect(oldOpened.phase).toBe("open");
+    if (oldOpened.phase !== "open") return;
+    const oldProfileId = oldOpened.school.profileId;
+    expect(oldProfileId).not.toBe(smcEProfileId);
+    expect(oldOpened.school.folder).toBe(path.join(penDrive, "SMC Accounts Old", "24160299999"));
+
+    await pc1.closeSchool();
+    const oldList = await pc1.listSchools();
+    expect(oldList.schools.map((s) => s.profileId)).toEqual([oldProfileId]);
+
+    // Switching back to SMC E shows ONLY the SMC E school, even on a fresh PC via cloud.
+    const pc2 = w.pc();
+    w.plugIn();
+    await pc2.signIn("head@school.in", PASSWORD);
+    await pc2.setAppMode("smc-e");
+    const cloudListSmcE = await pc2.listSchools();
+    expect(cloudListSmcE.schools.map((s) => s.profileId)).toEqual([smcEProfileId]);
+
+    // Refuses restoring an SMC E backup while in SMC E old mode.
+    await pc2.setAppMode("smc-e-old");
+    const backups = await pc2.listCloudBackups(smcEProfileId);
+    expect(backups.ok).toBe(false);
+    if (!backups.ok) expect(backups.issues[0]!.code).toBe("wrong_mode");
+  });
 });

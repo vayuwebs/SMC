@@ -17,7 +17,7 @@
  */
 import { inDigits, paidForGu, type DigitStyle } from "../lib/gujarati.js";
 import { add, paise, type Paise, ZERO } from "../lib/money.js";
-import { cashbookCheques, chequeAllocation } from "./allocation.js";
+import { cashbookCheques, chequeAllocation, isPfms } from "./allocation.js";
 import type { Ledger, LedgerRow, YearBook } from "./types.js";
 
 /** Resolves the rojmel page an entry lands on, once the cash book is paginated. */
@@ -69,6 +69,16 @@ export function ledger(book: YearBook, headCode: string, options: LedgerOptions 
   for (const cheque of cashbookCheques(book)) {
     const share = chequeAllocation(cheque).get(headCode);
     if (share === undefined || share === ZERO) continue;
+    // A PFMS payment brings in its own grant first: a credit, then the payment.
+    if (isPfms(cheque)) {
+      entries.push({
+        date: cheque.cashbookDate,
+        rojmelPage: pages?.chequePage(cheque.chequeNo) ?? null,
+        descriptionGu: "શ્રી ગ્રાન્ટ જમા",
+        creditPaise: share,
+        debitPaise: ZERO,
+      });
+    }
     entries.push({
       date: cheque.cashbookDate,
       rojmelPage: pages?.chequePage(cheque.chequeNo) ?? null,
@@ -181,6 +191,11 @@ function chequeDescriptionFor(cheque: YearBook["cheques"][number], headCode: str
 
   // A direct cheque may carry a bill with no description; fall back to the
   // cheque's own purpose rather than printing an empty cell.
+  if (isPfms(cheque)) {
+    // The client's SMC ledger: "<bill description> ના નાણાં ચુકવ્યાં.વા.મુ".
+    const what = descriptions.length > 0 ? descriptions.join(", ") : cheque.purposeGu.trim();
+    return `${what} ના નાણાં ચુકવ્યાં.વા.મુ`;
+  }
   if (descriptions.length === 0) return cheque.purposeGu;
 
   // "... સરભરા ખર્ચના નાણાં ચુકવ્યા વા.મુજબ".

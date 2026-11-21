@@ -107,6 +107,7 @@ model FinancialYear {
   cheques          Cheque[]
   bankCharges      BankCharge[]
   reconciliation   BankReconciliation?
+  grantLimits      GrantLimit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,6 +133,7 @@ model GrantHead {
   allocations      ChequeAllocation[]
   bankCharges      BankCharge[] @relation("BankChargeHead")
   otherBankCharges BankCharge[] @relation("BankChargeOtherHead")
+  limits           GrantLimit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -274,6 +276,11 @@ model Cheque {
 
   remarksGu String?
 
+  // PFMS payments only (type "PFMS", SMC mode): the PPA number, as text. For
+  // them chequeNo is the PFMS register's serial (અ.નં), chequeDate the PPA's
+  // date and cashbookDate the date it was actually paid.
+  ppaNo String?
+
   // A cheque the bank sent back unpaid. Its money comes back into the bank on
   // returnedDate: an આવક line in the rojmel and a credit in each head's ledger.
   // No other report shows a returned cheque. null = not returned.
@@ -302,6 +309,23 @@ model Cheque {
 // charges - with no cheque and no voucher. The school says which grant head it
 // is charged to. It appears in the rojmel and that head's ledger only: not in
 // the cheque, bill or grant registers, the vouchers, પત્રક-D or Annexure 10.
+// The PFMS limit a school has for one grant head in one year (SMC mode). Shown
+// beside the PFMS entries in the software only; no report prints it.
+model GrantLimit {
+  id              Int           @id @default(autoincrement())
+  financialYearId Int
+  financialYear   FinancialYear @relation(fields: [financialYearId], references: [id], onDelete: Cascade)
+  grantHeadId     Int
+  grantHead       GrantHead     @relation(fields: [grantHeadId], references: [id], onDelete: Cascade)
+
+  limitPaise Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([financialYearId, grantHeadId])
+}
+
 model BankCharge {
   id              Int           @id @default(autoincrement())
   financialYearId Int

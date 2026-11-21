@@ -21,7 +21,12 @@ import { z } from "zod";
  * GRANT_RETURN  - unspent balance sent back to the CRC coordinator. Bank only,
  *                 and the only type whose per-head split is typed by the user.
  */
-export const CHEQUE_TYPES = ["REIMBURSEMENT", "REIMBURSEMENT_BANK", "DIRECT", "GRANT_RETURN"] as const;
+/**
+ * PFMS is the SMC mode's payment: a PFMS payment advice (PPA) rather than a
+ * cheque, always straight from the grant's limit to the vendor. Its bills set its
+ * allocation, as a direct cheque's do.
+ */
+export const CHEQUE_TYPES = ["REIMBURSEMENT", "REIMBURSEMENT_BANK", "DIRECT", "GRANT_RETURN", "PFMS"] as const;
 export type ChequeType = (typeof CHEQUE_TYPES)[number];
 export const chequeTypeSchema = z.enum(CHEQUE_TYPES);
 

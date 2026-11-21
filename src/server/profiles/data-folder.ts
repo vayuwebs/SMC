@@ -21,10 +21,12 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
+import { APP_MODES, type AppMode } from "../../shared/api.js";
 import { CIPHER, keyFingerprint, snapshotInto, wrapKeyForSupport } from "../vault.js";
 import { readJson, writeJsonAtomic } from "./json-file.js";
 
 export const DATA_DIR_NAME = "SMC Accounts";
+export const DATA_DIR_OLD_NAME = "SMC Accounts Old";
 export const MANIFEST_FILE = "profile.json";
 export const BOOKS_FILE = "books.db";
 export const BACKUPS_DIR = "backups";
@@ -49,6 +51,8 @@ export const manifestSchema = z.object({
   ownerUserId: z.string().min(1),
   schoolNameGu: z.string(),
   diseCode: z.string(),
+  /** Mode this school belongs to; absent in older folders means default "smc-e". */
+  appMode: z.enum(APP_MODES).optional(),
   cipher: z.literal(CIPHER),
   /** HMAC of the key: tells a wrong key from a damaged file. Not the key. */
   keyFingerprint: z.string().regex(/^[0-9a-f]{32}$/),
@@ -63,6 +67,7 @@ export function newManifest(input: {
   ownerUserId: string;
   schoolNameGu: string;
   diseCode: string;
+  appMode?: AppMode;
   keyHex: string;
   createdAt?: string;
   supportPublicKeyPem?: string;
@@ -75,6 +80,7 @@ export function newManifest(input: {
     ownerUserId: input.ownerUserId,
     schoolNameGu: input.schoolNameGu,
     diseCode: input.diseCode,
+    appMode: input.appMode ?? "smc-e",
     cipher: CIPHER,
     keyFingerprint: keyFingerprint(input.keyHex, profileId),
     supportWrappedKey: wrapKeyForSupport(input.keyHex, input.supportPublicKeyPem),
@@ -113,8 +119,15 @@ export function keyMatches(manifest: Manifest, keyHex: string): boolean {
  * The school folder is named after the DISE code - Latin, unique, and what
  * anybody looking at the pen drive would recognise.
  */
-export function folderForNewSchool(chosen: string, diseCode: string): string {
-  const base = isDataDir(chosen) ? chosen : path.join(chosen, DATA_DIR_NAME);
+export function dataDirName(mode: AppMode = "smc-e"): string {
+  return mode === "smc-e-old" ? DATA_DIR_OLD_NAME : DATA_DIR_NAME;
+}
+
+export function folderForNewSchool(chosen: string, diseCode: string, mode: AppMode = "smc-e"): string {
+  const chosenName = path.basename(chosen).toLowerCase();
+  const otherDirName = (mode === "smc-e-old" ? DATA_DIR_NAME : DATA_DIR_OLD_NAME).toLowerCase();
+  const useChosenDirectly = isDataDir(chosen) && chosenName !== otherDirName;
+  const base = useChosenDirectly ? chosen : path.join(chosen, dataDirName(mode));
   const name = safeFolderName(diseCode) || "school";
   let candidate = path.join(base, name);
   for (let n = 2; existsSync(candidate); n += 1) candidate = path.join(base, `${name}-${n}`);
@@ -123,7 +136,8 @@ export function folderForNewSchool(chosen: string, diseCode: string): string {
 
 /** Is this the folder that holds school folders - by its first name, or by its marker? */
 export function isDataDir(dir: string): boolean {
-  if (path.basename(dir).toLowerCase() === DATA_DIR_NAME.toLowerCase()) return true;
+  const base = path.basename(dir).toLowerCase();
+  if (base === DATA_DIR_NAME.toLowerCase() || base === DATA_DIR_OLD_NAME.toLowerCase()) return true;
   return existsSync(path.join(dir, DATA_DIR_MARKER));
 }
 

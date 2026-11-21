@@ -26,6 +26,14 @@ const DELETING = readFileSync(
   path.join(process.cwd(), "supabase", "migrations", "0003_delete_school.sql"),
   "utf8",
 );
+const MODES = readFileSync(
+  path.join(process.cwd(), "supabase", "migrations", "0004_mode_profiles.sql"),
+  "utf8",
+);
+const SMC_MODE = readFileSync(
+  path.join(process.cwd(), "supabase", "migrations", "0005_smc_mode.sql"),
+  "utf8",
+);
 
 /** What a fresh Supabase project provides before our migration runs. */
 const SUPABASE_BASICS = `
@@ -84,6 +92,8 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   await db.exec(APPROVAL);
   await db.exec(DELETING);
+  await db.exec(MODES);
+  await db.exec(SMC_MODE);
   await db.query("insert into auth.users (id, email) values ($1, 'a@x.in'), ($2, 'b@x.in')", [A, B]);
   // The owner approves both, as in the dashboard.
   await db.query("update public.account_access set approved = true where user_id in ($1, $2)", [A, B]);
@@ -106,6 +116,8 @@ describe("the migration", () => {
     await expect(db.exec(MIGRATION)).resolves.toBeDefined();
     await expect(db.exec(APPROVAL)).resolves.toBeDefined();
     await expect(db.exec(DELETING)).resolves.toBeDefined();
+    await expect(db.exec(MODES)).resolves.toBeDefined();
+    await expect(db.exec(SMC_MODE)).resolves.toBeDefined();
   });
 
   it("makes a private backups bucket", async () => {
@@ -323,5 +335,54 @@ describe("deleting a school", () => {
     await expect(
       as("authenticated", D, "select * from public.create_profile($1, 'x', '4444', $2)", [randomUUID(), key()]),
     ).rejects.toThrow(/unique|duplicate/);
+  });
+
+  it("allows the same DISE code separately in smc-e and smc-e-old, but not twice in the same mode", async () => {
+    const oldSchool = randomUUID();
+    await as(
+      "authenticated",
+      D,
+      "select * from public.create_profile_for_mode($1, 'જૂની શાળા', '4444', $2, 'smc-e-old')",
+      [oldSchool, key()],
+    );
+    const listed = await as(
+      "authenticated",
+      D,
+      "select id, app_mode from public.profiles order by created_at asc",
+    );
+    expect(listed.rows.map((r) => r.app_mode)).toEqual(["smc-e", "smc-e-old"]);
+
+    await expect(
+      as(
+        "authenticated",
+        D,
+        "select * from public.create_profile_for_mode($1, 'બીજી જૂની', '4444', $2, 'smc-e-old')",
+        [randomUUID(), key()],
+      ),
+    ).rejects.toThrow(/unique|duplicate/);
+  });
+
+  it("keeps an SMC school apart from the SMC E one with the same DISE code", async () => {
+    await as(
+      "authenticated",
+      D,
+      "select * from public.create_profile_for_mode($1, 'SMC શાળા', '4444', $2, 'smc')",
+      [randomUUID(), key()],
+    );
+    const listed = await as(
+      "authenticated",
+      D,
+      "select app_mode from public.profiles order by created_at asc",
+    );
+    expect(listed.rows.map((r) => r.app_mode)).toEqual(["smc-e", "smc-e-old", "smc"]);
+
+    // Running 0004 again after 0005 must not take the third mode away.
+    await expect(db.exec(MODES)).resolves.toBeDefined();
+    await expect(
+      as("authenticated", D, "select * from public.create_profile_for_mode($1, 'x', '4444', $2, 'smcx')", [
+        randomUUID(),
+        key(),
+      ]),
+    ).rejects.toThrow(/check|app_mode/);
   });
 });

@@ -11,6 +11,14 @@ import { formatDate } from "../lib/dates.js";
 
 export { formatAmount, formatDate };
 
+/** The name a software mode is shown by. */
+export function modeLabel(
+  mode: "smc-e" | "smc-e-old" | "smc",
+  t: { modeSmcE: string; modeSmcEOld: string; modeSmc: string },
+): string {
+  return mode === "smc-e-old" ? t.modeSmcEOld : mode === "smc" ? t.modeSmc : t.modeSmcE;
+}
+
 /** Parse a typed amount, returning null instead of throwing on nonsense. */
 export function tryParseAmount(input: string): number | null {
   try {

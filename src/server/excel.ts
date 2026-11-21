@@ -45,14 +45,16 @@ import type {
   BillRegisterRow,
   ChequeRegisterRow,
   PatrakDRow,
+  PfmsRegisterRow,
   Voucher,
 } from "../engine/registers.js";
-import type {
-  BooksApi,
-  ExcelReportId,
-  GrantRegisterRowDto,
-  PrintableReportId,
-  SchoolDto,
+import {
+  reportsForMode,
+  type BooksApi,
+  type ExcelReportId,
+  type GrantRegisterRowDto,
+  type PrintableReportId,
+  type SchoolDto,
 } from "../shared/api.js";
 import { formatDate } from "../lib/dates.js";
 import {
@@ -1018,6 +1020,45 @@ function chequeRegisterSheet(
   );
 }
 
+/** SMC mode: the PFMS register, in the client's column order (the limit is not printed). */
+function pfmsRegisterSheet(
+  workbook: ExcelJS.Workbook,
+  school: SchoolDto,
+  yearLabel: string,
+  register: PfmsRegisterRow[],
+  layout: ReportLayout,
+): void {
+  sheet(
+    workbook,
+    "PFMS રજીસ્ટર",
+    titleOf(school, yearLabel, "PFMS રજીસ્ટર"),
+    [
+      { header: "અ.નં", width: 6, layout: "serial" },
+      { header: "PPA બનાવ્યા તારીખ", width: 13, layout: "ppaDate" },
+      { header: "PPA નંબર", width: 18, layout: "ppaNo" },
+      { header: "વિગત", width: 24, layout: "head" },
+      { header: "વેન્ડરની વિગત", width: 28, layout: "vendor" },
+      { header: "ખર્ચની વિગત", width: 26, layout: "purpose" },
+      { header: "રૂપિયા", width: 13, money: true, layout: "amount" },
+      { header: "ખરેખર ચુકવ્યા તારીખ", width: 14, layout: "paidDate" },
+    ],
+    register.map((row) => ({
+      key: ROW_KEYS.cheque(row.serial),
+      cells: [
+        row.serial,
+        date(row.ppaDate),
+        row.ppaNo,
+        row.headNamesGu,
+        row.vendorGu,
+        row.purposeGu,
+        rupees(row.amountPaise),
+        date(row.paidDate),
+      ],
+    })),
+    { report: "pfmsRegister", layout },
+  );
+}
+
 function billRegisterSheet(
   workbook: ExcelJS.Workbook,
   school: SchoolDto,
@@ -1320,7 +1361,8 @@ export async function buildWorkbook(
   const dashboard = await api.getDashboard();
   const yearLabel = dashboard.year.label;
 
-  const wants = (id: PrintableReportId): boolean => report === "all" || report === id;
+  const shown = new Set(reportsForMode(dashboard.appMode));
+  const wants = (id: PrintableReportId): boolean => (report === "all" && shown.has(id)) || report === id;
   // Each sheet follows the school's layout for its report.
   const layoutOf = (id: PrintableReportId): Promise<ReportLayout> => api.getReportLayout(id);
 
@@ -1337,6 +1379,10 @@ export async function buildWorkbook(
   if (wants("chequeRegister")) {
     const layout = await layoutOf("chequeRegister");
     chequeRegisterSheet(workbook, school, yearLabel, await api.getChequeRegister(), layout);
+  }
+  if (wants("pfmsRegister")) {
+    const layout = await layoutOf("pfmsRegister");
+    pfmsRegisterSheet(workbook, school, yearLabel, await api.getPfmsRegister(), layout);
   }
   if (wants("billRegister")) {
     const layout = await layoutOf("billRegister");
@@ -1376,6 +1422,7 @@ export function defaultExcelName(report: ExcelReportId, yearLabel: string): stri
     khatavahi: "khatavahi",
     grantRegister: "grant-register",
     chequeRegister: "cheque-register",
+    pfmsRegister: "pfms-register",
     billRegister: "bill-register",
     vouchers: "vouchers",
     patrakD: "patrak-d",

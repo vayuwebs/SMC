@@ -614,6 +614,54 @@ export interface Strings {
   aboutSchool: string;
   aboutBank: string;
   aboutDatabase: string;
+  modeSelectTitle: string;
+  modeSelectSubtitle: string;
+  modeSmcE: string;
+  modeSmcEHint: string;
+  modeSmcEOld: string;
+  modeSmcEOldHint: string;
+  modeSmc: string;
+  modeSmcHint: string;
+  navPfms: string;
+  pfmsTitle: string;
+  pfmsSubtitle: string;
+  newPfms: string;
+  editPfms: (serial: number) => string;
+  confirmDeletePfms: (serial: number) => string;
+  noPfms: string;
+  pfmsSerial: string;
+  ppaDate: string;
+  ppaNo: string;
+  paidDate: string;
+  pfmsVendor: string;
+  pfmsPurpose: string;
+  pfmsHead: string;
+  pfmsBillsPaid: string;
+  pfmsAmount: string;
+  tabPfmsRegister: string;
+  limitsTitle: string;
+  limitsSubtitle: string;
+  limitColumn: string;
+  limitUsed: string;
+  limitRemaining: string;
+  limitNone: string;
+  limitsSave: string;
+  limitsSaved: string;
+  limitsApplyAll: string;
+  limitsApplyAllConfirm: string;
+  limitsApplied: (count: number) => string;
+  limitsAppliedNone: string;
+  limitsSkipped: (school: string, reason: string) => string;
+  limitsNoSuchYear: string;
+  limitsUnsavedFirst: string;
+  overLimit: (head: string, over: string) => string;
+  modeOpenButton: string;
+  modeChange: string;
+  modeSection: string;
+  modeSectionHelp: string;
+  modeRememberLabel: string;
+  modeRememberHelp: string;
+  schoolsWrongMode: (modeLabel: string) => string;
 
   // ------------------------------------------------------- account & login
   authSubtitle: string;
@@ -1381,6 +1429,58 @@ export const gu: Strings = {
   aboutSchool: "શાળા",
   aboutBank: "બેંક ખાતું",
   aboutDatabase: "માહિતી ક્યાં સચવાય છે",
+  modeSelectTitle: "કયો મોડ ખોલવો છે?",
+  modeSelectSubtitle:
+    "તમારી શાળા અને બધી એન્ટ્રીઓ બંને મોડમાં સમાન રહેશે — માત્ર રોજમેળ અને ખાતાવહીના પાનાંની ગણતરી બદલાય છે.",
+  modeSmcE: "SMC E",
+  modeSmcEHint: "વર્તમાન સિસ્ટમ મુજબ રોજમેળ (મહિના પ્રમાણે નીલ બ્લોક અને પાનાં) અને ખાતાવહી.",
+  modeSmcEOld: "SMC E old",
+  modeSmcEOldHint:
+    "જૂની રીત મુજબ રોજમેળ (૦૧/૦૪ અને ૩૧/૦૩ અલગ બ્લોક, ૪+ દિવસની ગેપ પર સળંગ નીલ બ્લોક) અને ખાતાવહી.",
+  modeSmc: "SMC",
+  modeSmcHint: "PFMS થી ચુકવણી: ચેક રજીસ્ટરની જગ્યાએ PFMS રજીસ્ટર, ગ્રાન્ટ લિમિટ, અને રોજમેળમાં જરૂરી તારીખ ગાળો જ.",
+  navPfms: "PFMS",
+  pfmsTitle: "PFMS રજીસ્ટર",
+  pfmsSubtitle: "દરેક PFMS ચુકવણીની રકમ તેના બિલ પરથી ગણાય છે — ટાઈપ કરવાની જરૂર નથી",
+  newPfms: "+ નવી PFMS ચુકવણી",
+  editPfms: (serial) => `PFMS ચુકવણી અ.નં ${serial} સુધારો`,
+  confirmDeletePfms: (serial) => `PFMS ચુકવણી અ.નં ${serial} કાઢી નાખવી છે? તેના બિલ છૂટા થશે, કાઢી નહીં નખાય.`,
+  noPfms: "હજુ કોઈ PFMS ચુકવણી નથી",
+  pfmsSerial: "અ.નં",
+  ppaDate: "PPA બનાવ્યા તારીખ",
+  ppaNo: "PPA નંબર",
+  paidDate: "ખરેખર ચુકવ્યા તારીખ",
+  pfmsVendor: "વેન્ડરની વિગત",
+  pfmsPurpose: "ખર્ચની વિગત",
+  pfmsHead: "વિગત (ગ્રાન્ટ)",
+  pfmsBillsPaid: "આ PFMS ચુકવણીથી કયા બિલ ચુકવ્યા?",
+  pfmsAmount: "રૂપિયા",
+  tabPfmsRegister: "PFMS રજીસ્ટર",
+  limitsTitle: "ગ્રાન્ટ લિમિટ",
+  limitsSubtitle: "દરેક ગ્રાન્ટની આ વર્ષની PFMS લિમિટ. માત્ર સોફ્ટવેરમાં દેખાય છે, કોઈ રિપોર્ટમાં છપાતી નથી.",
+  limitColumn: "લિમિટ રૂ.",
+  limitUsed: "વપરાયેલ રૂ.",
+  limitRemaining: "બચત લિમિટ રૂ.",
+  limitNone: "—",
+  limitsSave: "લિમિટ સાચવો",
+  limitsSaved: "લિમિટ સચવાઈ ગઈ",
+  limitsApplyAll: "આ લિમિટ બધી SMC શાળાઓમાં લાગુ કરો",
+  limitsApplyAllConfirm: "આ શાળાની ગ્રાન્ટ લિમિટ આ ખાતાની બીજી બધી SMC શાળાઓમાં (આ જ વર્ષમાં) લાગુ કરવી છે? તેમની એ જ ગ્રાન્ટની લિમિટ બદલાઈ જશે.",
+  limitsApplied: (count) => `${count} શાળામાં લિમિટ લાગુ થઈ`,
+  limitsAppliedNone: "બીજી કોઈ SMC શાળા મળી નહીં",
+  limitsSkipped: (school, reason) => `${school}: ${reason}`,
+  limitsNoSuchYear: "આ વર્ષ ત્યાં નથી",
+  limitsUnsavedFirst: "પહેલાં લિમિટ સાચવો",
+  overLimit: (head, over) => `${head}: લિમિટ કરતાં રૂ. ${over} વધુ ચુકવણી`,
+  modeOpenButton: "ખોલો",
+  modeChange: "મોડ બદલો",
+  modeSection: "સોફ્ટવેર મોડ (રોજમેળ અને ખાતાવહી)",
+  modeSectionHelp:
+    "અહીંથી SMC E અને SMC E old વચ્ચે મોડ બદલી શકાય છે. શાળા, હિસાબ અને અન્ય રિપોર્ટ બંનેમાં એકસરખા રહેશે.",
+  modeRememberLabel: "સોફ્ટવેર શરૂ થાય ત્યારે આ મોડ યાદ રાખો",
+  modeRememberHelp:
+    "ચાલુ રાખવાથી દર વખતે સોફ્ટવેર ખોલતી વખતે મોડ પસંદ કરવાનું પૂછશે નહીં.",
+  schoolsWrongMode: (modeLabel) => `માત્ર ${modeLabel} માં`,
 
   authSubtitle: "તમારા ખાતાથી લૉગિન કરો. એક ખાતામાં એક કરતાં વધુ શાળાઓ રાખી શકાય છે.",
   authEmail: "ઈમેલ",
@@ -1534,6 +1634,7 @@ export const gu: Strings = {
     patrakD: "ઓડિટ અને વાર્ષિક તપાસ માટેનું વિગતવાર પત્રક.",
     grantRegister: "વર્ષ દરમિયાન મળેલ તમામ ગ્રાન્ટ અને તેના ખર્ચની વિગતો.",
     chequeRegister: "લખાયેલા તમામ ચેક, જેના નામે લખ્યા અને વટાવ્યાની તારીખો.",
+    pfmsRegister: "દરેક PFMS ચુકવણી: PPA નંબર, વેન્ડર, ખર્ચ અને ચુકવ્યાની તારીખ.",
     billRegister: "વાઉચર મુજબના તમામ બિલ, વેપારી અને રકમની નોંધ.",
     vouchers: "ચુકવણીના છાપવાના વાઉચર ફોર્મ.",
     balances: "દરેક દિવસની રોકડ અને બેન્ક સિલક.",
@@ -2164,6 +2265,58 @@ export const en: Strings = {
   aboutSchool: "School",
   aboutBank: "Bank account",
   aboutDatabase: "Where the data is stored",
+  modeSelectTitle: "Which mode do you want to open?",
+  modeSelectSubtitle:
+    "Your schools, entries, backups, and other reports stay identical — only Rojmel and Khatavahi block/page calculation changes.",
+  modeSmcE: "SMC E",
+  modeSmcEHint: "Current Rojmel (month-split nil blocks and pages) and Khatavahi.",
+  modeSmcEOld: "SMC E old",
+  modeSmcEOldHint:
+    "Legacy Rojmel (01/04 & 31/03 boundary blocks, continuous nil blocks on 4+ day gaps) and matching Khatavahi.",
+  modeSmc: "SMC",
+  modeSmcHint: "Payments through PFMS: a PFMS register in place of the cheque register, grant limits, and only the date ranges the rojmel needs.",
+  navPfms: "PFMS",
+  pfmsTitle: "PFMS register",
+  pfmsSubtitle: "Each PFMS payment's amount is computed from its bills — no need to type it",
+  newPfms: "+ New PFMS payment",
+  editPfms: (serial) => `Edit PFMS payment no. ${serial}`,
+  confirmDeletePfms: (serial) => `Delete PFMS payment no. ${serial}? Its bills are released, not deleted.`,
+  noPfms: "No PFMS payments yet",
+  pfmsSerial: "No.",
+  ppaDate: "PPA created on",
+  ppaNo: "PPA number",
+  paidDate: "Actually paid on",
+  pfmsVendor: "Vendor",
+  pfmsPurpose: "Expense",
+  pfmsHead: "Grant head",
+  pfmsBillsPaid: "Which bills does this PFMS payment pay?",
+  pfmsAmount: "Amount",
+  tabPfmsRegister: "PFMS register",
+  limitsTitle: "Grant limits",
+  limitsSubtitle: "Each grant's PFMS limit for this year. Shown in the software only; no report prints it.",
+  limitColumn: "Limit ₹",
+  limitUsed: "Used ₹",
+  limitRemaining: "Limit left ₹",
+  limitNone: "—",
+  limitsSave: "Save limits",
+  limitsSaved: "Limits saved",
+  limitsApplyAll: "Use these limits in all SMC schools",
+  limitsApplyAllConfirm: "Copy this school's grant limits into every other SMC school of this account (same year)? Their limits for the same grants are replaced.",
+  limitsApplied: (count) => `Limits copied to ${count} school(s)`,
+  limitsAppliedNone: "No other SMC school was found",
+  limitsSkipped: (school, reason) => `${school}: ${reason}`,
+  limitsNoSuchYear: "this year is not there",
+  limitsUnsavedFirst: "Save the limits first",
+  overLimit: (head, over) => `${head}: paid ₹${over} more than its limit`,
+  modeOpenButton: "Open",
+  modeChange: "Switch mode",
+  modeSection: "Software mode (Rojmel & Khatavahi)",
+  modeSectionHelp:
+    "Switch between SMC E and SMC E old at any time. All schools, entries, and other reports stay unchanged.",
+  modeRememberLabel: "Remember selected mode on startup",
+  modeRememberHelp:
+    "When checked, launching the app opens directly into the saved mode instead of asking every time.",
+  schoolsWrongMode: (modeLabel) => `Only in ${modeLabel}`,
 
   authSubtitle: "Log in with your account. One account can hold several schools.",
   authEmail: "Email",
@@ -2317,6 +2470,7 @@ export const en: Strings = {
     patrakD: "The detailed statement for audit and the annual inspection.",
     grantRegister: "Every grant received in the year and what was spent from it.",
     chequeRegister: "Every cheque written: payee, cheque date and date cashed.",
+    pfmsRegister: "Every PFMS payment: PPA number, vendor, expense and the date paid.",
     billRegister: "Every bill by voucher: vendor and amount.",
     vouchers: "Printed payment vouchers.",
     balances: "Cash and bank balance at the end of each day.",
